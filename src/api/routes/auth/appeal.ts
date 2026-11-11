@@ -50,12 +50,11 @@ router.post(
                 disabled: true,
                 flags: true,
                 account_standing: true,
-                federated_instance: true,
                 mfa_enabled: true,
                 totp_secret: true,
             },
         });
-        if (!user || user.federated_instance) throw invalid();
+        if (!user) throw invalid();
         await assertLoginNotLocked(user.id, req.ip);
         if (!(await bcrypt.compare(password, user.data.hash || ""))) {
             await recordFailedLogin(user.id, req.ip);

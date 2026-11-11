@@ -19,7 +19,6 @@ test("member routes need the server right and check staff hierarchy before writi
     }
     const writes = fs.readFileSync(routes[1], "utf8");
     assert.match(writes, /await assertCanActOnUser\(req, member_id\)/);
-    assert.match(writes, /assertMirrorGuildEditable\(guild\)/);
 });
 
 test("cursor helpers reject bad input and return the last id of a full page", () => {

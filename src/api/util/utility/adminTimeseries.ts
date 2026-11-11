@@ -9,7 +9,6 @@ import { ADMIN_PANEL_RIGHTS } from "./staffBadge";
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const SNOWFLAKE_TIME_DIVISOR = 4194304;
-const FEDERATION_PEERS_SHOWN = 5;
 export const TIMESERIES_TTL_MS = 60000;
 
 export const TIMESERIES_RANGES = {
@@ -30,7 +29,6 @@ export const TIMESERIES_METRICS = {
     reports_opened: { access: "VIEW_MODERATION", unit: "count" },
     reports_closed: { access: "VIEW_MODERATION", unit: "count" },
     automod_actions: { access: "VIEW_MODERATION", unit: "count" },
-    federation: { access: "OPERATOR", unit: "count" },
     attachment_bytes: { access: "OPERATOR", unit: "bytes" },
 } as const satisfies Record<string, { access: MetricAccess; unit: "count" | "bytes" }>;
 
@@ -102,10 +100,10 @@ interface SnowflakeSource {
 }
 
 const SNOWFLAKE_SOURCES: Partial<Record<TimeseriesMetric, SnowflakeSource>> = {
-    accounts: { table: "users", column: "id", value: "COUNT(*)", filter: "bot = false AND federated_instance IS NULL" },
+    accounts: { table: "users", column: "id", value: "COUNT(*)", filter: "bot = false" },
     messages: { table: "messages", column: "id", value: "COUNT(*)" },
     active_users: { table: "messages", column: "id", value: "COUNT(DISTINCT author_id)" },
-    servers: { table: "guilds", column: "id", value: "COUNT(*)", filter: "federated_instance IS NULL" },
+    servers: { table: "guilds", column: "id", value: "COUNT(*)" },
     reports_opened: { table: "reports", column: "id", value: "COUNT(*)" },
     automod_actions: { table: "automod_actions", column: "id", value: "COUNT(*)" },
     attachment_bytes: { table: "attachments", column: "id", value: "COALESCE(SUM(size), 0)" },
@@ -149,30 +147,6 @@ async function reportsClosed(window: TimeseriesWindow) {
     return { points, total: points.reduce((sum, point) => sum + point, 0), previous_total: Number(previous[0]?.value ?? 0) };
 }
 
-async function federationSeries(window: TimeseriesWindow) {
-    const rows = await run(
-        `SELECT instance, ${timestampBucket("created_at", window)} AS bucket, COUNT(*) AS value FROM federated_objects WHERE created_at >= $1 AND created_at < $2 GROUP BY 1, 2`,
-        [new Date(window.start), new Date(window.end + 1)],
-    );
-    const byInstance = new Map<string, { bucket: string; value: string }[]>();
-    for (const row of rows) {
-        const instance = String(row.instance);
-        byInstance.set(instance, [...(byInstance.get(instance) ?? []), { bucket: String(row.bucket), value: String(row.value) }]);
-    }
-    const peers = [...byInstance.entries()]
-        .map(([instance, entries]) => {
-            const points = fillBuckets(window, entries);
-            return { key: instance, points, total: points.reduce((sum, point) => sum + point, 0), previous_total: null };
-        })
-        .sort((a, b) => b.total - a.total || a.key.localeCompare(b.key));
-    const shown = peers.slice(0, FEDERATION_PEERS_SHOWN);
-    const rest = peers.slice(FEDERATION_PEERS_SHOWN);
-    if (!rest.length) return shown;
-    const points = new Array<number>(window.buckets).fill(0);
-    for (const peer of rest) peer.points.forEach((value, index) => (points[index] += value));
-    return [...shown, { key: "other", points, total: points.reduce((sum, point) => sum + point, 0), previous_total: null, instances: rest.length }];
-}
-
 async function storedBytes() {
     const rows = await run("SELECT CAST(COALESCE(SUM(used_bytes), 0) AS text) AS bytes FROM storage_quota_accounts WHERE key = 'instance'").catch(() => null);
     return rows ? Number(rows[0]?.bytes ?? 0) : null;
@@ -181,7 +155,7 @@ async function storedBytes() {
 export async function loadTimeseries(metric: TimeseriesMetric, range: TimeseriesRange, utcOffset: number, now = Date.now()) {
     const window = timeseriesWindow(range, now, utcOffset);
     const source = SNOWFLAKE_SOURCES[metric];
-    const series = metric === "federation" ? await federationSeries(window) : [{ key: metric, ...(source ? await snowflakeSeries(source, window) : await reportsClosed(window)) }];
+    const series = [{ key: metric, ...(source ? await snowflakeSeries(source, window) : await reportsClosed(window)) }];
     return {
         metric,
         range,

@@ -3,7 +3,6 @@ import { HTTPError } from "lambert-server/HTTPError";
 import { In } from "typeorm";
 import { route } from "@spacebar/api/middlewares";
 import { cursorLimit, cursorPage } from "@spacebar/api/util";
-import { assertMirrorGuildEditable } from "@spacebar/api/util/utility/federatedAdmin";
 import { auditLogReason } from "@spacebar/api/util/utility/fieldCaps";
 import { Random } from "@spacebar/extensions";
 import { AuditLog, Channel, Guild, Invite, PublicInviteRelation, User } from "@spacebar/database";
@@ -92,7 +91,7 @@ router.post(
     async (req: Request, res: Response) => {
         const guild_id = req.params.guild_id as string;
         const body = req.body as AdminGuildInviteCreateSchema;
-        assertMirrorGuildEditable(await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true, federated_instance: true } }));
+        await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true } });
         const channel = await Channel.findOne({ where: { id: body.channel_id, guild_id }, select: { id: true, type: true, name: true } });
         if (!channel) throw new HTTPError("That channel isn't in this server", 400);
         if (!INVITE_CHANNEL_TYPES.includes(channel.type)) throw new HTTPError("Invites can only point at text, voice, announcement, stage or forum channels", 400);

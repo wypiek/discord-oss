@@ -2,7 +2,6 @@ import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
 import { assertCanViewUser, emitUserUpdate, setSmsFlag } from "@spacebar/api/util";
 import { BackupCode, SecurityKey, User } from "@spacebar/database";
-import { assertShadowUserEditable } from "@spacebar/api/util/utility/federatedAdmin";
 import { assertCanTakeOver } from "../index";
 
 const router = Router({ mergeParams: true });
@@ -44,10 +43,9 @@ router.delete(
     async (req: Request, res: Response) => {
         const user = await User.findOneOrFail({
             where: { id: req.params.user_id as string },
-            select: { id: true, rights: true, federated_instance: true },
+            select: { id: true, rights: true },
         });
         await assertCanTakeOver(req, user);
-        assertShadowUserEditable(user, ["two-factor"]);
 
         await SecurityKey.delete({ user_id: user.id });
         await BackupCode.update({ user: { id: user.id } }, { expired: true });

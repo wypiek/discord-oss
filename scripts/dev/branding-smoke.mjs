@@ -89,13 +89,8 @@ try {
         actual.paths,
         [...ref.matchAll(/<path[^>]* d="([^"]+)"/g)].map((m) => m[1]),
     );
-    assert.equal(
-        actual.css,
-        ref
-            .match(/<style>(.*?)<\/style>/)[1]
-            .replace(".meowcord-spinner>svg,.meowcord-spinner path{animation:none}", ".meowcord-spinner>svg,.meowcord-spinner .wl,.meowcord-spinner .wr{animation:none}"),
-    );
-    assert.equal(actual.animations.length, 3);
+    assert.equal(actual.css, ref.match(/<style>(.*?)<\/style>/)[1]);
+    assert.equal(actual.animations.length, 1);
     assert.ok(actual.animations.every((a) => a.duration === 1100));
     assert.equal(actual.ready, 1);
     await p.locator("#brand-proof svg").evaluate((e) => {
@@ -120,7 +115,7 @@ try {
         JSON.stringify({
             status: "pass",
             browser: kind,
-            archivePathsAndCSSExact: true,
+            spinnerPathAndCSSExact: true,
             nativeSpinnerSeen,
             defaultAvatars: avatars.length,
             animations: actual.animations,

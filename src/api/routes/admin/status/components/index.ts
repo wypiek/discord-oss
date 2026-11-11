@@ -2,7 +2,7 @@ import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
 import { StatusComponent } from "@spacebar/database";
 import { AdminStatusComponentSchema } from "@spacebar/schemas";
-import { serializeComponent } from "@spacebar/api/util";
+import { serializeComponent, validateComponentGroup } from "@spacebar/api/util";
 
 const router = Router({ mergeParams: true });
 
@@ -20,6 +20,7 @@ router.post(
     }),
     async (req: Request, res: Response) => {
         const body = req.body as AdminStatusComponentSchema;
+        const group_id = await validateComponentGroup(null, body.group_id);
         const last = await StatusComponent.findOne({
             where: {},
             order: { position: "DESC" },
@@ -30,6 +31,7 @@ router.post(
             description: body.description?.trim() || null,
             status: body.status ?? "operational",
             position: body.position ?? (last ? last.position + 1 : 0),
+            group_id,
         }).save();
         res.status(201).json(serializeComponent(component));
     },

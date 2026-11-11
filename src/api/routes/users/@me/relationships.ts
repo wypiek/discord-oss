@@ -392,8 +392,7 @@ async function updateRelationship(req: Request, res: Response, friend: User, typ
     const accepting = friendRequest?.type === RelationshipType.OUTGOING_REQUEST;
     const settled = friendRequest?.type === RelationshipType.BLOCKED || friendRequest?.type === RelationshipType.FRIEND; // refused or rejected below
     if (!accepting && !settled && !(await acceptsFriendRequestFrom(id, req.user_id, sharedGuilds, targetPrivacy))) throw DiscordApiErrors.INCOMING_FRIEND_REQUESTS_DISABLED;
-    if (!accepting && !settled && !req.user_bot)
-        await checkContactSpam({ user_id: req.user_id, target_id: id, kind: "friend", rights: req.rights, federated: !!req.user?.federated_instance, account: req.user });
+    if (!accepting && !settled && !req.user_bot) await checkContactSpam({ user_id: req.user_id, target_id: id, kind: "friend", rights: req.rights, account: req.user });
     // "show personalized messages" off leaves the note off their side of the request
     const theirNote = targetPrivacy?.hideFriendRequestNotes?.value ? undefined : note || undefined;
 

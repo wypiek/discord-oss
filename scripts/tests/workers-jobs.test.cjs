@@ -18,7 +18,6 @@ function workerJobs() {
         release: async () => undefined,
     };
     const { runJobs } = loadModule("workers/api/src/jobs.ts", {
-        "@spacebar/util": { Config: { get: () => ({ federation: { enabled: false } }) }, FederationKey: { ready: false } },
         "@spacebar/api/util": {
             sendDueScheduledMessages: record("scheduled-messages"),
             finalizeExpiredPolls: record("poll-expiry"),
@@ -34,8 +33,6 @@ function workerJobs() {
         "@spacebar/api/util/handlers/Instance": { pruneTemporarySessions: record("temporary-sessions") },
         "@spacebar/api/util/handlers/Discovery": { reindexDiscovery: record("discovery-index") },
         "@spacebar/api/util/utility/announcementDelivery": { runAnnouncementDeliveries: record("announcement-delivery") },
-        "@spacebar/api/util/utility/federation": { runFederationCycle: record("federation-registry") },
-        "@spacebar/api/util/utility/federationEvents": {},
         "@spacebar/api/util/handlers/AttachmentFiles": { sweepAttachmentFiles: record("attachment-files") },
         "@spacebar/api/util/handlers/ImageFiles": { sweepImageFiles: record("image-files") },
         "@spacebar/api/util/handlers/CloudUploads": { sweepExpiredCloudUploads: record("cloud-uploads") },

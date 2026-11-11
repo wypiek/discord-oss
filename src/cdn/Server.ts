@@ -63,7 +63,7 @@ export class CDNServer extends Server {
         const routesFolder = path.join(__dirname, "routes");
         const publicPrefixes = readdirSync(routesFolder, { withFileTypes: true })
             .map((entry) => entry.name.replace(/\.(js|ts)$/, ""))
-            .filter((name) => !name.endsWith(".map") && !name.endsWith(".d") && !name.startsWith("_") && !name.startsWith("federation-") && name !== "ping")
+            .filter((name) => !name.endsWith(".map") && !name.endsWith(".d") && !name.startsWith("_") && name !== "ping")
             .sort()
             .map((name) => `/${name}`);
         this.app.use([...new Set(publicPrefixes), "/guilds/:guild_id/users/:user_id/avatars", "/guilds/:guild_id/users/:user_id/banners"], cdnResponseSafety);

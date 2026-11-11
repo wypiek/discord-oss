@@ -54,7 +54,6 @@ function userRoutes(user = { id: "mod", rights: "0", username: "mod", discrimina
         "lambert-server/HTTPError": { HTTPError: StubError },
         "@spacebar/database": {
             Badge: {},
-            FederatedObject: {},
             Guild: {},
             InstanceBan: {},
             Member: {},
@@ -86,7 +85,6 @@ function userRoutes(user = { id: "mod", rights: "0", username: "mod", discrimina
             syncStaffBadge: async () => undefined,
             withStaffDisabled: (flags) => flags,
         },
-        "@spacebar/api/util/utility/federatedAdmin": { assertShadowUserEditable: () => undefined, SHADOW_USER_LOCAL_FIELDS: [] },
         "../index": {
             ADMIN_USER_COLUMNS: ["id"],
             applyUserTag: (_, tag) => tagged.push(tag),

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Router, Response, Request } from "express";
 import { fileTypeFromBuffer } from "file-type";
-import { ASSETS_FOLDER, Config, isRequestSignature } from "@spacebar/util";
+import { ASSETS_FOLDER, Config, isRequestSignature, nitroTierArt } from "@spacebar/util";
 import { HTTPError } from "lambert-server/HTTPError";
 import { storage, internalUpload, setCacheControl, setCacheControlNotFound, fetchUpstreamAsset, safeMediaType } from "../util";
 
@@ -38,6 +38,8 @@ router.post(
 router.get("/:badge_id", setCacheControl, async (req: Request, res: Response) => {
     const { badge_id } = req.params as { [key: string]: string };
     if (!/^[\w-]+\.png$/.test(badge_id)) return setCacheControlNotFound(req, res);
+    const nitroArt = nitroTierArt(path.basename(badge_id, ".png"));
+    if (nitroArt) return res.redirect(302, `${(Config.get().cdn.endpointPublic || "").replace(/\/$/, "")}/content-assets/${nitroArt}`);
     const key = `badge-icons/${badge_id}`;
     const stored = await storage.get(key);
     if (!stored) {

@@ -23,7 +23,6 @@ const SESSION_FIELDS = [
     "webRtcClient",
     "voiceRoomId",
     "maxDaveVersion",
-    "daveId",
     "daveVersion",
     "clientPlatform",
     "voiceSequence",

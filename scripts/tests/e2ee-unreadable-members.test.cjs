@@ -70,7 +70,7 @@ function engine(members) {
         channelMembers: async () => members,
         keysFor: async (ids) => ids.map((id) => entries[id]),
         currentPrekey: () => ({ id: 1, publicKey: "p" }),
-        bindingFor: async (channel, sender, list, mid) => ({ v: 1, channel, sender, mid, user: (id) => id }),
+        bindingFor: (channel, sender, mid) => ({ v: 1, channel, sender, mid, user: (id) => id }),
     });
     return { instance, unreadableMembers: module.exports.unreadableMembers, E2eeError };
 }

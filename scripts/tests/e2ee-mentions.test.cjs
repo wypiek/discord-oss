@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const ts = require("typescript");
 
-const { entity, In, IsNull, Not, load } = require("./federation-fake-orm.cjs");
+const { entity, In, IsNull, Not, load } = require("./fake-orm.cjs");
 
 const author = "1400000000000000001";
 const member = "1400000000000000002";
@@ -28,7 +28,7 @@ function server() {
         E2eeDevice: entity("E2eeDevice"),
         User: entity("User"),
     };
-    db.User.rows.push({ id: author, federated_instance: null }, { id: member, federated_instance: null }, { id: stranger, federated_instance: null });
+    db.User.rows.push({ id: author }, { id: member }, { id: stranger });
     db.E2eeDevice.rows.push(
         { id: "author-device", user_id: author, status: "active", prekey_id: 1, signing_key: b64(32), revoked_at: null },
         { id: "member-device", user_id: member, status: "active", prekey_id: 2, signing_key: b64(32), revoked_at: null },
@@ -39,15 +39,12 @@ function server() {
         "@spacebar/database": db,
         "@spacebar/util": {
             ApiError,
-            CANONICAL: /^@\d{1,20}@[a-z0-9.:-]+$/,
             Config: { get: () => ({ limits: { e2ee: { maxEnvelopeDevices: 256, maxEnvelopeBytes: 65536 } } }) },
             MessageFlags: { FLAGS: { SUPPRESS_EMBEDS: 4n } },
             emitEvent: async () => {},
         },
         "@spacebar/schemas": { ChannelType: { DM: 1, GROUP_DM: 3 }, MessageType: { DEFAULT: 0, REPLY: 19 } },
         "../../middlewares/RateLimit": () => () => {},
-        "./federationE2ee": { remoteE2eeKeys: async () => new Map() },
-        "./federationIds": { canonicalOf: async (id) => id, localIds: async () => new Map() },
     });
     const send = async (extra, opts = {}) => {
         const envelope = {
@@ -81,7 +78,11 @@ test("an encrypted message that names a member in its mention list mentions them
 test("the mention list only names other members of the conversation", async () => {
     const { module, send } = server();
     const invalid = module.E2eeErrors.INVALID_ENVELOPE;
-    await assert.rejects(send({ mentions: [stranger] }), (error) => error === invalid, "a user outside the conversation");
+    await assert.rejects(
+        send({ mentions: [stranger] }),
+        (error) => error === module.E2eeErrors.DEVICE_MISMATCH,
+        "a user outside the conversation, so the client reloads the members",
+    );
     await assert.rejects(send({ mentions: [author] }), (error) => error === invalid, "the sender");
     await assert.rejects(send({ mentions: [member, member] }), (error) => error === invalid, "duplicates");
     await assert.rejects(send({ mentions: [] }), (error) => error === invalid, "an empty list");

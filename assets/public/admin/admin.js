@@ -903,8 +903,8 @@ const runJump = debounce(async (query) => {
   renderJump(query, [], "Searching…");
   const search = (path) => api(path, { signal: controller.signal }).catch((error) => (error.status === 499 ? null : { error }));
   const [users, guilds] = await Promise.all([
-    access.users ? search(`/admin/users?${new URLSearchParams({ q: query, origin: "all", limit: 5 })}`) : null,
-    access.guilds && !ip ? search(`/admin/guilds?${new URLSearchParams({ q: query, origin: "all", limit: 5 })}`) : null,
+    access.users ? search(`/admin/users?${new URLSearchParams({ q: query, limit: 5 })}`) : null,
+    access.guilds && !ip ? search(`/admin/guilds?${new URLSearchParams({ q: query, limit: 5 })}`) : null,
   ]);
   if (generation !== jump.generation || $("#nav-search").value.trim() !== query) return;
   const groups = [];
@@ -918,7 +918,7 @@ const runJump = debounce(async (query) => {
       label: ip ? `Accounts on this address (${fmtNumber(users.total)})` : `People (${fmtNumber(users.total)})`,
       items: users.users.map((u) => ({
         open: () => openUser(u.id),
-        render: html`${avatar(u)}<span class="jump-main"><strong>${userName(u)}</strong><span class="muted">${userTag(u)}${u.email ? ` · ${u.email}` : ""}${u.federated_instance ? ` · ${u.federated_instance}` : ""}${u.disabled ? " · disabled" : ""}</span></span>`,
+        render: html`${avatar(u)}<span class="jump-main"><strong>${userName(u)}</strong><span class="muted">${userTag(u)}${u.email ? ` · ${u.email}` : ""}${u.disabled ? " · disabled" : ""}</span></span>`,
       })),
     });
   if (guilds?.guilds?.length)
@@ -926,7 +926,7 @@ const runJump = debounce(async (query) => {
       label: `Servers (${fmtNumber(guilds.total)})`,
       items: guilds.guilds.map((g) => ({
         open: () => openGuild(g.id),
-        render: html`${guildIcon(g)}<span class="jump-main"><strong>${g.name}</strong><span class="muted">${plural(g.member_count, "member")}${g.federated_instance ? ` · ${g.federated_instance}` : ""}</span></span>`,
+        render: html`${guildIcon(g)}<span class="jump-main"><strong>${g.name}</strong><span class="muted">${plural(g.member_count, "member")}</span></span>`,
       })),
     });
   if (users?.total > users?.users?.length && !ip)
@@ -1223,7 +1223,7 @@ async function renderSettings(view) {
                 </div>
                 <div class="card">
                     <h2>External requests</h2>
-                    <p class="muted">Local files and cached assets remain available. By default every Discord and Steam download is on and third-party integrations are off.</p>
+                    <p class="muted">Local files and cached assets remain available. By default every Discord download is on and third-party integrations are off.</p>
                     <div class="stack">
                         ${toggle("externalRequests.discordDecorations", "Download existing Discord decoration artwork", "Avatar decorations, nameplates and profile effects. Shop items remain free.")}
                         ${toggle("externalRequests.discordAssetFallback", "Download other missing Discord assets")}
@@ -1232,7 +1232,6 @@ async function renderSettings(view) {
                         ${toggle("externalRequests.discordTemplates", "Import server templates from Discord")}
                         ${toggle("externalRequests.discordStickerPacks", "Import standard sticker packs from Discord")}
                         ${toggle("externalRequests.discordBadDomains", "Download Discord's blocked-domain list")}
-                        ${toggle("externalRequests.steamAssetFallback", "Download Steam avatar frame artwork", "Art for the Steam frames in the shop, fetched through the outbound proxy when someone views one.")}
                         ${toggle("externalRequests.thirdParty", "Allow configured third-party integrations", "Also requires configuring each provider. Leave off for local operation.")}
                     </div>
                 </div>
@@ -1639,7 +1638,7 @@ function latestList(view, results, status) {
 
 /* ---------- users ---------- */
 
-const usersState = { q: "", filter: "all", origin: "local", sort: "newest", offset: 0, limit: 50, selected: new Set() };
+const usersState = { q: "", filter: "all", sort: "newest", offset: 0, limit: 50, selected: new Set() };
 const USER_SORTS = [
   ["newest", "Newest first"],
   ["oldest", "Oldest first"],
@@ -1679,7 +1678,7 @@ const describeRemoval = ({ action, deleteMessages }) =>
     ? "The accounts and every message they sent are deleted permanently. This can't be undone."
     : `They're signed out everywhere and can't sign in until you enable them again.${deleteMessages ? " Every message they sent is deleted, and deleted messages can't be restored." : ""}`;
 const IP_BAN_EFFECT =
-  "Registration and sign-in from this address are refused and tokens used from it stop working. Staff accounts and people from other instances are never caught.";
+  "Registration and sign-in from this address are refused and tokens used from it stop working. Staff accounts are never caught.";
 const IP_LIFT_EFFECT = "People can register and sign in from this address again. Bans that spread from it to accounts are lifted too.";
 
 const removalSummary = (action, totals) =>
@@ -1727,20 +1726,14 @@ async function renderUsers(view) {
   const [, , requested] = location.hash.split("/");
   const canSeeBans = state.overview.access.reports;
   const sub = requested === "bans" && !canSeeBans ? "" : requested;
-  const current = ["ips", "remote", "bans"].includes(sub) ? sub : "";
+  const current = ["ips", "bans"].includes(sub) ? sub : "";
   const tab = (key, href, label) =>
     html`<a class="btn small ${current === key ? "primary" : ""}" href="${href}" ${current === key ? raw('aria-current="page"') : ""}>${label}</a>`;
   const tabs = html`<div class="row view-switch" role="navigation" aria-label="Users views">
-    ${tab("", "#/users", "Accounts")} ${tab("remote", "#/users/remote", "Other instances")} ${tab("ips", "#/users/ips", "IP addresses")} ${canSeeBans ? tab("bans", "#/users/bans", "IP bans") : ""}
+    ${tab("", "#/users", "Accounts")} ${tab("ips", "#/users/ips", "IP addresses")} ${canSeeBans ? tab("bans", "#/users/bans", "IP bans") : ""}
   </div>`;
   if (sub === "ips") return renderIps(view, tabs);
   if (sub === "bans") return renderIpBans(view, tabs);
-  const remote = sub === "remote";
-  if (usersState.origin !== (remote ? "remote" : "local")) {
-    usersState.origin = remote ? "remote" : "local";
-    usersState.offset = 0;
-    usersState.selected.clear();
-  }
 
   mount(
     view,
@@ -1748,11 +1741,7 @@ async function renderUsers(view) {
             <div class="page-head">
                 <div>
                     <h1>Users</h1>
-                    <p class="muted">${
-                      remote
-                        ? "People from other instances that this instance stores because they share a server or a DM with someone here. Their home instance owns their profiles, so you can only disable, suspend or delete them here. Block them or their instance on the Federation page."
-                        : "Accounts registered on this instance. Search by name, @handle, name#1234, email, ID or IP address. Open a user to edit, suspend or ban them."
-                    }</p>
+                    <p class="muted">Accounts registered on this instance. Search by name, @handle, name#1234, email, ID or IP address. Open a user to edit, suspend or ban them.</p>
                 </div>
             </div>
             ${tabs}
@@ -1801,7 +1790,7 @@ async function renderUsers(view) {
   const canBulk = removalActions().length > 0;
   const requests = latestList(view, results, $("#user-status", view));
   let lastTotal = 0;
-  const query = () => ({ q: usersState.q, filter: usersState.filter, origin: usersState.origin });
+  const query = () => ({ q: usersState.q, filter: usersState.filter });
   const syncBulk = () => {
     const count = usersState.selected.size;
     bulk.hidden = !count;
@@ -1845,7 +1834,7 @@ async function renderUsers(view) {
                                           <tr>
                                               ${canBulk ? html`<th style="width:1%"><input type="checkbox" id="user-select-page" aria-label="Select every user on this page" /></th>` : ""}
                                               <th>User</th>
-                                              <th class="hide-sm">${remote ? "Instance" : "Email"}</th>
+                                              <th class="hide-sm">Email</th>
                                               <th class="hide-sm">Joined</th>
                                               <th>Flags</th>
                                           </tr>
@@ -1862,7 +1851,7 @@ async function renderUsers(view) {
                                                           </div>
                                                       </td>
                                                       <td class="hide-sm">${
-                                                        (remote ? u.federated_instance : u.email) ||
+                                                        u.email ||
                                                         html`
                                                           <span class="muted">—</span>
                                                         `
@@ -1877,15 +1866,9 @@ async function renderUsers(view) {
                               </div>
                               ${pager(total, usersState)}
                           `
-            : usersState.q || usersState.filter !== "all"
-              ? emptyCard("No accounts match this search and filter.", "Clear search and filter")
-              : emptyCard("No users from other instances are stored here. They appear once people here talk to someone on another instance.", "Show local accounts"),
+            : emptyCard("No accounts match this search and filter.", "Clear search and filter"),
         );
         $("[data-empty-action]", results)?.addEventListener("click", () => {
-          if (!usersState.q && usersState.filter === "all") {
-            location.hash = "#/users";
-            return;
-          }
           usersState.q = "";
           usersState.filter = "all";
           usersState.offset = 0;
@@ -2121,7 +2104,7 @@ async function renderIpBans(view, tabs) {
         <div>
           <h1>Users</h1>
           <p class="muted">
-            Addresses that can't register or sign in. Staff set bans here, from an address or through a raid action. A spread ban came from another ban, names it and is lifted together with it. Staff accounts and people from other instances are never caught, and private, loopback and shared addresses can't be banned.
+            Addresses that can't register or sign in. Staff set bans here, from an address or through a raid action. A spread ban came from another ban, names it and is lifted together with it. Staff accounts are never caught, and private, loopback and shared addresses can't be banned.
           </p>
         </div>
       </div>
@@ -2510,8 +2493,7 @@ function userBadges(u) {
   if (u.join_status === "pending") badges.push(html`<span class="badge warn">Waiting for approval</span>`);
   if (u.join_status === "rejected") badges.push(html`<span class="badge danger">Rejected</span>`);
   if (u.tag && u.tag !== "none") badges.push(nameTag(u.tag, u.bot));
-  if (u.federated_instance) badges.push(html`<span class="badge info">From ${u.federated_instance}</span>`);
-  else if (!u.verified && !u.bot)
+  if (!u.verified && !u.bot)
     badges.push(
       html`
         <span class="badge warn">Unverified</span>
@@ -2644,11 +2626,7 @@ async function openUser(id, reload) {
   const access = state.overview.access;
   const isOperator = access.operator;
   const isSelf = u.id === state.me.id;
-  const home = u.federated_instance;
-  const federationLink = isOperator
-    ? html`<a href="#/federation">Federation page</a>`
-    : "Federation page, which needs the operator right";
-  const editsAccount = !home && (access.manage_users || access.support || (access.moderate && !isSelf) || isOperator);
+  const editsAccount = access.manage_users || access.support || (access.moderate && !isSelf) || isOperator;
 
   mount(
     body,
@@ -2663,39 +2641,10 @@ async function openUser(id, reload) {
             </div>
             ${userBadges(u)}
             <div class="row">
-              ${isOperator && !u.bot && !u.system && !home ? html`<a class="btn" href="#/official/${u.id}">Message as Official</a>` : ""}
+              ${isOperator && !u.bot && !u.system ? html`<a class="btn" href="#/official/${u.id}">Message as Official</a>` : ""}
               ${access.audit ? html`<a class="btn ghost" href="#/audit" id="user-audit">Staff actions on this account</a>` : ""}
             </div>
-            ${
-              home
-                ? html`<div class="card stack" id="user-home">
-                      <h3>Account on ${home}</h3>
-                      <p class="muted" style="margin:0">
-                          This person's account lives on ${home}, and this instance keeps a copy because they share a server or a DM with someone here. ${home} owns their profile and
-                          account, so their name, avatar, bio, badges and settings can only change there and are read-only here. You can disable or suspend the copy on this
-                          instance, or block them or ${home} on the ${federationLink}.
-                      </p>
-                      <div class="list">
-                          <div class="list-item"><span class="grow muted">Home instance</span><span>${home}</span></div>
-                          <div class="list-item"><span class="grow muted">Federated ID</span>${u.canonical ? html`<code>${u.canonical}</code>` : html`<span class="muted">Unknown</span>`}</div>
-                          <div class="list-item"><span class="grow muted">Created on ${home}</span><span>${fmtDate(u.created_at)}</span></div>
-                          <div class="list-item"><span class="grow muted">Display name</span><span>${u.global_name || "Not set"}</span></div>
-                          <div class="list-item"><span class="grow muted">Pronouns</span><span>${u.pronouns || "Not set"}</span></div>
-                      </div>
-                      ${u.bio ? html`<p style="margin:0;white-space:pre-wrap">${u.bio}</p>` : ""}
-                  </div>
-                  <form id="shadow-form" class="card stack">
-                      <h3>On this instance</h3>
-                      <label class="toggle"
-                          ><input type="checkbox" name="disabled" ${u.disabled ? raw("checked") : ""} /><span
-                              >Disabled here<span class="hint">Refuses what they send through federation to servers and DMs hosted here, such as messages and reactions. Their account on ${home} is not affected.</span></span
-                          ></label
-                      >
-                      <div class="form-actions"><button class="btn primary" type="submit">Save</button></div>
-                  </form>`
-                : ""
-            }
-            <div class="card" ${home ? raw("hidden") : ""}>
+            <div class="card">
                 <div class="list">
                     <div class="list-item"><span class="grow muted">Email</span><span>${u.email || "—"}</span></div>
                     <div class="list-item"><span class="grow muted">Registered</span><span>${fmtDate(u.created_at)}</span></div>
@@ -2703,7 +2652,7 @@ async function openUser(id, reload) {
                     <div class="list-item"><span class="grow muted">Registration IP</span>${u.registration_ip ? html`<code>${u.registration_ip}</code>` : html`<span class="muted">Not recorded</span>`}</div>
                 </div>
             </div>
-            <section class="card stack" id="ips-card" ${home ? raw("hidden") : ""}>
+            <section class="card stack" id="ips-card">
                 <h3>IP addresses (${fmtNumber(u.ips?.length ?? 0)})</h3>
                 ${
                   u.ips?.length
@@ -2732,7 +2681,7 @@ async function openUser(id, reload) {
                 }
             </section>
             ${
-              !home && (u.join_reason || u.join_status)
+              u.join_reason || u.join_status
                 ? html`<div class="card stack" id="user-join">
                       <h3>Why they want to join</h3>
                       ${u.join_reason ? html`<p class="automod-reason" style="margin:0;white-space:pre-wrap">${u.join_reason}</p>` : html`<p class="muted" style="margin:0">No reason given.</p>`}
@@ -2751,14 +2700,14 @@ async function openUser(id, reload) {
               u.suspended_until && new Date(u.suspended_until) > new Date()
                 ? html`<div class="card stack" id="user-suspension">
                       <h3>Suspended</h3>
-                      <p class="muted" style="margin:0">${home ? "Can't act on this instance" : "Can't sign in"} until ${fmtDate(u.suspended_until)}. The suspension lifts by itself then.</p>
+                      <p class="muted" style="margin:0">Can't sign in until ${fmtDate(u.suspended_until)}. The suspension lifts by itself then.</p>
                       ${access.moderate ? html`<div class="row"><button class="btn small" type="button" data-lift ${isSelf ? raw("disabled") : ""}>Lift suspension now</button></div>` : ""}
                   </div>`
                 : ""
             }
 
             ${
-              home || access.manage_users
+              access.manage_users
                 ? ""
                 : html`<div class="card">
                       <h3>Profile</h3>
@@ -2837,7 +2786,8 @@ async function openUser(id, reload) {
                               : ""
                           }</p>`
                     }
-                </div>`
+                </div>
+                <div class="stack" id="badge-overrides" data-user="${id}"><p class="muted">Loading badge levels…</p></div>`
                     : ""
                 }
                 ${access.support ? html`<label class="toggle"><input type="checkbox" name="verified" ${u.verified ? raw("checked") : ""} /><span>Email verified</span></label>` : ""}
@@ -2877,15 +2827,11 @@ async function openUser(id, reload) {
                 : ""
             }
 
-            ${
-              home
-                ? ""
-                : html`<div class="card stack" id="staff-roles-card"></div>
-                      ${access.reports ? html`<div class="card stack" id="standing-card"></div>` : ""}
-                      <div class="card stack" id="security-card"></div>
-                      <div class="card stack" id="sessions-card"></div>
-                      <div class="card stack" id="invites-card"></div>`
-            }
+            <div class="card stack" id="staff-roles-card"></div>
+            ${access.reports ? html`<div class="card stack" id="standing-card"></div>` : ""}
+            <div class="card stack" id="security-card"></div>
+            <div class="card stack" id="sessions-card"></div>
+            <div class="card stack" id="invites-card"></div>
 
             ${
               u.guilds.length
@@ -2923,16 +2869,7 @@ async function openUser(id, reload) {
                 : ""
             }
             ${
-              home && access.manage_users
-                ? html`<div class="card danger-zone stack">
-                      <h3>Danger zone</h3>
-                      <p class="muted" style="margin:0">
-                          Deletes this instance's copy of the account with its messages, DMs and memberships here. Their account on ${home} stays. The copy comes back if they
-                          talk to someone here again, so block them on the ${federationLink} to keep them out.
-                      </p>
-                      <div><button class="btn danger" id="ban-user" type="button">Delete this copy</button></div>
-                  </div>`
-                : !home && !isSelf && access.manage_users
+              !isSelf && access.manage_users
                 ? html`
                     <div class="card danger-zone stack">
                       <h3>Danger zone</h3>
@@ -2956,12 +2893,11 @@ async function openUser(id, reload) {
         `,
   );
 
-  if (!home)
-    import("/admin/user-customization.js")
-      .then(({ mountUserCustomization }) => {
-        if (body.isConnected && !$("#drawer").hidden) mountUserCustomization(body, u, { api, toast, editable: access.manage_users });
-      })
-      .catch(() => toast("Could not load account customization", "error"));
+  import("/admin/user-customization.js")
+    .then(({ mountUserCustomization }) => {
+      if (body.isConnected && !$("#drawer").hidden) mountUserCustomization(body, u, { api, toast, editable: access.manage_users });
+    })
+    .catch(() => toast("Could not load account customization", "error"));
   $("#user-audit", body)?.addEventListener("click", (event) => {
     event.preventDefault();
     for (const key of Object.keys(staffAuditState)) staffAuditState[key] = "";
@@ -2969,19 +2905,6 @@ async function openUser(id, reload) {
     staffAuditState.target_id = u.id;
     if (location.hash === "#/audit") route();
     else location.hash = "#/audit";
-  });
-  $("#shadow-form", body)?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const saved = await act(
-      $("button[type=submit]", form),
-      () => api(`/admin/users/${u.id}`, { method: "PATCH", body: { disabled: form.disabled.checked } }),
-      form.disabled.checked ? "Disabled on this instance" : "Enabled on this instance",
-    );
-    if (saved && form.isConnected && !$("#drawer").hidden && !form.dataset.dirty) {
-      reload?.();
-      openUser(u.id, reload);
-    }
   });
   for (const button of $$("[data-join]", body))
     button.addEventListener("click", async () => {
@@ -3030,6 +2953,8 @@ async function openUser(id, reload) {
     reload?.();
     openUser(u.id, reload);
   });
+  const badgeOverrides = $("#badge-overrides", body);
+  if (badgeOverrides) mountBadgeOverrides(badgeOverrides);
   $("#user-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = e.currentTarget;
@@ -3085,7 +3010,9 @@ async function openUser(id, reload) {
       $("button[type=submit]", form),
       async () => {
         if (access.manage_users) await imagePatch(form, ["avatar", "banner"], patch);
-        return api(`/admin/users/${u.id}`, { method: "PATCH", body: patch });
+        const updated = await api(`/admin/users/${u.id}`, { method: "PATCH", body: patch });
+        await $("#badge-overrides")?.saveBadgeOverrides?.();
+        return updated;
       },
       "User updated",
     );
@@ -3334,22 +3261,20 @@ async function openUser(id, reload) {
       }
     });
   };
-  if (!home) {
-    if (standing) renderStanding();
-    renderUserStaffRoles(u);
-    renderUserSecurity(u);
-    renderUserSessions(u);
-    renderUserInvites(u);
-  }
+  if (standing) renderStanding();
+  renderUserStaffRoles(u);
+  renderUserSecurity(u);
+  renderUserSessions(u);
+  renderUserInvites(u);
   for (const button of $$("[data-open-ip]", body)) button.addEventListener("click", () => openIp(button.dataset.openIp, reload));
 
   $("#ban-persist")?.addEventListener("change", (e) => {
     $("#ban-user").textContent = e.target.checked ? "Delete & ban user" : "Delete user";
   });
   $("#ban-user")?.addEventListener("click", async (e) => {
-    const ban = !home && $("#ban-persist").checked;
+    const ban = $("#ban-persist").checked;
     if (
-      !await confirmDialog({ title: home ? `Delete this copy of ${userName(u)}?` : `Delete ${userName(u)}${ban ? " and ban them" : ""}?`, message: home ? `Their messages, DMs and memberships here go with it. Their account on ${home} stays.` : `The account, its messages, DMs and memberships are deleted and owned servers go to the next-highest member.${ban ? " They can't register again." : ""} This can't be undone.`, confirm: home ? "Delete copy" : ban ? "Delete and ban" : "Delete user" })
+      !await confirmDialog({ title: `Delete ${userName(u)}${ban ? " and ban them" : ""}?`, message: `The account, its messages, DMs and memberships are deleted and owned servers go to the next-highest member.${ban ? " They can't register again." : ""} This can't be undone.`, confirm: ban ? "Delete and ban" : "Delete user" })
     )
       return;
     const reason =
@@ -4070,7 +3995,6 @@ const REPORT_TYPES = {
   stage_channel: "Stage",
   application: "App",
   widget: "Profile widget",
-  federated_automod: "Automod on another instance",
 };
 const REPORT_STATUSES = [
   ["open", "Open", "warn"],
@@ -4336,9 +4260,9 @@ function openReport(r, reload) {
             ${
               snap.context?.length
                 ? html`<details class="card report-context" open>
-                          <summary><h3 style="display:inline">Conversation around it</h3> <span class="muted">${fmtNumber(snap.context.length)} messages, saved when it was reported</span></summary>
+                          <summary><h3 style="display:inline">${snap.content !== undefined ? "Conversation around it" : "Their conversation with the reporter"}</h3> <span class="muted">${fmtNumber(snap.context.length)} ${snap.content !== undefined ? "messages, saved when it was reported" : "latest messages, saved when they were reported"}</span></summary>
                           <div class="report-context-list">
-                              ${[...snap.context.filter((m) => !m.after), { reported: true }, ...snap.context.filter((m) => m.after)].map((m) =>
+                              ${(snap.content !== undefined ? [...snap.context.filter((m) => !m.after), { reported: true }, ...snap.context.filter((m) => m.after)] : snap.context).map((m) =>
                                 m.reported
                                   ? html`<div class="report-context-item reported">
                                             <strong>${snap.author ? userName(snap.author) : "Reported message"}</strong>
@@ -4836,6 +4760,105 @@ const readAsDataUrl = (file) =>
     reader.readAsDataURL(file);
   });
 
+const RARITY_NAMES = { 1: "Common", 2: "Rare", 3: "Epic", 5: "Mythic" };
+
+async function mountBadgeOverrides(container) {
+  const id = container.dataset.user;
+  const draw = (data) => {
+    mount(
+      container,
+      html`
+                <h3>Badge levels and rarity</h3>
+                <label
+                    >Features badge (Nitro)<span class="hint">Starts at the chosen level and keeps levelling up the longer it's had, like Discord's.</span>
+                    <select name="nitro_tier">
+                        <option value="">No Features badge</option>
+                        ${data.nitro_tiers.map(
+                          (tier) =>
+                            html`<option value="${tier.key}" ${data.nitro_tier === tier.key ? raw("selected") : ""}>${tier.name}${tier.milestone_text ? ` (${tier.milestone_text})` : ""}</option>`,
+                        )}
+                    </select>
+                </label>
+                <div class="stack" style="gap:6px">
+                    <span class="muted">Levels. Pick one to set the badge to it; it keeps levelling up from there. Real progress removes the override.</span>
+                    <div class="badge-rarity-grid">
+                        ${data.levels.map(
+                          (level) =>
+                            html`<span>${level.name}${level.overridden ? html` <span class="muted">(set by staff)</span>` : ""}</span
+                                ><select data-level="${level.id}" aria-label="Level of ${level.name}">
+                                    <option value="">Real progress${!level.overridden && level.current ? ` (${level.tiers.find((tier) => tier.key === level.current)?.name})` : ""}</option>
+                                    ${level.tiers.map(
+                                      (tier) =>
+                                        html`<option value="${tier.key}" ${level.overridden && level.current === tier.key ? raw("selected") : ""}>${tier.name}${tier.milestone_text ? ` (${tier.milestone_text})` : ""}</option>`,
+                                    )}
+                                </select>`,
+                        )}
+                    </div>
+                </div>
+                ${
+                  data.badges.length
+                    ? html`<div class="stack" style="gap:6px">
+                              <span class="muted">Rarity shown in the badge directory</span>
+                              <div class="badge-rarity-grid">
+                              ${data.badges.map(
+                                (badge) =>
+                                  html`<span>${badge.name}</span
+                                      ><select data-rarity="${badge.id}" aria-label="Rarity of ${badge.name}">
+                                          <option value="">Default</option>
+                                          ${data.rarities.map(
+                                            (value) =>
+                                              html`<option value="${value}" ${String(data.rarity[badge.id] ?? "") === String(value) ? raw("selected") : ""}>${RARITY_NAMES[value]}</option>`,
+                                          )}
+                                      </select>`,
+                              )}
+                              </div>
+                          </div>`
+                    : html`<p class="muted" style="margin:0">This user has no badges yet.</p>`
+                }
+                <div class="row"><button class="btn small" type="button" data-save-badge-overrides>Save badge levels</button></div>
+            `,
+    );
+    const changes = () => {
+      const nitro = $("select[name=nitro_tier]", container).value || null;
+      const rarity = Object.fromEntries(
+        $$("[data-rarity]", container)
+          .map((select) => [select.dataset.rarity, select.value ? Number(select.value) : null])
+          .filter(([badge, value]) => (data.rarity[badge] ?? null) !== value),
+      );
+      const levels = Object.fromEntries(
+        $$("[data-level]", container)
+          .map((select) => {
+            const level = data.levels.find((entry) => entry.id === select.dataset.level);
+            if (!select.value) return level.overridden ? [level.id, null] : null;
+            return level.overridden && level.current === select.value ? null : [level.id, select.value];
+          })
+          .filter(Boolean),
+      );
+      return {
+        ...(nitro !== data.nitro_tier ? { nitro_tier: nitro } : {}),
+        ...(Object.keys(rarity).length ? { rarity } : {}),
+        ...(Object.keys(levels).length ? { levels } : {}),
+      };
+    };
+    container.saveBadgeOverrides = async () => {
+      const body = changes();
+      if (!Object.keys(body).length) return null;
+      const next = await api(`/admin/users/${id}/badge-overrides`, { method: "PATCH", body });
+      draw(next);
+      return next;
+    };
+    $("[data-save-badge-overrides]", container).addEventListener("click", async (event) => {
+      if (!Object.keys(changes()).length) return toast("Nothing changed");
+      await act(event.currentTarget, () => container.saveBadgeOverrides(), "Badge levels saved");
+    });
+  };
+  try {
+    draw(await api(`/admin/users/${id}/badge-overrides`));
+  } catch (e) {
+    mount(container, html`<p class="form-error">${e.message}</p>`);
+  }
+}
+
 async function renderBadges(view) {
   const badges = await api("/admin/badges");
   mount(
@@ -4911,6 +4934,18 @@ function openBadge(badge, refresh) {
                 </div>
                 <label>Tooltip text<input name="description" required maxlength="120" value="${badge?.description ?? ""}" placeholder="Early Tester" /></label>
                 <label
+                    >Unlocked by<span class="hint">Optional. Shown under the badge in the badge directory. {instance} becomes the instance name.</span
+                    ><input name="details" maxlength="300" value="${badge?.details ?? ""}" placeholder="Unlocked by being a {instance} Beta Tester"
+                /></label>
+                <label
+                    >Rarity<span class="hint">Shown as a pill in the badge directory. Common shows no pill.</span>
+                    <select name="rarity">
+                        ${Object.entries(RARITY_NAMES).map(
+                          ([value, name]) => html`<option value="${value}" ${String(badge?.rarity ?? 1) === value ? raw("selected") : ""}>${name}</option>`,
+                        )}
+                    </select>
+                </label>
+                <label
                     >Link<span class="hint">Optional. Opens when the badge is clicked.</span><input name="link" type="url" maxlength="2048" value="${badge?.link ?? ""}" placeholder="https://…"
                 /></label>
                 <div class="stack">
@@ -4985,7 +5020,7 @@ function openBadge(badge, refresh) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!icon && !iconData) return toast("Pick a preset or upload an icon first.", "error");
-    const payload = { description: form.description.value, link: form.link.value || null };
+    const payload = { description: form.description.value, link: form.link.value || null, rarity: Number(form.rarity.value), details: form.details.value || null };
     if (iconData) payload.icon_data = iconData;
     else if (icon !== badge?.icon) payload.icon = icon;
     const done = await act(
@@ -6767,7 +6802,7 @@ function openSticker(pack, sticker, refresh) {
 
 /* ---------- guilds ---------- */
 
-const guildsState = { q: "", origin: "local", sort: "newest", offset: 0, limit: 50 };
+const guildsState = { q: "", sort: "newest", offset: 0, limit: 50 };
 const GUILD_SORTS = [
   ["newest", "Newest first"],
   ["oldest", "Oldest first"],
@@ -6776,27 +6811,14 @@ const GUILD_SORTS = [
 ];
 
 async function renderGuilds(view) {
-  const remote = location.hash.split("/")[2] === "remote";
-  if (guildsState.origin !== (remote ? "remote" : "local")) {
-    guildsState.origin = remote ? "remote" : "local";
-    guildsState.offset = 0;
-  }
   mount(
     view,
     html`
             <div class="page-head">
                 <div>
                     <h1>Servers</h1>
-                    <p class="muted">${
-                      remote
-                        ? "Copies of servers hosted on other instances that people here joined. Their host instance owns their settings, channels and roles. Block a server or its instance on the Federation page."
-                        : "Every server hosted on this instance. Click one to edit, transfer or delete it."
-                    }</p>
+                    <p class="muted">Every server hosted on this instance. Click one to edit, transfer or delete it.</p>
                 </div>
-            </div>
-            <div class="row view-switch" role="navigation" aria-label="Servers views">
-                <a class="btn small ${remote ? "" : "primary"}" href="#/guilds" ${remote ? "" : raw('aria-current="page"')}>Servers</a>
-                <a class="btn small ${remote ? "primary" : ""}" href="#/guilds/remote" ${remote ? raw('aria-current="page"') : ""}>Other instances</a>
             </div>
             <div class="row" style="margin-bottom:12px">
                 <label class="grow list-search"
@@ -6814,7 +6836,6 @@ async function renderGuilds(view) {
   const load = async () => {
     const params = new URLSearchParams({
       q: guildsState.q,
-      origin: guildsState.origin,
       sort: guildsState.sort,
       limit: guildsState.limit,
     });
@@ -6847,9 +6868,7 @@ async function renderGuilds(view) {
                                                               <div>
                                                                   <strong class="row" style="gap:6px">${g.name}${g.tag ? tagChip(g.id, g.tag.tag, g.tag.badge_hash) : ""}</strong>
                                                                   ${
-                                                                    g.federated_instance
-                                                                      ? html`<span class="muted">Hosted on ${g.federated_instance}</span>`
-                                                                      : g.features.length
+                                                                    g.features.length
                                                                         ? html`<span class="muted">${g.features.slice(0, 3).join(", ")}${g.features.length > 3 ? "…" : ""}</span>`
                                                                         : ""
                                                                   }
@@ -6877,14 +6896,11 @@ async function renderGuilds(view) {
                           `
             : guildsState.q
               ? emptyCard("No servers match this search. Search by name or ID.", "Clear search")
-              : remote
-                ? emptyCard("No servers from other instances are stored here. They appear once people here join a server on another instance.", "Show local servers")
-                : emptyCard("No servers exist on this instance yet. People create them from the client.", "Open the client"),
+              : emptyCard("No servers exist on this instance yet. People create them from the client.", "Open the client"),
         );
         $("[data-empty-action]", results)?.addEventListener("click", () => {
           if (!guildsState.q) {
-            if (remote) location.hash = "#/guilds";
-            else location.href = "/app";
+            location.href = "/app";
             return;
           }
           guildsState.q = "";
@@ -6932,62 +6948,6 @@ async function openGuild(id, reload, openSection = "") {
     return mount(body, html`<p class="form-error">${e.message}</p>`);
   }
   if (!body.isConnected || $("#drawer").hidden) return;
-  if (g.federated_instance) {
-    const host = g.federated_instance;
-    mount(
-      body,
-      html`
-        <div class="ident">
-          ${guildIcon(g, "large")}
-          <div>
-            <h2>${g.name}</h2>
-            <code class="muted">${g.id}</code>
-          </div>
-        </div>
-        <div class="card stack" id="guild-home">
-          <h3>Server on ${host}</h3>
-          <p class="muted" style="margin:0">
-            This server is hosted on ${host}, and this instance keeps a copy because people here joined it. ${host} owns its name, icon, settings, channels and roles,
-            so they can only change there and are read-only here. To keep people here out of it, block the server or ${host} on the
-            ${state.overview.access.operator ? html`<a href="#/federation">Federation page</a>` : "Federation page, which needs the operator right"}.
-          </p>
-          <div class="list">
-            <div class="list-item"><span class="grow muted">Host instance</span><span>${host}</span></div>
-            <div class="list-item"><span class="grow muted">Federated ID</span>${g.canonical ? html`<code>${g.canonical}</code>` : html`<span class="muted">Unknown</span>`}</div>
-            <div class="list-item">
-              <span class="grow muted">Owner</span>
-              ${g.owner ? html`<span class="ident">${avatar(g.owner)}<span>${userName(g.owner)}</span></span>` : "None"}
-              ${g.owner && state.overview.access.users ? html`<button class="btn small ghost" id="open-owner" type="button">Open</button>` : ""}
-            </div>
-            <div class="list-item"><span class="grow muted">Members known here</span><span>${fmtNumber(g.member_count)}</span></div>
-            <div class="list-item"><span class="grow muted">Channels</span><span>${fmtNumber(g.channel_count)}</span></div>
-            <div class="list-item"><span class="grow muted">Description</span><span>${g.description || "Not set"}</span></div>
-          </div>
-        </div>
-        <div class="card danger-zone stack">
-          <h3>Danger zone</h3>
-          <p class="muted" style="margin:0">
-            Deletes this instance's copy of the server with its channels and messages here. The server itself stays on ${host}.
-          </p>
-          <div><button class="btn danger" id="guild-delete" type="button">Delete this copy</button></div>
-        </div>
-      `,
-    );
-    $("#open-owner", body)?.addEventListener("click", () => openUser(g.owner.id));
-    $("#guild-delete", body).addEventListener("click", async (e) => {
-      if (!await confirmDialog({ title: `Delete this copy of ${g.name}?`, message: `The server stays on ${host}. Only this instance's copy and its messages here are removed.`, confirm: "Delete copy" })) return;
-      const done = await act(
-        e.currentTarget,
-        () => api(`/admin/guilds/${g.id}`, { method: "DELETE" }),
-        `This instance's copy of ${g.name} was deleted`,
-      );
-      if (done !== undefined) {
-        closeDrawer();
-        reload?.();
-      }
-    });
-    return;
-  }
   const features = new Set(g.features);
 
   const renderFeatures = () =>
@@ -7306,7 +7266,7 @@ async function openGuild(id, reload, openSection = "") {
   fetch("/clan-badges/preview", { cache: "no-cache" })
     .then((r) => r.json())
     .then((list) => {
-      // grouped by pack, in the order the packs first appear: discord's free badges and packs, then the instance's own
+      // grouped by pack, in the order the packs first appear: discord's free badges, then its packs
       const packs = new Map();
       for (const b of list)
         packs.set(b.pack ?? "Discord", [...(packs.get(b.pack ?? "Discord") ?? []), b]);
@@ -7320,9 +7280,9 @@ async function openGuild(id, reload, openSection = "") {
                                     (b) =>
                                       html`<button
                                               type="button"
-                                              class="badge-option ${b.staff_only ? "staff-only" : ""}"
+                                              class="badge-option"
                                               data-badge="${b.id}"
-                                              title="${b.name.toLowerCase().replace(/_/g, " ")}${b.staff_only ? " (staff only: server owners can't pick it)" : ""}"
+                                              title="${b.name.toLowerCase().replace(/_/g, " ")}"
                                           >
                                               <img src="${previewUrl(b.id, 48)}" alt="${b.name}" />
                                           </button>`,
@@ -7330,7 +7290,7 @@ async function openGuild(id, reload, openSection = "") {
             )
           : html`
               <span class="muted"
-                >Badge artwork isn't available. Run <code>npm run generate:client</code> on the server.</span
+                >Badge artwork isn't available. Run <code>bun run generate:client</code> on the server.</span
               >
             `,
       );
@@ -7992,6 +7952,7 @@ async function renderStatus(view) {
                                           <div class="list-item" data-component="${c.id}">
                                               <div class="grow">
                                                   <strong>${c.name}</strong>
+                                                  ${c.group_id ? html`<div class="muted">In ${components.find((g) => g.id === c.group_id)?.name ?? "a removed group"}</div>` : ""}
                                                   ${c.description ? html`<div class="muted">${c.description}</div>` : ""}
                                               </div>
                                               <select data-status style="width:auto" aria-label="Status of ${c.name}">
@@ -8083,6 +8044,14 @@ async function renderStatus(view) {
                     <label>Name<input name="name" value="${component.name}" required maxlength="100" /></label>
                     <label>Description<textarea name="description" maxlength="500">${component.description ?? ""}</textarea></label>
                     <label>Position<span class="hint">Lower numbers are listed first.</span><input name="position" type="number" step="1" min="-2147483648" max="2147483647" value="${component.position}" /></label>
+                    <label>Group<span class="hint">Components in a group are listed under it and fold away on the public page. The group shows the worst status of its components.</span>
+                        <select name="group_id" ${components.some((c) => c.group_id === id) ? raw("disabled") : ""}>
+                            <option value="">No group</option>
+                            ${components
+                              .filter((c) => c.id !== id && !c.group_id)
+                              .map((c) => html`<option value="${c.id}" ${component.group_id === c.id ? raw("selected") : ""}>${c.name}</option>`)}
+                        </select>
+                    </label>
                     <div class="form-actions"><button class="btn primary" type="submit">Save component</button></div>
                 </form>`,
       );
@@ -8099,6 +8068,7 @@ async function renderStatus(view) {
                 name: f.name.value,
                 description: f.description.value || null,
                 position: Number(f.position.value) || 0,
+                ...(f.group_id.disabled ? {} : { group_id: f.group_id.value || null }),
               },
             }),
           "Component saved",

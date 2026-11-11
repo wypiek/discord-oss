@@ -17,21 +17,17 @@ export interface JobResult {
 }
 
 const loadJobs = async (): Promise<Job[]> => {
-    const [util, apiUtil, database, rateLimits, instance, discovery, announcements, federation, federationEvents, attachmentFiles, imageFiles, cloudUploads] = await Promise.all([
-        import("@spacebar/util"),
+    const [apiUtil, database, rateLimits, instance, discovery, announcements, attachmentFiles, imageFiles, cloudUploads] = await Promise.all([
         import("@spacebar/api/util"),
         import("@spacebar/database"),
         import("@spacebar/api/middlewares/RateLimit"),
         import("@spacebar/api/util/handlers/Instance"),
         import("@spacebar/api/util/handlers/Discovery"),
         import("@spacebar/api/util/utility/announcementDelivery"),
-        import("@spacebar/api/util/utility/federation"),
-        import("@spacebar/api/util/utility/federationEvents"),
         import("@spacebar/api/util/handlers/AttachmentFiles"),
         import("@spacebar/api/util/handlers/ImageFiles"),
         import("@spacebar/api/util/handlers/CloudUploads"),
     ]);
-    const federating = () => util.Config.get().federation.enabled && util.FederationKey.ready;
     return [
         { name: "scheduled-messages", everyMinutes: 1, slice: 10_000, run: ({ until }) => apiUtil.sendDueScheduledMessages(until) },
         { name: "scheduled-events", everyMinutes: 1, slice: 5_000, run: () => database.ScheduledEvents.sweep() },
@@ -42,23 +38,9 @@ const loadJobs = async (): Promise<Job[]> => {
         { name: "rate-limit-prune", everyMinutes: 1, slice: 5_000, run: () => rateLimits.pruneRateLimits() },
         { name: "attachment-files", everyMinutes: 1, slice: 10_000, run: ({ until }) => attachmentFiles.sweepAttachmentFiles(until) },
         { name: "image-files", everyMinutes: 1, slice: 10_000, run: ({ until }) => imageFiles.sweepImageFiles(until) },
-        {
-            name: "federation-delivery",
-            everyMinutes: 1,
-            slice: 10_000,
-            run: async ({ until }) => (federating() ? federationEvents.deliverQueuedEvents(until) : "federation is off or has no key"),
-        },
         { name: "temporary-sessions", everyMinutes: 5, slice: 5_000, run: () => instance.pruneTemporarySessions() },
         { name: "cloud-uploads", everyMinutes: 5, slice: 10_000, run: ({ until }) => cloudUploads.sweepExpiredCloudUploads(Date.now(), until) },
-        { name: "federation-registry", everyMinutes: 5, slice: 20_000, run: async () => (federating() ? federation.runFederationCycle() : "federation is off or has no key") },
         { name: "discovery-index", everyMinutes: 10, slice: 15_000, run: ({ until }) => discovery.reindexDiscovery(until) },
-        { name: "federation-presence", everyMinutes: 10, slice: 10_000, run: async () => (federating() ? federationEvents.refreshPresences() : "federation is off or has no key") },
-        {
-            name: "federation-inbox-prune",
-            everyMinutes: 60,
-            slice: 5_000,
-            run: async () => (federating() ? federationEvents.pruneReceivedEvents() : "federation is off or has no key"),
-        },
         { name: "insight-rollups", everyMinutes: 60, slice: 60_000, run: () => database.GuildInsights.rollupPending() },
     ];
 };

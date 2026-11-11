@@ -7,7 +7,6 @@ export interface PolicyAccount {
     bot?: boolean | null;
     verified?: boolean | null;
     rights?: string | bigint | number | null;
-    federated_instance?: string | null;
     created_at?: Date | string | null;
     staff?: boolean;
 }
@@ -18,9 +17,8 @@ export const isDryRun = (key: AutomodPolicyKey) => rulePolicy(key).dryRun;
 
 export const ruleSwitchOn = (key: AutomodPolicyKey) => rulePolicy(key).enabled;
 
-export function createdAtOf(account: Pick<PolicyAccount, "id" | "federated_instance" | "created_at">) {
-    const created = account.federated_instance && account.created_at ? new Date(account.created_at).getTime() : Number.NaN;
-    return Number.isNaN(created) ? Snowflake.deconstruct(account.id).timestamp : created;
+export function createdAtOf(account: Pick<PolicyAccount, "id">) {
+    return Snowflake.deconstruct(account.id).timestamp;
 }
 
 export async function exemptionFrom(key: AutomodPolicyKey, account: PolicyAccount | null | undefined, guild_id?: string | null): Promise<PolicyExemption | null> {
@@ -34,7 +32,6 @@ export async function exemptionFrom(key: AutomodPolicyKey, account: PolicyAccoun
                   user_id: account.id,
                   bot: account.bot,
                   verified: account.verified,
-                  federated: !!account.federated_instance,
                   staff,
                   createdAt: policy.exemptAccountAgeDays > 0 ? createdAtOf(account) : null,
               }

@@ -25,12 +25,10 @@ const signer = crypto.generateKeyPairSync("ed25519");
 const signingKey = signer.publicKey.export({ format: "jwk" }).x;
 const deviceId = crypto.createHash("sha256").update(Buffer.from(signingKey, "base64url")).digest().subarray(0, 16).toString("base64url");
 
-const canonical = { [channelId]: "@1000@host.test", [authorId]: "@777@home.test", [messageId]: "@3000@host.test", 5000: "@5000@host.test" };
-
 const seal = (payload, contentKey = crypto.randomBytes(32), v = 1, mid = undefined, mentions = undefined) => {
     const iv = crypto.randomBytes(12);
     const bind = mid ? `m:${mid}` : `n:${nonce}`;
-    const [channel, author, reader] = v === 2 ? [canonical[channelId], canonical[authorId], canonical[5000]] : [channelId, authorId, "5000"];
+    const [channel, author, reader] = [channelId, authorId, "5000"];
     const cipher = crypto.createCipheriv("aes-256-gcm", contentKey, iv);
     cipher.setAAD(Buffer.from(`fosscord-e2ee/v1/msg\n${channel}\n${author}\n${deviceId}\n${bind}`));
     const ct = Buffer.concat([cipher.update(JSON.stringify(payload)), cipher.final(), cipher.getAuthTag()]).toString("base64url");
@@ -65,7 +63,6 @@ const harness = (
     envelope,
     device = { id: deviceId, user_id: authorId, signing_key: signingKey, revoked_at: null, status: "active", prekey_id: 1 },
     context = { before: [], after: [] },
-    remote = null,
 ) => {
     const saved = [];
     const message = {
@@ -110,15 +107,12 @@ const harness = (
         "../handlers/ApplicationWidgets": { snapshotWidget: async () => null },
         "./reportMenus": { getReportingMenu: () => ({ nodes: {} }) },
         "./instanceAutomod": { automodVerifiedReport: async () => undefined },
-        "./federationIds": { canonicalOf: async (id) => canonical[id], localReferences: async (text) => text },
         "./e2ee": load("src/api/util/utility/e2ee.ts", {
             "@spacebar/database": { E2eeDevice: { find: async ({ where }) => (device && where.user_id.includes(device.user_id) ? [device] : []) } },
             "@spacebar/util": { ApiError: class {}, Config: { get: () => ({}) } },
             "@spacebar/schemas": { ChannelType: {}, MessageType: {} },
             "../../middlewares/RateLimit": () => () => {},
             typeorm: { In: (v) => v, IsNull: () => null, Not: (v) => v },
-            "./federationIds": { canonicalOf: async (id) => canonical[id], localIds: async () => new Map() },
-            "./federationE2ee": { remoteE2eeKeys: async () => new Map(remote ? [[authorId, remote]] : []) },
         }),
     });
     return (key, contextKeys) =>
@@ -174,20 +168,9 @@ test("reports without a key, with a wrong key or with a forged signature stay un
     assert.equal((await harness(envelope, null)(contentKey.toString("base64url"))).encrypted.verified, false);
 });
 
-test("a version 2 envelope from a user of another instance verifies with canonical ids and the remote device", async () => {
-    const remote = { identity_key: null, devices: [{ device_id: deviceId, signing_key: signingKey, status: "active", prekey: { id: 1 }, revoked_at: null }] };
-    const { envelope, contentKey } = seal({ content: "words from another instance" }, undefined, 2, canonical[messageId]);
-    const snapshot = await harness(envelope, null, undefined, remote)(contentKey.toString("base64url"));
-    assert.equal(snapshot.encrypted.verified, true, snapshot.encrypted.reason);
-    assert.equal(snapshot.content, "words from another instance");
+test("an envelope of any version other than 1 stays unverified", async () => {
     const local = seal({ content: "bound to local ids" }, undefined, 1, messageId);
-    const asV2 = { ...local.envelope, v: 2 };
-    assert.equal((await harness(asV2, null, undefined, remote)(local.contentKey.toString("base64url"))).encrypted.verified, false);
-    const moved = seal({ content: "edit of another message" }, undefined, 2, "@3999@host.test");
-    const movedSnapshot = await harness(moved.envelope, null, undefined, remote)(moved.contentKey.toString("base64url"));
-    assert.equal(movedSnapshot.encrypted.verified, false);
-    assert.match(movedSnapshot.encrypted.reason, /another message/);
-    assert.equal((await harness(envelope, null)(contentKey.toString("base64url"))).encrypted.verified, false);
+    assert.equal((await harness({ ...local.envelope, v: 2 })(local.contentKey.toString("base64url"))).encrypted.verified, false);
 });
 
 test("context messages are saved around the report and only open with their own key", async () => {
@@ -228,4 +211,103 @@ test("context messages are saved around the report and only open with their own 
             ["3001", "a plain reply", null, true],
         ],
     );
+});
+
+const userReport = ({
+    messages,
+    recipients,
+    former = [],
+    device = { id: deviceId, user_id: authorId, signing_key: signingKey, revoked_at: null, status: "active", prekey_id: 1 },
+}) => {
+    const saved = [];
+    const { createReport } = load("src/api/util/utility/reports.ts", {
+        "lambert-server/HTTPError": { HTTPError: class extends Error {} },
+        typeorm: { In: (v) => v, MoreThan: (v) => v, LessThan: (v) => v, IsNull: () => null },
+        "@spacebar/database": {
+            Report: {
+                count: async () => 0,
+                findOne: async () => null,
+                create: (data) => ({
+                    ...data,
+                    save() {
+                        saved.push(this);
+                        return this;
+                    },
+                }),
+            },
+            Message: { find: async ({ where, take }) => (where.channel_id === channelId ? [...messages].reverse().slice(0, take) : []) },
+            User: { findOne: async ({ where }) => ({ id: where.id, username: "sender" }) },
+            Recipient: { exists: async ({ where }) => where.channel_id === channelId && recipients.includes(where.user_id) },
+            FormerRecipient: { exists: async ({ where }) => where.channel_id === channelId && former.includes(where.user_id) },
+            Channel: { findOne: async ({ where }) => (where.id === channelId ? { id: channelId, type: 1 } : null) },
+            Guild: {},
+        },
+        "@spacebar/schemas": { ReportMenuType: { MESSAGE: "message", USER: "user", WIDGET: "widget" }, ChannelType: { DM: 1, GROUP_DM: 3 } },
+        "@spacebar/util": {
+            DiscordApiErrors: { UNKNOWN_USER: new Error("unknown user") },
+            getPermission: async () => ({ has: () => true }),
+            getUrlSignature: () => ({}),
+            NewUrlSignatureData: class {},
+        },
+        "../handlers/ApplicationWidgets": { snapshotWidget: async () => null },
+        "./reportMenus": { getReportingMenu: () => ({ nodes: {} }) },
+        "./instanceAutomod": { automodVerifiedReport: async () => undefined },
+        "./federationIds": { canonicalOf: async (id) => canonical[id], localReferences: async (text) => text },
+        "./e2ee": load("src/api/util/utility/e2ee.ts", {
+            "@spacebar/database": { E2eeDevice: { find: async ({ where }) => (device && where.user_id.includes(device.user_id) ? [device] : []) } },
+            "@spacebar/util": { ApiError: class {}, Config: { get: () => ({}) } },
+            "@spacebar/schemas": { ChannelType: {}, MessageType: {} },
+            "../../middlewares/RateLimit": () => () => {},
+            typeorm: { In: (v) => v, IsNull: () => null, Not: (v) => v },
+            "./federationIds": { canonicalOf: async (id) => canonical[id], localIds: async () => new Map() },
+            "./federationE2ee": { remoteE2eeKeys: async () => new Map() },
+        }),
+    });
+    return (channel, keys) =>
+        createReport("user", { name: "user", breadcrumbs: [1], user_id: authorId, ...(channel && { channel_id: channel }), ...(keys && { e2ee_context_keys: keys }) }, "5000", {
+            root_node_id: 1,
+            nodes: {},
+        }).then(() => saved[0]);
+};
+
+const dmEntry = (id, envelope) => ({
+    id,
+    channel_id: channelId,
+    author_id: authorId,
+    author: { id: authorId, username: "sender" },
+    content: "🔒 Encrypted message",
+    nonce,
+    encrypted: envelope,
+    attachments: [],
+    embeds: [],
+    timestamp: new Date(),
+});
+
+test("a user report from an encrypted DM gives staff the verified conversation the reporter shared", async () => {
+    const first = seal({ content: "the first thing they said" });
+    const second = seal({ content: "a second thing they said" });
+    const messages = [dmEntry("2001", first.envelope), dmEntry("2002", second.envelope)];
+    const report = await userReport({ messages, recipients: ["5000", authorId] })(channelId, { 2001: first.contentKey.toString("base64url") });
+    assert.equal(report.channel_id, channelId);
+    assert.equal(report.reported_user_id, authorId);
+    assert.deepEqual(
+        report.snapshot.context.map((m) => [m.id, m.content, m.encrypted.verified]),
+        [
+            ["2001", "the first thing they said", true],
+            ["2002", "", false],
+        ],
+    );
+    const left = await userReport({ messages, recipients: ["5000"], former: [authorId] })(channelId, {});
+    assert.equal(left.snapshot.context.length, 2, "a member who left can still be reported with the conversation");
+});
+
+test("a user report only saves a conversation the reporter and the reported user share", async () => {
+    const messages = [dmEntry("2001", seal({ content: "hi" }).envelope)];
+    for (const recipients of [[authorId], ["5000"]]) {
+        const report = await userReport({ messages, recipients })(channelId, {});
+        assert.equal(report.snapshot.context, undefined);
+        assert.equal(report.channel_id, undefined);
+    }
+    assert.equal((await userReport({ messages, recipients: ["5000", authorId] })("999", {})).snapshot.context, undefined, "another channel");
+    assert.equal((await userReport({ messages, recipients: ["5000", authorId] })(undefined, {})).snapshot.context, undefined, "no channel");
 });

@@ -1,4 +1,5 @@
 import { GuildIdList } from "../../uncategorised/GuildCappedLists";
+import { GuildBadgeType } from "./GuildProfileResponse";
 
 export interface GuildProfileTrait {
     /**
@@ -101,7 +102,7 @@ export interface GuildProfileModifySchema {
      * @maxLength 32
      */
     tag?: string | null;
-    badge?: number | null;
+    badge?: GuildBadgeType | null;
     /**
      * @maxLength 16
      */

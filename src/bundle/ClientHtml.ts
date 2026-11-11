@@ -1,5 +1,4 @@
 import { APP_THEME_COLOR } from "../util/util/BrandMarkup";
-import { CUSTOM_CLAN_BADGE_PACK, CUSTOM_CLAN_BADGES, clanBadgeColorCount, clanBadgePack } from "../util/util/ClanBadges";
 
 export const GLOBAL_ENV_SCRIPT = /<script[^>]*>\s*window\.GLOBAL_ENV\s*=([\s\S]*?)<\/script>/;
 
@@ -40,7 +39,6 @@ export interface ClientJoinReason {
 
 export interface ClientEnvSettings {
     instanceName: string;
-    instanceId: string | null;
     activityApplicationHost: string | null;
     loadingTips: string[] | null;
     loadingSvg: string | null;
@@ -91,7 +89,6 @@ export const clientEnvScript = (base: Record<string, unknown>, settings: ClientE
         LOADING_TIPS: ${json(settings.loadingTips)},
         LOADING_SVG: ${json(settings.loadingSvg)},
         INSTANCE_NAME: ${json(settings.instanceName)},
-        INSTANCE_ID: ${json(settings.instanceId)},
         INSTANCE_ICON: ${json(settings.icon)},
         INSTANCE_LOGO: ${json(settings.logo)},
         HELP_URL: ${json(settings.helpUrl)},
@@ -101,8 +98,6 @@ export const clientEnvScript = (base: Record<string, unknown>, settings: ClientE
         GROUP_DM_RECIPIENT_LIMIT: ${json(settings.maxGroupDmRecipients)},
         REGISTER_EMAIL_REQUIRED: ${json(settings.emailRequired === true)},
         REGISTER_JOIN_REASON: ${json(settings.joinReason)},
-        CUSTOM_CLAN_BADGE_PACK: ${json(CUSTOM_CLAN_BADGE_PACK)},
-        CUSTOM_CLAN_BADGES: ${json(CUSTOM_CLAN_BADGES.map((badge) => ({ ...badge, pack: clanBadgePack(badge), colors: clanBadgeColorCount(badge) })))},
     });
 })();
 </script>`;
@@ -123,7 +118,7 @@ export const prepareClientHtml = (source: string) =>
         .replace(/<link[^>]*rel="(?:shortcut )?icon"[^>]*>/g, "")
         .replace(
             "</body>",
-            `<footer id="meowcord-credit" hidden>this instance is running <a href="https://github.com/meowcorded/meowcord">meowcord</a>!</footer><script src="/assets/meowcord-credit.js"></script></body>`,
+            `<footer id="meowcord-credit" hidden>this instance is running <a href="https://github.com/meowcorded/meowcord">Discord OSS</a>!</footer><script src="/assets/meowcord-credit.js"></script></body>`,
         );
 
 export const escapeTitle = (name: string) => name.replace(/[<>&"]/g, (c) => `&#${c.charCodeAt(0)};`);

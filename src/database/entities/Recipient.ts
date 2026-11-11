@@ -46,9 +46,6 @@ export class FormerRecipient extends BaseEntity {
     @Index("IDX_former_recipients_user_id")
     user_id: string;
 
-    @Column({ type: "varchar", nullable: true })
-    host_instance: string | null;
-
     @Column({ type: "timestamptz" })
     left_at: Date;
 }

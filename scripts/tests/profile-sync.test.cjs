@@ -4,17 +4,6 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const ts = require("typescript");
 
-const badgeModule = { exports: {} };
-vm.runInNewContext(
-    ts.transpileModule(fs.readFileSync("src/api/util/utility/prideBadges.ts", "utf8"), {
-        compilerOptions: { module: ts.ModuleKind.CommonJS },
-    }).outputText,
-    {
-        exports: badgeModule.exports,
-        module: badgeModule,
-    },
-);
-
 const profileModule = { exports: {} };
 vm.runInNewContext(
     ts.transpileModule(fs.readFileSync("src/api/util/utility/profile.ts", "utf8"), {
@@ -41,11 +30,44 @@ vm.runInNewContext(
         require(name) {
             if (name === "@spacebar/util") return { FieldErrors: (fields) => Object.assign(Error("invalid"), { fields }) };
             if (name === "./staffBadge") return { STAFF_BADGE_ID: "1" };
-            if (name === "./prideBadges") return { PRIDE_BADGES: [] };
             throw Error(name);
         },
     },
 );
+
+const transpiled = (file) => ts.transpileModule(fs.readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+
+const catalogModule = { exports: {} };
+vm.runInNewContext(transpiled("src/util/util/BadgeCatalog.ts"), { exports: catalogModule.exports, module: catalogModule });
+
+const profileBadgesFor = (database, util) => {
+    const module = { exports: {} };
+    vm.runInNewContext(transpiled("src/api/util/utility/profileBadges.ts"), {
+        exports: module.exports,
+        module,
+        require(name) {
+            if (name === "typeorm") return { In: (values) => values };
+            if (name === "@spacebar/database") return { Badge: database.Badge, User: { findOne: async () => null }, UserActivityStats: { findOne: async () => null } };
+            if (name === "@spacebar/util")
+                return {
+                    ...util,
+                    ...catalogModule.exports,
+                    ACCOUNT_AGE_BADGE: 18,
+                    STREAMING_BADGE: 19,
+                    GAME_TIME_BADGE: 20,
+                    GAME_VARIETY_BADGE: 21,
+                    NITRO_TIER_ICONS: {},
+                    activityProgress: () => ({ 19: 0, 20: 0, 21: 0 }),
+                    Config: { get: () => ({ cdn: {}, api: {} }) },
+                };
+            if (name === "./badgeSettings") return badgeSettingsModule.exports;
+            if (name === "./profile") return profileModule.exports;
+            if (name === "./staffBadge") return { STAFF_BADGE_ID: "1", ensureStaffBadge: async () => ({ icon: "staff" }) };
+            throw Error(name);
+        },
+    });
+    return module.exports;
+};
 
 const harness = () => {
     let handler;
@@ -77,6 +99,7 @@ const harness = () => {
                 banner: this.banner,
                 accent_color: this.accent_color,
                 theme_colors: this.theme_colors,
+                ...(this.pride_badges !== undefined && { pride_badges: this.pride_badges }),
             };
         },
         toPartialUser() {
@@ -97,7 +120,7 @@ const harness = () => {
     vm.runInNewContext(js, {
         exports: exported.exports,
         module: exported,
-        require(name) {
+        require: function stubs(name) {
             if (name === "express")
                 return {
                     Router: () => ({
@@ -124,7 +147,7 @@ const harness = () => {
                                 },
                                 addSelect(columns) {
                                     if (typeof columns === "string") {
-                                        assert.ok(["user.pride_badges", "user.account_preferences"].includes(columns));
+                                        assert.equal(columns, "user.account_preferences");
                                         return query;
                                     }
                                     assert.deepEqual(Array.from(columns), [
@@ -220,9 +243,9 @@ const harness = () => {
                     staffBadgeRole: () => null,
                     instanceName: () => "Meowcord",
                 };
-            if (name === "@spacebar/api/util/utility/prideBadges") return badgeModule.exports;
             if (name === "@spacebar/api/util/utility/profile") return profileModule.exports;
             if (name === "@spacebar/api/util/utility/badgeSettings") return badgeSettingsModule.exports;
+            if (name === "@spacebar/api/util/utility/profileBadges") return profileBadgesFor(stubs("@spacebar/database"), stubs("@spacebar/util"));
             if (name === "@spacebar/api/util/handlers/Application") return {};
             throw Error(name);
         },
@@ -405,20 +428,20 @@ test("profile hydration keeps connection visibility, metadata visibility and dec
     assert.equal(JSON.stringify(result).includes("private@example.invalid"), false);
 });
 
-test("ordinary profile appends selected pride flags without replacing assigned badges or exposing the selection column", async () => {
+test("ordinary profile carries selected pride flags on the user in picked order and keeps them out of the badge row", async () => {
     const h = harness();
     h.user.pride_badges = ["transgender", "rainbow"];
     h.user.badge_ids = ["assigned"];
     const response = await h.get({}, "123");
     assert.deepEqual(
         Array.from(response.badges, (badge) => badge.description),
-        ["Admin-assigned", "Transgender", "Rainbow"],
+        ["Admin-assigned"],
     );
-    assert.equal(response.user.pride_badges, undefined);
+    assert.deepEqual(Array.from(response.user.pride_badges), ["transgender", "rainbow"]);
     assert.deepEqual(h.user.badge_ids, ["assigned"]);
 });
 
-test("ordinary profile removes subscription badges while preserving assigned and pride badges", async () => {
+test("ordinary profile removes subscription badges while preserving assigned badges and pride flags", async () => {
     const h = harness();
     h.user.pride_badges = ["transgender"];
     h.user.badge_ids = ["assigned", "premium_badge", "subscriber_badge", "nitro_badge"];
@@ -436,8 +459,9 @@ test("ordinary profile removes subscription badges while preserving assigned and
     const response = await h.get();
     assert.deepEqual(
         Array.from(response.badges, (badge) => badge.description),
-        ["Admin-assigned", "Transgender"],
+        ["Admin-assigned"],
     );
+    assert.deepEqual(Array.from(response.user.pride_badges), ["transgender"]);
     assert.deepEqual(h.user.badge_ids, ["assigned", "premium_badge", "subscriber_badge", "nitro_badge"]);
 });
 

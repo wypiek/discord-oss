@@ -4,7 +4,6 @@ import { ASSETS_FOLDER } from "./Constants";
 import { Config } from "./Config";
 import { instanceName } from "./Branding";
 import { ProcessLifecycle } from "./ProcessLifecycle";
-import { steamFrameCategory, steamFrameRecency } from "./SteamFrames";
 
 export enum CollectibleItemType {
     AVATAR_DECORATION = 0,
@@ -12,8 +11,14 @@ export enum CollectibleItemType {
     NAMEPLATE = 2,
     PROFILE_FRAME = 3,
     BUNDLE = 1000,
-    VARIANTS_GROUP = 3000,
+    VARIANTS_GROUP = 2000,
+    EXTERNAL_SKU = 3000,
 }
+
+export const ORB_CURRENCY = "discord_orb";
+export const ORB_PROFILE_BADGE_SKU = "1342211853484429445";
+export const ORBS_CATEGORY_SKU = "8100000000000000000";
+export const ORBS_SHOP_TAB = "orbs";
 
 export interface CollectibleItem {
     type: CollectibleItemType;
@@ -154,12 +159,50 @@ const localize = (raw: string) => {
     return branded.replaceAll("https://cdn.discordapp.com/assets/content/", `${cdn}/content-assets/`).replaceAll("https://cdn.discordapp.com/media/v1/", `${cdn}/media/v1/`);
 };
 
+const orbPrices = () => {
+    const free = { country_prices: { country_code: "US", prices: [{ amount: 0, currency: ORB_CURRENCY, exponent: 0 }] } };
+    return { "0": free, "4": free };
+};
+
+const orbsApprenticeCategory = (): CollectibleCategory => ({
+    sku_id: ORBS_CATEGORY_SKU,
+    store_listing_id: ORBS_CATEGORY_SKU,
+    name: "Orbs Exclusives",
+    summary: "Free to claim, like everything else in the Shop.",
+    hero_ranking: [ORB_PROFILE_BADGE_SKU],
+    products: [
+        {
+            sku_id: ORB_PROFILE_BADGE_SKU,
+            store_listing_id: ORB_PROFILE_BADGE_SKU,
+            name: "Orbs Apprentice Badge",
+            summary: "Show the Orbs Apprentice badge on your profile.",
+            type: CollectibleItemType.EXTERNAL_SKU,
+            category_sku_id: ORBS_CATEGORY_SKU,
+            items: [],
+            prices: orbPrices(),
+            styles: { background_colors: [5793266, 2303786], button_colors: [5793266, 5793266], confetti_colors: [43772, 15774258, 16414587, 3000177, 9739511] },
+            preview_assets: null,
+            google_sku_ids: {},
+            is_first_party: true,
+        },
+    ],
+});
+
+const pricesOf = (product: CollectibleProduct) => ((product.prices as CollectiblePrices | undefined)?.["0"]?.country_prices?.prices ?? []).map((price) => price.currency);
+
+export const sellsForOrbs = (product: CollectibleProduct) => pricesOf(product).includes(ORB_CURRENCY);
+
+export const orbsExclusive = (product: CollectibleProduct) => {
+    const currencies = pricesOf(product);
+    return currencies.includes(ORB_CURRENCY) && currencies.every((currency) => currency === ORB_CURRENCY);
+};
+
+export const orbsExclusiveCategory = (category: CollectibleCategory) => category.products.length > 0 && category.products.every(orbsExclusive);
+
 const parse = (raw: string, effectsRaw?: string): Catalog => {
-    const steam = steamFrameCategory() as unknown as CollectibleCategory;
-    const categories = [
-        ...(JSON.parse(localize(raw)) as CollectibleCategory[]).sort((a, b) => (BigInt(b.sku_id) > BigInt(a.sku_id) ? 1 : -1)),
-        ...(steam.products.length ? [steam] : []),
-    ];
+    const mirrored = (JSON.parse(localize(raw)) as CollectibleCategory[]).sort((a, b) => (BigInt(b.sku_id) > BigInt(a.sku_id) ? 1 : -1));
+    const hasOrbsBadge = mirrored.some((category) => category.products.some((product) => product.sku_id === ORB_PROFILE_BADGE_SKU));
+    const categories = [...mirrored, ...(hasOrbsBadge ? [] : [orbsApprenticeCategory()])];
     const effects = new Map((effectsRaw ? (JSON.parse(localize(effectsRaw)) as CollectibleItem[]) : []).map((x) => [x.sku_id, x]));
     const products = new Map<string, CollectibleProduct>();
     const items = new Map<string, CollectibleItem>();
@@ -181,7 +224,7 @@ const parse = (raw: string, effectsRaw?: string): Catalog => {
         // the client keys its product list by listing id, so products without one (most of the mirror) collapse into one
         product.store_listing_id ??= product.sku_id;
         product.premium_type = 2;
-        product.hide_badge = true;
+        product.hide_badge = !orbsExclusive(product);
         // the same product shows up in several places, some with its items left out (inside bundles, for one); keep a
         // copy that has them. Frames have no asset or effects, so a copy with layers counts too
         const known = products.get(product.sku_id);
@@ -206,6 +249,7 @@ const parse = (raw: string, effectsRaw?: string): Catalog => {
             product.items = (product.items ?? []).map((item) => items.get(item.sku_id) ?? item);
         }
         return (
+            (product.type !== CollectibleItemType.EXTERNAL_SKU || product.sku_id === ORB_PROFILE_BADGE_SKU) &&
             product.items.every((item) => item.type !== CollectibleItemType.PROFILE_EFFECT || Array.isArray(item.effects)) &&
             (product.bundled_products ?? []).every(usable) &&
             (product.variants ?? []).every(usable)
@@ -380,6 +424,7 @@ export interface CollectibleSearchOptions {
     offset?: number;
     limit?: number;
     first_party?: boolean; // false lists only collabs
+    orbs_eligible?: boolean;
 }
 
 const SEARCH_TYPES: Record<CollectibleSearchItemType, CollectibleItemType> = {
@@ -426,8 +471,8 @@ const getSearchIndex = (snapshot: Catalog) => {
     return (searchIndex = { snapshot, entries, sorted: new Map() });
 };
 const compareRecency = (a: SearchEntry, b: SearchEntry) => {
-    const left = (a.recency ??= steamFrameRecency(a.product.sku_id) ?? BigInt(a.product.sku_id));
-    const right = (b.recency ??= steamFrameRecency(b.product.sku_id) ?? BigInt(b.product.sku_id));
+    const left = (a.recency ??= BigInt(a.product.sku_id));
+    const right = (b.recency ??= BigInt(b.product.sku_id));
     return left > right ? 1 : left < right ? -1 : 0;
 };
 const orderedSearchEntries = (index: ReturnType<typeof getSearchIndex>, alphabetical: boolean, direction: number) => {
@@ -522,6 +567,7 @@ export const Collectibles = {
         for (const entry of entries) {
             if (wanted.size && !wanted.has(entry.type)) continue;
             if (options.first_party === false && entry.product.is_first_party !== false) continue;
+            if (options.orbs_eligible && !sellsForOrbs(entry.product)) continue;
             let score = 0;
             if (terms.length) {
                 const text = (entry.text ??= searchText(entry.product, entry.category));
@@ -543,10 +589,29 @@ export const Collectibles = {
         };
     },
 
-    async shop() {
+    async shop(tab?: string) {
         const listed = (await Collectibles.categories()).filter((x) => x.products.length);
-        const [hero, ...rest] = listed;
-        const ranked = listed.flatMap(listedSkus);
+        if (tab === ORBS_SHOP_TAB) {
+            const exclusive = listed.filter((category) => category.products.some(orbsExclusive));
+            const either = [
+                ...new Set(listed.flatMap((category) => category.products.filter((product) => sellsForOrbs(product) && !orbsExclusive(product)).map((product) => product.sku_id))),
+            ];
+            return {
+                shop_blocks: [
+                    ...exclusive.map((category) => ({
+                        type: 4,
+                        name: category.name,
+                        category_sku_id: category.sku_id,
+                        ranked_sku_ids: category.products.filter(orbsExclusive).map((product) => product.sku_id),
+                        show_button: false,
+                    })),
+                    ...(either.length ? [{ type: 2, ranked_sku_ids: either, sorted_sku_ids: { recommended: null, popular: either } }] : []),
+                ],
+                categories: listed.filter((category) => category.products.some(sellsForOrbs)),
+            };
+        }
+        const [hero, ...rest] = listed.filter((category) => !orbsExclusiveCategory(category));
+        const ranked = [...new Set(listed.flatMap((category) => category.products.filter((product) => !orbsExclusive(product)).map((product) => product.sku_id)))];
         return {
             shop_blocks: [
                 ...(hero

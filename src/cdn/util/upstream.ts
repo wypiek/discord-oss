@@ -1,8 +1,10 @@
-import { Config, DECORATION_ART_MAX_BYTES, fetchPublicUrl } from "@spacebar/util";
+import { Config, fetchPublicUrl } from "@spacebar/util";
 import { allowsCdnUpstream } from "../../util/config/types/ExternalRequestConfiguration";
 import { Response } from "express";
 import { fileTypeFromBuffer } from "file-type";
 import { storage } from "./Storage";
+
+const UPSTREAM_ART_MAX_BYTES = 10 * 1024 * 1024;
 
 const EXTENSION_TYPES: Record<string, string> = {
     svg: "image/svg+xml",
@@ -42,7 +44,7 @@ export function fetchUpstreamAsset(path: string, url: string): Promise<Buffer | 
             unavailable.set(path, Date.now() + 30_000);
             const response = url.startsWith("https://cdn.discordapp.com/")
                 ? await fetch(url, { signal: AbortSignal.timeout(15000), redirect: "error" })
-                : await fetchPublicUrl(url, { headers: { accept: "image/*" } }, 0, { maxBytes: DECORATION_ART_MAX_BYTES, timeoutMs: 15000 });
+                : await fetchPublicUrl(url, { headers: { accept: "image/*" } }, 0, { maxBytes: UPSTREAM_ART_MAX_BYTES, timeoutMs: 15000 });
             if (!response.ok) return null;
             const buffer = Buffer.from(await response.arrayBuffer());
             unavailable.delete(path);

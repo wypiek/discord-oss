@@ -55,7 +55,6 @@ async function load(relative, assets, overrides = {}) {
                     },
                 };
             if (id === "./Branding") return { instanceName: () => "Test instance" };
-            if (id === "./SteamFrames") return overrides.steamFrames ?? { steamFrameCategory: () => ({ products: [] }), steamFrameRecency: () => undefined };
             if (id === "node:fs/promises" && overrides.fs) return overrides.fs;
             if (id.endsWith("/BrandAssetRequest"))
                 return (
@@ -119,7 +118,10 @@ test("missing catalog is cached and custom packs remain available without networ
     });
     Collectibles.setCustomSource(async () => ({ categories: [category], hidden: [] }));
     const first = await Collectibles.get();
-    assert.equal(first.categories.length, 1);
+    assert.deepEqual(
+        Array.from(first.categories, (pack) => pack.name),
+        ["Discord pack", "Orbs Exclusives"],
+    );
     assert.equal(await Collectibles.get(), first);
     assert.equal(reads, 2);
     assert.equal((await Collectibles.refresh()).ok, true);
@@ -133,7 +135,10 @@ test("stale local catalog stays free and hidden packs preserve owned-item lookup
     await fs.utimes(path.join(directory, "collectibles.json"), new Date(0), new Date(0));
     const { Collectibles } = await load("src/util/util/Collectibles.ts", directory);
     Collectibles.setCustomSource(async () => ({ categories: [], hidden: ["10"] }));
-    assert.equal((await Collectibles.categories()).length, 0);
+    assert.deepEqual(
+        Array.from(await Collectibles.categories(), (pack) => pack.name),
+        ["Orbs Exclusives"],
+    );
     const product = await Collectibles.product("11");
     assert.equal(product.prices["0"].country_prices.prices[0].amount, 0);
     assert.equal((await Collectibles.builtinCategories())[0].name, "Test instance pack");
@@ -264,7 +269,10 @@ test("a pending refresh cannot republish custom packs invalidated by reload", as
     await waiting;
     Collectibles.reload();
     const current = await Collectibles.get();
-    assert.equal(current.categories.length, 0);
+    assert.deepEqual(
+        Array.from(current.categories, (pack) => pack.name),
+        ["Orbs Exclusives"],
+    );
     unblock();
     assert.equal((await pending).ok, true);
     assert.equal(await Collectibles.get(), current);
@@ -294,7 +302,10 @@ test("replacing the custom source during refresh keeps the new source published"
     unblock();
     await pending;
     assert.equal(await Collectibles.get(), current);
-    assert.equal((await Collectibles.categories()).length, 0);
+    assert.deepEqual(
+        Array.from(await Collectibles.categories(), (pack) => pack.name),
+        ["Orbs Exclusives"],
+    );
 });
 
 test("catalog shutdown cancels refresh timers and drains an atomic cache replacement", async (t) => {
@@ -514,49 +525,62 @@ test("burst palette input rejection bypasses decoding and shares strict limits a
     assert.ok(admissions.every((limits) => limits.maxBytes === 1048576 && limits.timeoutMs === 1500 && limits.maxSide === 1024 && limits.maxPixels === 1048576));
 });
 
-const steamCatalog = {
-    apps: { 730: "Counter-Strike 2" },
-    frames: [
-        { defid: 78765, appid: 730, name: "Akihabara Accept", animated: false, image: `${"a".repeat(40)}.png`, still: `${"a".repeat(40)}.png`, created: 1716924160 },
-        { defid: 4104245, appid: 795040, name: "Pumping", animated: true, image: `${"b".repeat(40)}.png`, still: `${"c".repeat(40)}.png`, created: 1792429454 },
+const frameItem = (sku_id) => ({
+    sku_id,
+    type: 3,
+    label: `Frame ${sku_id}`,
+    layers: [{ id: `${sku_id}-front`, type: "staple", order: "front", anchor: "top", responsive: false }],
+    inner_width: 1200,
+    overflow_top: 280,
+    overflow_bottom: 190,
+    overflow_horizontal: 56,
+});
+const frameProduct = (sku_id) => ({ sku_id, name: `Frame ${sku_id}`, type: 3, items: [frameItem(sku_id)] });
+const framedCategory = {
+    sku_id: "20",
+    name: "Framed pack",
+    hero_ranking: ["21", "22"],
+    products: [
+        frameProduct("21"),
+        {
+            sku_id: "22",
+            name: "Frame and decoration bundle",
+            type: 1000,
+            items: [
+                { sku_id: "23", type: 0, asset: "decoration" },
+                { sku_id: "21", type: 3 },
+            ],
+            bundled_products: [{ sku_id: "23", name: "Decoration", type: 0, items: [{ sku_id: "23", type: 0, asset: "decoration" }] }, frameProduct("21")],
+        },
+        { sku_id: "23", name: "Decoration", type: 0, items: [{ sku_id: "23", type: 0, asset: "decoration" }] },
     ],
 };
 
-test("the steam frames are listed after the mirrored packs, work without a mirrored catalog and sort by their steam dates", async (t) => {
+test("profile frames are listed in the shop, searchable and claimable on their own and in bundles", async (t) => {
     const directory = await fixture(t);
-    await fs.writeFile(path.join(directory, "steam-frames.json"), JSON.stringify(steamCatalog));
-    const steamFrames = await load("src/util/util/SteamFrames.ts", directory);
-    const alone = await load("src/util/util/Collectibles.ts", directory, { steamFrames });
-    alone.Collectibles.setCustomSource(async () => ({ categories: [], hidden: [] }));
-    assert.deepEqual(
-        Array.from(await alone.Collectibles.categories(), (x) => [x.name, x.products.length]),
-        [["Steam", 2]],
-    );
-
-    await fs.writeFile(path.join(directory, "collectibles.json"), JSON.stringify([category]));
-    const { Collectibles } = await load("src/util/util/Collectibles.ts", directory, { steamFrames });
+    await fs.writeFile(path.join(directory, "collectibles.json"), JSON.stringify([framedCategory]));
+    const { Collectibles } = await load("src/util/util/Collectibles.ts", directory);
     Collectibles.setCustomSource(async () => ({ categories: [], hidden: [] }));
+    const [framed] = await Collectibles.categories();
+    assert.equal(framed.name, "Framed pack");
     assert.deepEqual(
-        Array.from(await Collectibles.categories(), (x) => x.name),
-        ["Test instance pack", "Steam"],
+        Array.from(framed.products, (product) => product.sku_id),
+        ["21", "22", "23"],
     );
-    const pumping = await Collectibles.product("8000000000004104245");
-    assert.equal(pumping.name, "Pumping");
-    assert.equal(pumping.summary, "An avatar frame from Steam.");
-    assert.equal(pumping.prices["0"].country_prices.prices[0].amount, 0);
-    assert.match((await Collectibles.item("8000000000004104245", 0)).asset, /^a_[0-9a-f]{32}$/);
-    assert.match((await Collectibles.item("8000000000000078765", 0)).asset, /^[0-9a-f]{32}$/);
-    assert.deepEqual(Array.from(await Collectibles.grantable("8000000000004104245")), ["8000000000004104245"]);
-    assert.deepEqual(Array.from((await Collectibles.search({ search: "counter-strike" })).skus), ["8000000000000078765"]);
-    assert.deepEqual(Array.from((await Collectibles.search({ sort_type: "recency", item_types: ["AVATAR_DECORATION"] })).skus), [
-        "8000000000004104245",
-        "8000000000000078765",
-        "11",
-    ]);
-    Collectibles.setCustomSource(async () => ({ categories: [], hidden: ["8000000000000000000"] }));
+    assert.deepEqual(Array.from(framed.hero_ranking), ["21", "22"]);
+    const frame = await Collectibles.item("21", 3);
+    assert.equal(frame.layers.length, 1);
+    assert.equal(frame.overflow_top, 280);
+    const bundle = await Collectibles.product("22");
     assert.deepEqual(
-        Array.from(await Collectibles.categories(), (x) => x.name),
-        ["Test instance pack"],
+        Array.from(bundle.items, (item) => [item.sku_id, item.type]),
+        [
+            ["23", 0],
+            ["21", 3],
+        ],
     );
-    assert.equal((await Collectibles.product("8000000000004104245")).name, "Pumping");
+    assert.deepEqual(Array.from(await Collectibles.grantable("22")).sort(), ["21", "22", "23"]);
+    assert.deepEqual(Array.from((await Collectibles.search({ item_types: ["PROFILE_FRAME"] })).skus), ["21"]);
+    const shop = await Collectibles.shop();
+    assert.ok(shop.shop_blocks.some((block) => (block.ranked_sku_ids ?? []).includes("21")));
 });

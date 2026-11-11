@@ -4,7 +4,6 @@ import { fileTypeFromBuffer } from "file-type";
 import { HTTPError } from "lambert-server/HTTPError";
 import { Config, isRequestSignature } from "@spacebar/util";
 import { storage, internalUpload, setCacheControl, safeMediaType } from "../util";
-import { sendRemoteMemberMedia } from "../util/federationMedia";
 
 // TODO: check premium and animated pfp are allowed in the config
 // TODO: generate different sizes of icon
@@ -67,7 +66,6 @@ router.get("/:hash", setCacheControl, async (req: Request, res: Response) => {
     const path = `guilds/${guild_id}/users/${user_id}/avatars/${hash}`;
 
     const file = await storage.get(path);
-    if (!file && (await sendRemoteMemberMedia(req, res, guild_id, user_id, req.baseUrl.endsWith("/banners") ? "banners" : "avatars", req.params.hash as string))) return;
     if (!file) throw new HTTPError("not found", 404);
     const type = await fileTypeFromBuffer(file);
 

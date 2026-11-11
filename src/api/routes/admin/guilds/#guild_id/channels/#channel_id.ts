@@ -1,7 +1,6 @@
 import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
-import { AuditLog, Channel, Guild } from "@spacebar/database";
-import { assertMirrorGuildEditable } from "@spacebar/api/util/utility/federatedAdmin";
+import { AuditLog, Channel } from "@spacebar/database";
 import { AdminChannelUpdateSchema, AuditLogEvents, ChannelType } from "@spacebar/schemas";
 import { ChannelUpdateEvent, emitEvent } from "@spacebar/util";
 import { HTTPError } from "lambert-server/HTTPError";
@@ -16,7 +15,6 @@ router.patch(
     }),
     async (req: Request, res: Response) => {
         const guild_id = req.params.guild_id as string;
-        assertMirrorGuildEditable(await Guild.findOne({ where: { id: guild_id }, select: { id: true, federated_instance: true } }));
         const channel = await Channel.findOneOrFail({
             where: { id: req.params.channel_id as string, guild_id },
         });

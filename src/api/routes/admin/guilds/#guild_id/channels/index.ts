@@ -6,7 +6,6 @@ import { AuditLog, Channel, Guild } from "@spacebar/database";
 import { AdminChannelCreateSchema, AuditLogEvents, ChannelType } from "@spacebar/schemas";
 import { ChannelCreateEvent, Config, DiscordApiErrors, emitEvent } from "@spacebar/util";
 import { HTTPError } from "lambert-server/HTTPError";
-import { assertMirrorGuildEditable } from "@spacebar/api/util/utility/federatedAdmin";
 const router = Router({ mergeParams: true });
 router.get(
     "/",
@@ -62,7 +61,6 @@ router.post(
     }),
     async (req: Request, res: Response) => {
         const guild_id = req.params.guild_id as string;
-        assertMirrorGuildEditable(await Guild.findOne({ where: { id: guild_id }, select: { id: true, federated_instance: true } }));
         const body = req.body as AdminChannelCreateSchema;
         const name = body.name.trim();
         const type = body.type ?? ChannelType.GUILD_TEXT;

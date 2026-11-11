@@ -3,8 +3,7 @@ import { BlockList, isIP } from "node:net";
 import { request as requestHttp, IncomingMessage } from "node:http";
 import { request as requestHttps } from "node:https";
 import { Config } from "../Config";
-import type { Socket } from "node:net";
-import { outboundProxy, RawExchange, socksExchange, socksTunnel } from "./SocksTransport";
+import { outboundProxy, RawExchange, socksExchange } from "./SocksTransport";
 import { PublicFetchError } from "./PublicFetchError";
 
 export * from "./PublicFetchError";
@@ -130,23 +129,6 @@ export const rememberFamily = (hostname: string, family: number, now = Date.now(
 const unreachable = (error: unknown) =>
     ["ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "EADDRNOTAVAIL", "ETIMEDOUT"].includes((error as NodeJS.ErrnoException)?.code ?? "") ||
     /could not reach the host \(code [345]\)/.test(String(error));
-
-export async function publicTunnel(url: URL, signal: AbortSignal): Promise<Socket | null> {
-    const target = new URL(url.href);
-    if (target.protocol === "ws:" || target.protocol === "wss:") target.protocol = target.protocol === "wss:" ? "https:" : "http:";
-    const addresses = await resolveFetchAddress(target, signal);
-    const proxy = outboundProxy();
-    for (const [index, { address }] of addresses.entries()) {
-        if (isPrivateAddress(address) || proxy === "direct") return null;
-        if (!proxy) throw new Error("PUBLIC_FETCH_PROXY is not set, so connections to other instances are refused");
-        try {
-            return await socksTunnel(proxy, url, address, signal);
-        } catch (error) {
-            if (index === addresses.length - 1 || signal.aborted || !unreachable(error)) throw error;
-        }
-    }
-    throw new Error("Public URL has no reachable address");
-}
 
 async function readPublicResponse(response: IncomingMessage, maxBytes: number, method: string) {
     if (method === "HEAD" || [204, 205, 304].includes(response.statusCode ?? 0)) {

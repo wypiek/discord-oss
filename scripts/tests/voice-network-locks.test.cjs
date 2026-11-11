@@ -5,159 +5,13 @@ const os = require("node:os");
 const path = require("node:path");
 const { setTimeout: sleep } = require("node:timers/promises");
 
-const { entity, IsNull, load } = require("./federation-fake-orm.cjs");
-const voiceUtil = require("../../src/util/util/federation/Voice.ts");
-const protocol = require("../../src/util/util/federation/Protocol.ts");
-const ids = require("../../src/util/util/federation/Ids.ts");
-
-const HOST_DELAY = 400;
-const host = "host.example";
-const user = "1290000000000000100";
-const session = "0123456789abcdef0123456789abcdef";
-
-function federationHarness() {
-    const db = {
-        Channel: entity("Channel"),
-        Guild: entity("Guild"),
-        Member: entity("Member", ["id", "guild_id"]),
-        Recipient: entity("Recipient", ["channel_id", "user_id"]),
-        User: entity("User"),
-        VoiceState: entity("VoiceState", ["user_id"]),
-    };
-    db.VoiceState.prototype.toPublicVoiceState = function () {
-        return { ...this };
-    };
-    const { serialized } = load("src/api/util/utility/federationMirrors.ts", {
-        typeorm: {},
-        "@spacebar/database": {},
-        "@spacebar/schemas": {},
-        "@spacebar/util": {},
-        "./federationIds": {},
-        "./federationQuota": {},
-    });
-    const relays = {};
-    const fetches = [];
-    const emitted = [];
-    const answers = [];
-    const voice = load("src/api/util/utility/federationVoice.ts", {
-        "node:module": { createRequire: () => () => ({}) },
-        "node:path": require("node:path"),
-        ws: { __esModule: true, default: class {}, WebSocketServer: class {} },
-        typeorm: { IsNull },
-        "@spacebar/database": db,
-        "@spacebar/util": {
-            ...protocol,
-            ...ids,
-            ...voiceUtil,
-            FederatedVoice: {
-                connected: new Set(),
-                setRelay: (relay) => (relays.voice = relay),
-                setStreamRelay: () => {},
-                setRemoteCalls: () => {},
-                apply: async () => null,
-            },
-            Config: { get: () => ({ federation: { enabled: true } }) },
-            emitEvent: async (event) => emitted.push(event),
-            isPublicUrl: async () => true,
-            publicTunnel: async () => null,
-        },
-        "./federation": { instanceUrl: () => "https://home.example" },
-        "./federationIds": { canonicalOf: async (id) => `${id}@${host}`, fromWire: async (value) => value, toWire: async (value) => value },
-        "./federationMirrors": { mirrorInstance: async (kind, id) => (kind === "guild" && id === "200" ? host : null), serialized },
-        "./federationNetwork": {
-            ownInstance: () => "home.example",
-            signedFetch: async (instance, method, path, body) => {
-                fetches.push(body);
-                await sleep(HOST_DELAY);
-                return answers.shift() ?? { status: 200, body: { voice_state: { channel_id: body.channel_id ? "700" : null, self_mute: body.self_mute } } };
-            },
-        },
-        "./federationRelay": {},
-        "./federationShadows": { profileOf: () => ({}), upsertShadows: async () => undefined },
-    });
-    voice.startFederatedVoice();
-    db.Channel.rows.push({ id: "700", guild_id: "200" });
-    db.User.rows.push({ id: user, federated_instance: null });
-    return { db, voice, serialized, relay: (body) => relays.voice(user, session, body), fetches, emitted, answers };
-}
+const { load } = require("./fake-orm.cjs");
 
 const timed = async (work) => {
     const started = performance.now();
     await work;
     return performance.now() - started;
 };
-
-test("inbox voice events don't wait for a relay to a slow host", async () => {
-    const { db, voice, serialized, relay } = federationHarness();
-    db.VoiceState.rows.push({ user_id: user, guild_id: "200", channel_id: "700", session_id: session });
-    const others = Array.from({ length: 9 }, (_, i) => `12900000000000002${String(i).padStart(2, "0")}`);
-    for (const id of others) {
-        db.User.rows.push({ id, federated_instance: host });
-        db.VoiceState.rows.push({ user_id: id, guild_id: "200", channel_id: "700", session_id: "remote" });
-    }
-    const relaying = relay({ guild_id: "200", channel_id: "700", self_mute: true, self_deaf: false });
-    await sleep(20);
-    const inGuildOrder = (work) => serialized("guild:200", work);
-    const [ownEcho, nextGuildEvent, serverUpdate] = await Promise.all([
-        timed(
-            inGuildOrder(() =>
-                voice.applyRemoteVoiceState({ user_id: user, channel_id: "700", session_id: voiceUtil.hostVoiceSession(session), self_mute: true }, { guild_id: "200" }),
-            ),
-        ),
-        timed(inGuildOrder(() => voice.applyRemoteVoiceState({ user_id: others[0], channel_id: "700", session_id: "remote", self_mute: true }, { guild_id: "200" }))),
-        timed(voice.applyVoiceServerUpdate({ token: "fresh" }, { guild_id: "200" }, [user, ...others])),
-    ]);
-    await relaying;
-    console.log(
-        `[voice locks] host delay ${HOST_DELAY} ms: relaying user's own event ${ownEcho.toFixed(1)} ms, next event of the server ${nextGuildEvent.toFixed(1)} ms, server update for 10 users ${serverUpdate.toFixed(1)} ms`,
-    );
-    assert.ok(ownEcho < HOST_DELAY / 4, `the relaying user's event waited ${ownEcho} ms`);
-    assert.ok(nextGuildEvent < HOST_DELAY / 4, `the next event of the server waited ${nextGuildEvent} ms`);
-    assert.ok(serverUpdate < HOST_DELAY / 4, `the server update waited ${serverUpdate} ms`);
-    assert.equal(db.VoiceState.rows.find((row) => row.user_id === user).token, "fresh");
-});
-
-test("a host event that arrives during the relay wins over the relay answer", async () => {
-    const { db, voice, relay } = federationHarness();
-    db.VoiceState.rows.push({ user_id: user, guild_id: "200", channel_id: "700", session_id: session, mute: false });
-    const relaying = relay({ guild_id: "200", channel_id: "700", self_mute: true, self_deaf: false });
-    await sleep(20);
-    await voice.applyRemoteVoiceState({ user_id: user, channel_id: "700", session_id: voiceUtil.hostVoiceSession(session), self_mute: true, mute: true }, { guild_id: "200" });
-    await relaying;
-    const row = db.VoiceState.rows.find((entry) => entry.user_id === user);
-    assert.equal(row.mute, true, "the server mute from the host stays");
-    assert.equal(row.self_mute, true);
-});
-
-test("relays of one user still reach the host in order", async () => {
-    const { db, relay, fetches } = federationHarness();
-    db.VoiceState.rows.push({ user_id: user, guild_id: "200", channel_id: "700", session_id: session });
-    await Promise.all([
-        relay({ guild_id: "200", channel_id: "700", self_mute: true, self_deaf: false }),
-        relay({ guild_id: "200", channel_id: "700", self_mute: false, self_deaf: false }),
-        relay({ guild_id: "200", channel_id: null, self_mute: false, self_deaf: false }),
-    ]);
-    assert.deepEqual(
-        fetches.map((body) => [body.self_mute, body.leave]),
-        [
-            [true, false],
-            [false, false],
-            [false, true],
-        ],
-    );
-    assert.equal(db.VoiceState.rows.find((row) => row.user_id === user).channel_id, null);
-});
-
-test("a refused leave still leaves locally after a host event", async () => {
-    const { db, voice, relay, answers } = federationHarness();
-    db.VoiceState.rows.push({ user_id: user, guild_id: "200", channel_id: "700", session_id: session });
-    answers.push({ status: 502, body: { error: "unreachable" } });
-    const relaying = relay({ guild_id: "200", channel_id: null, self_mute: false, self_deaf: false });
-    await sleep(20);
-    await voice.applyRemoteVoiceState({ user_id: user, channel_id: "700", session_id: voiceUtil.hostVoiceSession(session), mute: true }, { guild_id: "200" });
-    await relaying;
-    assert.equal(db.VoiceState.rows.find((row) => row.user_id === user).channel_id, null);
-});
 
 const STALL = 5;
 const ROOM_SIZE = 25;
@@ -207,7 +61,6 @@ async function voiceRoom(size, sfuDelay, sendDelay = 0) {
             "node:child_process": require("node:child_process"),
             "node:crypto": require("node:crypto"),
             "node:events": require("node:events"),
-            "@spacebar/util": { turnSecret: () => "", turnSettings: () => ({ enabled: false }) },
             "./IpcClient": { IpcClient },
         },
         { process },
@@ -271,7 +124,6 @@ test("joining and leaving don't wait for each member's socket in turn", async ()
             "@spacebar/schemas": { validateSchema: (name, data) => data },
             "@spacebar/webrtc": room.webrtc,
             "../dave/DaveSession": dave,
-            "../util/DaveIdentity": { daveIds: () => ({}) },
         });
         const { VoiceSessions } = load("src/webrtc/util/VoiceSessions.ts", {
             "@spacebar/database": {},

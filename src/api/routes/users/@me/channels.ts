@@ -88,13 +88,12 @@ router.post(
                         throw new HTTPError("Direct messages between members of this server are paused.", 403);
                 }
             if (!friends && !existing.length) {
-                await checkContactSpam({ user_id: req.user_id, target_id: other, kind: "dm", rights: req.rights, federated: !!req.user?.federated_instance, account: req.user });
-                await enforceQuarantineDm({ user_id: req.user_id, federated: !!req.user?.federated_instance, rights: req.rights });
+                await checkContactSpam({ user_id: req.user_id, target_id: other, kind: "dm", rights: req.rights, account: req.user });
+                await enforceQuarantineDm({ user_id: req.user_id, rights: req.rights });
             }
         } else if (others.length > 1 && !req.user_bot) {
-            for (const target of others)
-                await checkContactSpam({ user_id: req.user_id, target_id: target, kind: "dm", rights: req.rights, federated: !!req.user?.federated_instance, account: req.user });
-            await enforceQuarantineDm({ user_id: req.user_id, federated: !!req.user?.federated_instance, rights: req.rights });
+            for (const target of others) await checkContactSpam({ user_id: req.user_id, target_id: target, kind: "dm", rights: req.rights, account: req.user });
+            await enforceQuarantineDm({ user_id: req.user_id, rights: req.rights });
         }
         res.json(await Channel.createDMChannel(body.recipients || (body.recipient_id ? [body.recipient_id] : []), req.user_id, body.name));
     },

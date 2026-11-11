@@ -1,7 +1,6 @@
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
-import { assertMirrorGuildEditable } from "@spacebar/api/util/utility/federatedAdmin";
 import { auditLogReason } from "@spacebar/api/util/utility/fieldCaps";
 import { AuditLog, Guild, Invite } from "@spacebar/database";
 import { AuditLogEvents } from "@spacebar/schemas";
@@ -20,7 +19,7 @@ router.delete(
     async (req: Request, res: Response) => {
         const guild_id = req.params.guild_id as string;
         const code = req.params.code as string;
-        assertMirrorGuildEditable(await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true, federated_instance: true } }));
+        await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true } });
         const invite = await Invite.findOne({ where: { code, guild_id } });
         if (!invite) throw new HTTPError("This server has no invite with that code", 404);
         if (invite.vanity_url) throw new HTTPError("The vanity link belongs to the server's settings, so its owner changes it there", 400);

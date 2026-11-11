@@ -5,17 +5,15 @@ import { canActOn } from "../utility/adminTargets";
 import { HTTPError } from "lambert-server/HTTPError";
 import { AuditLogEvents } from "@spacebar/schemas";
 import { EntityManager } from "typeorm";
-import { assertShadowUserEditable } from "../utility/federatedAdmin";
 
 export const ADMIN_USER_CUSTOMIZATION_ACTION = AuditLogEvents.ADMIN_USER_CUSTOMIZATION;
 export async function adminCustomizationTarget(req: Request, editing?: string) {
     const user = await User.findOneOrFail({
         where: { id: req.params.user_id as string },
-        select: { id: true, rights: true, bot: true, federated_instance: true },
+        select: { id: true, rights: true, bot: true },
     });
     if (!canActOn({ id: req.user_id, rights: req.rights.bitfield }, user, await loadStaffRoles()))
         throw new HTTPError(req.method === "GET" ? "You can't view staff at or above your own role" : "You can't edit staff at or above your own role", 403);
-    if (editing) assertShadowUserEditable(user, [editing]);
     return user;
 }
 export async function recordAdminCustomization(req: Request, target_id: string, section: string, fields: string[], manager?: EntityManager) {

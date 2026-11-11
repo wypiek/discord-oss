@@ -135,7 +135,7 @@ The server keeps no password data. It compares the last 5,000 signups in memory,
 
 ## New account quarantine
 
-While the quarantine is on, accounts younger than `quarantine.hours` can't post links other than to this instance, upload files, send embeds or use @everyone or @here, and have lower mention and DM limits. Bots, system accounts, accounts from other instances and accounts with `BYPASS_RATE_LIMITS` are never quarantined. The Automod page lists the accounts in quarantine and can release them early.
+While the quarantine is on, accounts younger than `quarantine.hours` can't post links other than to this instance, upload files, send embeds or use @everyone or @here, and have lower mention and DM limits. Bots, system accounts and accounts with `BYPASS_RATE_LIMITS` are never quarantined. The Automod page lists the accounts in quarantine and can release them early.
 
 | Key                                                        | Default | Meaning                                                           |
 | ---------------------------------------------------------- | ------- | ----------------------------------------------------------------- |
@@ -159,16 +159,6 @@ The explicit media filter applies each server's explicit content filter outside 
 | `explicitContent.flagAllMedia`        | false    | Mark every image and video where the filter applies.                                                        |
 | `explicitContent.terms`               | 11 words | Up to 500 file name words that mark a file.                                                                 |
 | `explicitContent.blockedHashes`       | `[]`     | Up to 5,000 SHA-256 hashes that mark a file.                                                                |
-
-## Federation
-
-Every message rule covers accounts from other instances and acts on their copy here. When one of them trips a rule, this server sends a signed report to their home instance, at most once an hour per account and rule. The home instance files it in Reports as "Automod on another instance".
-
-| Key                                    | Default | Meaning                                                |
-| -------------------------------------- | ------- | ------------------------------------------------------ |
-| `federation.reportToHome`              | true    | Report hits on remote accounts to their home instance. |
-| `federation.acceptReports`             | true    | Accept those reports about local accounts.             |
-| `federation.reportsPerHourPerInstance` | 120     | Reports accepted from one instance per hour.           |
 
 ## Raid detection
 
@@ -199,7 +189,7 @@ The server watches each server for join, DM and mention raids. A raid posts Disc
 
 ## Appeals
 
-An account that can't sign in because it is suspended, held or disabled gets a sign-in error that points to `<instance>/appeal`. There the person signs in, sees the restriction, the reason and when it ends, and can send one appeal of up to 1,000 characters per restriction. Accounts from other instances can't use the page. Accepting an appeal in the Appeals section of the Automod page lifts the restriction and marks the automod action as a false positive.
+An account that can't sign in because it is suspended, held or disabled gets a sign-in error that points to `<instance>/appeal`. There the person signs in, sees the restriction, the reason and when it ends, and can send one appeal of up to 1,000 characters per restriction. Accepting an appeal in the Appeals section of the Automod page lifts the restriction and marks the automod action as a false positive.
 
 ## Server AutoMod rules
 

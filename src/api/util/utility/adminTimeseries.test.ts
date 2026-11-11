@@ -85,6 +85,6 @@ test("metrics follow the rights of the pages they come from", () => {
     assert.equal(canReadMetric(moderator, "attachment_bytes"), false);
     assert.equal(canReadMetric(support, "accounts"), true);
     assert.equal(canReadMetric(support, "automod_actions"), false);
-    assert.equal(canReadMetric(operator, "federation"), true);
+    assert.equal(canReadMetric(operator, "attachment_bytes"), true);
     assert.equal(canReadMetric(nobody, "messages"), false);
 });

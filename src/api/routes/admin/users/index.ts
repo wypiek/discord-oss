@@ -7,7 +7,6 @@ import { User } from "@spacebar/database";
 import { AdminUserTag, UserFlags } from "@spacebar/schemas";
 import { cursorPage, decodeCursor, encodeCursor, ipVariants, isProtectedStaffTarget, keysetClause, listOffset, parseIp } from "@spacebar/api/util";
 import { Rights, STAFF_RIGHTS, effectiveRightsSync, loadStaffRoles } from "@spacebar/util";
-import { originClause, parseOrigin } from "@spacebar/api/util/utility/federatedAdmin";
 
 const router = Router({ mergeParams: true });
 
@@ -33,7 +32,6 @@ export const ADMIN_USER_COLUMNS = [
     "suspended_until",
     "join_status",
     "join_reason",
-    "federated_instance",
 ] as const;
 
 // entities carry class-level defaults for every column, so only ever send the columns we selected
@@ -127,7 +125,6 @@ export const userSearchQuery = (req: Request) => {
     if (ipText && !ip) throw new HTTPError("ip must be an IPv4 or IPv6 address", 400);
     const sort = scalarQuery(req.query.sort, "sort", "newest");
     if (!Object.hasOwn(USER_SORTS, sort)) throw new HTTPError("sort must be newest, oldest or name", 400);
-    const origin = parseOrigin(req.query.origin);
     const exactId = !ip && /^\d{15,20}$/.test(q);
     const handle = parseUserHandle(q);
     const searchPattern = `%${handle.text.replace(/[\\%_]/g, "\\$&")}%`;
@@ -188,8 +185,6 @@ export const userSearchQuery = (req: Request) => {
         default:
             break;
     }
-    const clause = exactId ? null : originClause("user", origin);
-    if (clause) query.andWhere(clause);
     return query;
 };
 
@@ -207,11 +202,6 @@ router.get(
                 type: "string",
                 required: false,
                 description: "all | disabled | suspended | pending | with_reason | bots | verified | unverified",
-            },
-            origin: {
-                type: "string",
-                required: false,
-                description: "local (default) lists accounts of this instance, remote lists users of other instances stored here, all lists both. An exact id search ignores it",
             },
             sort: { type: "string", required: false, description: "newest (default), oldest or name" },
             limit: { type: "number", required: false },

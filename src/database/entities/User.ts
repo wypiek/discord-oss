@@ -1,8 +1,7 @@
 import { assertIdentityNameAllowed } from "@spacebar/util/util/IdentityModeration";
 import { assertMaxLength, UserFieldCaps } from "@spacebar/util/util/UserFieldCaps";
-import { readAvatarCornerRadius, withAvatarCornerRadius } from "@spacebar/util/util/AvatarCornerRadius";
 import { Request } from "express";
-import { AfterLoad, Column, Entity, FindOptionsWhere, ILike, Index, IsNull, JoinColumn, ManyToOne, OneToMany, OneToOne } from "typeorm";
+import { AfterLoad, Column, Entity, FindOptionsWhere, ILike, Index, JoinColumn, ManyToOne, OneToMany, OneToOne } from "typeorm";
 import { Config, Email, FieldErrors, Snowflake } from "@spacebar/util";
 import { Stopwatch, trimSpecial, Random } from "@spacebar/extensions";
 import { BaseClass } from "./BaseClass";
@@ -34,6 +33,14 @@ import {
 import { JsonNumber } from "@spacebar/util/util/Decorators";
 
 export type JoinStatus = "pending" | "approved" | "rejected";
+
+export interface BadgeOverrides {
+    nitro_since?: string;
+    account_age_since?: string;
+    progress_offsets?: Record<string, number>;
+    levels_set_at?: Record<string, string>;
+    rarity?: Record<string, number>;
+}
 
 export interface AccountPreferences {
     consents?: Record<string, boolean>;
@@ -274,16 +281,16 @@ export class User extends BaseClass {
     account_preferences?: AccountPreferences | null;
 
     @Column({ type: "jsonb", nullable: true, select: false })
+    badge_overrides?: BadgeOverrides | null;
+
+    @Column({ type: "jsonb", nullable: true, select: false })
     private_channel_settings?: UserGuildSettings | null;
 
-    @Column({ type: "text", array: true, default: "{}", select: false })
+    @Column({ type: "text", array: true, default: "{}" })
     pride_badges?: string[];
 
     @Column({ type: "jsonb", nullable: true })
     profile_widgets?: ProfileWidget[] | null;
-
-    @Column({ type: "int", nullable: true })
-    avatar_corner_radius?: number | null;
 
     @JoinColumn({
         name: "avatar_decoration_id",
@@ -294,12 +301,6 @@ export class User extends BaseClass {
 
     @Column({ type: "int8", nullable: true })
     avatar_decoration_id?: string;
-
-    @Column({ type: "varchar", nullable: true })
-    federated_instance?: string | null;
-
-    @Column({ type: "jsonb", nullable: true, select: false })
-    remote_badges?: { id: string; kind: string; description: string; pride_flag?: string; icon?: string }[] | null;
 
     @AfterLoad()
     applyPremiumDefaults() {
@@ -338,7 +339,7 @@ export class User extends BaseClass {
 
         if (this.avatar_decoration) (<PublicUser>user).avatar_decoration_data = this.avatar_decoration.toJSON();
 
-        return withAvatarCornerRadius(user, this.avatar_corner_radius) as PublicUser;
+        return user as PublicUser;
     }
 
     toPartialUser(): PartialUser {
@@ -362,7 +363,7 @@ export class User extends BaseClass {
             banner: this.banner,
             accent_color: this.accent_color,
             public_flags: Number(this.public_flags),
-            ...(readAvatarCornerRadius(this.avatar_corner_radius) !== null && { avatar_corner_radius: this.avatar_corner_radius }),
+            ...(this.pride_badges !== undefined && { pride_badges: this.pride_badges ?? [] }),
         } satisfies PartialUser;
     }
 
@@ -378,7 +379,7 @@ export class User extends BaseClass {
         user.nsfw_allowed = true;
         user.age_verification_status = 3;
 
-        return withAvatarCornerRadius(user, this.avatar_corner_radius, true) as UserPrivate;
+        return user as UserPrivate;
     }
 
     static async setAccountPreferences(id: string, values: Partial<AccountPreferences>) {
@@ -463,13 +464,12 @@ export class User extends BaseClass {
     static loginWhere(login: string): FindOptionsWhere<User>[] {
         const tag = login.match(/^(.+)#(\d{4})$/);
         return [
-            { phone: login, federated_instance: IsNull() },
-            { email: login, federated_instance: IsNull() },
+            { phone: login },
+            { email: login },
             {
                 username: ILike((tag?.[1] ?? login).replace(/[\\%_]/g, "\\$&")),
                 discriminator: tag?.[2] ?? "0",
                 bot: false,
-                federated_instance: IsNull(),
             },
         ];
     }

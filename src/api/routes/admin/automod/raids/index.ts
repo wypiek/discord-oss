@@ -16,7 +16,6 @@ const USER_FIELDS = {
     avatar: true,
     suspended_until: true,
     disabled: true,
-    federated_instance: true,
     created_at: true,
 } as const;
 
@@ -29,7 +28,6 @@ export const publicRaidUser = (user: User) => ({
     created_at: user.created_at,
     suspended_until: user.suspended_until ?? null,
     disabled: user.disabled,
-    federated_instance: user.federated_instance ?? null,
 });
 
 export async function serializeIncidents(incidents: RaidIncident[], sample = 5) {

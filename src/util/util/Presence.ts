@@ -3,7 +3,6 @@ import { Activity, emitEvent, GuildMemberUpdateEvent, Presence, PresenceUpdateEv
 import { ClientStatus, PublicStatus, PublicUser, RelationshipType } from "@spacebar/schemas";
 import { In, Not } from "typeorm";
 import { clampText } from "./UserFieldCaps";
-import { withAvatarCornerRadius } from "./AvatarCornerRadius";
 
 export function getMostRelevantSession(sessions: Session[]) {
     const statusMap = {
@@ -336,7 +335,6 @@ export async function broadcastPresence(userId: string, user?: PublicUser) {
 export async function broadcastUserUpdate(userId: string, pride_badges?: readonly string[]) {
     const [user, members] = await Promise.all([User.getPublicUser(userId), Member.find({ where: { id: userId }, relations: { roles: true } })]);
     if (pride_badges !== undefined) Object.assign(user, { pride_badges: [...pride_badges] });
-    withAvatarCornerRadius(user, user.avatar_corner_radius, true);
     await Promise.all(
         members.map((member) =>
             emitEvent({

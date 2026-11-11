@@ -33,7 +33,6 @@ const AUTOMOD_ACTIONS = [
   ["log", "Logged"],
   ["timeout", "Timed out"],
   ["disable", "Disabled"],
-  ["federation_block", "Blocked from federating"],
   ["ban", "IP banned"],
   ["hold", "Held for approval"],
   ["flag", "Flagged"],
@@ -276,7 +275,7 @@ const automodActionBadge = (entry) => {
   if (entry.would_action)
     return html`<span class="badge info">Dry run</span><span class="muted automod-sub">Would ${WOULD_ACTIONS[entry.would_action] ?? entry.would_action}</span>`;
   const label = AUTOMOD_ACTIONS.find(([key]) => key === entry.action)?.[1] ?? entry.action;
-  const kind = ["suspend", "disable", "ban", "federation_block"].includes(entry.action)
+  const kind = ["suspend", "disable", "ban"].includes(entry.action)
     ? "danger"
     : ["delete", "timeout"].includes(entry.action)
       ? "warn"
@@ -347,7 +346,6 @@ async function renderAutomod(view) {
         <a class="btn small ghost" href="#automod-signup-scoring" data-jump>Signup scoring</a>
         <a class="btn small ghost" href="#automod-ip-caps" data-jump>Accounts per address</a>
         <a class="btn small ghost" href="#automod-login" data-jump>Sign-in</a>
-        <a class="btn small ghost" href="#automod-federation" data-jump>Federation</a>
       </div>
       <div class="stack">
         <div class="stats automod-stats">
@@ -539,9 +537,8 @@ async function renderAutomod(view) {
       <form class="card" id="automod-spam" aria-labelledby="automod-spam-title">
         <h2 id="automod-spam-title">Spam rules</h2>
         <p class="muted">
-          Instance-wide checks on every message, edit and thread, including from accounts on other instances. The
-          message that trips a rule is refused, and any action other than log also deletes the earlier messages that
-          counted toward it. Accounts from other instances are blocked from federating instead of suspended or disabled.
+          Instance-wide checks on every message, edit and thread. The message that trips a rule is refused, and any
+          action other than log also deletes the earlier messages that counted toward it.
         </p>
         <div class="stack">
           ${SPAM_RULES.map(
@@ -632,7 +629,7 @@ async function renderAutomod(view) {
         <h2 id="automod-quarantine-title">New account quarantine</h2>
         <p class="muted">
           Limits what accounts can do in their first hours. Refused messages get a notice that says what is blocked and
-          when the limit ends. Bots, accounts from other instances and accounts with the bypass rate limits right are
+          when the limit ends. Bots and accounts with the bypass rate limits right are
           never quarantined. Off by default.
         </p>
         <div class="stack">
@@ -859,22 +856,6 @@ async function renderAutomod(view) {
         </div>
         <div class="form-actions"><button class="btn primary" type="submit">Save sign-in protection</button></div>
       </form>
-
-      <form class="card" id="automod-federation" aria-labelledby="automod-federation-title">
-        <h2 id="automod-federation-title">Federation</h2>
-        <p class="muted">
-          Accounts from other instances go through the same rules here, and what automod does to them applies on this
-          instance. These settings also tell their home instance, which sees the report in its Reports queue.
-        </p>
-        <div class="stack">
-          ${toggle("reportToHome", s.federation.reportToHome, "Report automod hits to the account's home instance", "At most one report per account and rule an hour. The report carries the rule, the action and the excerpt from the log.")}
-          ${toggle("acceptReports", s.federation.acceptReports, "Accept automod reports from other instances", "They show up in Reports as automod reports from that instance.")}
-        </div>
-        <div class="form-grid" style="margin-top:16px">
-          ${number("reportsPerHourPerInstance", s.federation.reportsPerHourPerInstance, "Reports accepted per instance per hour", "0 accepts none.", 0, 100000)}
-        </div>
-        <div class="form-actions"><button class="btn primary" type="submit">Save federation</button></div>
-      </form>
       </div>
     `,
   );
@@ -1003,10 +984,6 @@ async function renderAutomod(view) {
       },
       "Address limits saved",
     );
-  });
-  $("#automod-federation", view).addEventListener("submit", (event) => {
-    event.preventDefault();
-    save(event.currentTarget, { federation: values(event.currentTarget) }, "Federation settings saved");
   });
   const capLine = (label, part, unit) =>
     html`<p>
@@ -1285,7 +1262,7 @@ async function renderAutomod(view) {
               <div class="stack">
                 ${shows("staff") ? toggle("exemptStaff", policy.exemptStaff, "Skip staff", "Accounts with a staff role or the operator right.") : ""}
                 ${shows("bots") ? toggle("exemptBots", policy.exemptBots, "Skip bots") : ""}
-                ${shows("verified") ? toggle("exemptVerifiedEmail", policy.exemptVerifiedEmail, "Skip accounts with a verified email", "Accounts from other instances never count as verified here.") : ""}
+                ${shows("verified") ? toggle("exemptVerifiedEmail", policy.exemptVerifiedEmail, "Skip accounts with a verified email") : ""}
               </div>
               <div class="form-grid">
                 ${shows("age") ? number("exemptAccountAgeDays", policy.exemptAccountAgeDays, "Skip accounts older than", "Days. 0 checks every account.", 0, 3650) : ""}
@@ -2098,8 +2075,7 @@ async function renderAutomod(view) {
               <h3>Act on the accounts</h3>
               <p class="muted">
                 Acts on the accounts you select, or on everyone in the incident when none are selected. Your own account
-                is always skipped. Accounts from other instances are blocked from federating instead of suspended,
-                disabled or IP banned.
+                is always skipped.
               </p>
               <label>Reason<span class="hint">Optional. Shown in the automod log and on suspensions.</span><input id="incident-reason" maxlength="512" placeholder="Raid on ${incident.guild?.name ?? "the instance"}" /></label>
               <div class="row automod-bulk">
@@ -2130,7 +2106,6 @@ async function renderAutomod(view) {
                             ${entry.user
                               ? html`<button class="link-button ident" type="button" data-open="${entry.id}">${avatar(entry.user)}<span><strong>${userName(entry.user)}</strong><span class="muted">${userTag(entry.user)}</span></span></button>`
                               : html`<span class="muted">Deleted account ${entry.id}</span>`}
-                            ${entry.user?.federated_instance ? html`<span class="muted automod-sub">from ${entry.user.federated_instance}</span>` : ""}
                           </td>
                           <td class="hide-sm">${entry.user ? fmtDate(entry.user.created_at) : ""}</td>
                           <td class="automod-num">${fmtNumber(entry.actions)}</td>

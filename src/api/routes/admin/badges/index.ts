@@ -13,6 +13,8 @@ export const serializeBadge = (badge: Badge, holders?: number) => ({
     description: badge.description,
     icon: badge.icon,
     link: badge.link ?? null,
+    rarity: badge.rarity ?? null,
+    details: badge.details ?? null,
     ...(holders !== undefined ? { holders } : {}),
 });
 
@@ -62,6 +64,8 @@ router.post(
             description: body.description.trim(),
             icon,
             link: body.link?.trim() || undefined,
+            rarity: body.rarity ?? null,
+            details: body.details?.trim() || null,
         }).save();
         res.status(201).json(serializeBadge(badge, 0));
     },

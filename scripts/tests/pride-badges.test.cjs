@@ -113,19 +113,19 @@ test("catalog has every upstream flag plus preserved supplemental flags and uniq
     }
 });
 
-test("profile projection preserves selection order, removes duplicates and ignores unknown stored flags", () => {
-    const badges = catalog.prideBadges(["transgender", "rainbow", "transgender", "operator"]);
-    assert.deepEqual(
-        JSON.parse(JSON.stringify(badges)),
-        JSON.parse(
-            JSON.stringify(
-                catalog.PRIDE_BADGES.filter((b) => ["transgender", "rainbow"].includes(b.slug))
-                    .reverse()
-                    .map(({ id, description, icon }) => ({ id, description, icon })),
-            ),
-        ),
-    );
-    assert.equal(catalog.prideBadges(null).length, 0);
+test("public user objects carry the pride selection so flags render with the pronouns", () => {
+    const schema = fs.readFileSync("src/schemas/api/users/User.ts", "utf8");
+    const publicKeys = schema.slice(schema.indexOf("export enum PublicUserEnum"), schema.indexOf("export type PublicUserKeys"));
+    assert.match(publicKeys, /\bpride_badges,/);
+    const entity = fs.readFileSync("src/database/entities/User.ts", "utf8");
+    assert.match(entity, /@Column\(\{ type: "text", array: true, default: "\{\}" \}\)\s+pride_badges\?: string\[\];/);
+    assert.match(entity, /toPartialUser\(\)[\s\S]*?pride_badges: this\.pride_badges \?\? \[\]/);
+});
+
+test("pride flags are not profile badges", () => {
+    assert.doesNotMatch(fs.readFileSync("src/api/util/utility/profileBadges.ts", "utf8"), /pride/i);
+    assert.doesNotMatch(fs.readFileSync("src/api/util/utility/badgeSettings.ts", "utf8"), /pride/i);
+    assert.equal(catalog.prideBadges, undefined);
 });
 
 test("own selection persists only pride flags and emits only explicit public selections", async () => {
@@ -180,7 +180,6 @@ test("observer events use the public user projection plus explicit pride slugs",
         "@spacebar/schemas": { RelationshipType: { FRIEND: 1 } },
         typeorm: { In: (value) => value, Not: (value) => value },
         "./UserFieldCaps": require("../../dist/util/util/UserFieldCaps.js"),
-        "./AvatarCornerRadius": require("../../dist/util/util/AvatarCornerRadius.js"),
     });
     await presence.broadcastUserUpdate("self", ["transgender"]);
     assert.equal(events.length, 3);
@@ -189,7 +188,6 @@ test("observer events use the public user projection plus explicit pride slugs",
             id: "self",
             username: "public",
             pride_badges: ["transgender"],
-            avatar_corner_radius: null,
         });
         assert.doesNotMatch(JSON.stringify(event), /email|token|rights|password|account_preferences/);
     }

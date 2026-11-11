@@ -1,6 +1,6 @@
 # Cloudflare Workers
 
-Meowcord can run as Cloudflare Workers instead of the Bun server. Nobody has deployed this yet. It was tested with `wrangler dev` on one machine, and the Bun server in [setup.md](setup.md) is still the supported way to host an instance. Voice doesn't work on Workers.
+Discord OSS can run as Cloudflare Workers instead of the Bun server. Nobody has deployed this yet. It was tested with `wrangler dev` on one machine, and the Bun server in [setup.md](setup.md) is still the supported way to host an instance. Voice doesn't work on Workers.
 
 | Worker             | Directory         | What it does                                                                                              |
 | ------------------ | ----------------- | --------------------------------------------------------------------------------------------------------- |
@@ -25,12 +25,11 @@ Run these from the repository root with `bunx wrangler@4.79.0`, the version the 
     DATABASE=postgres://user:password@db.example:5432/meowcord bun run apply:migrations
     ```
 
-2. Create the keys, unless you are moving an instance that already has `jwt.key`, `jwt.key.pub` and `federation.key`. Every Worker and any Bun server on the same database need the same JWT pair. The API sends `event.secret` with every event it posts to the gateway. `recovery.key` encrypts the account recovery secrets, so changing it later makes every stored one unreadable. `.gitignore` covers `jwt.key*` and `federation.key*` but not `event.secret`, `recovery.key` or `instance.json`, so don't commit those.
+2. Create the keys, unless you are moving an instance that already has `jwt.key` and `jwt.key.pub`. Every Worker and any Bun server on the same database need the same JWT pair. The API sends `event.secret` with every event it posts to the gateway. `recovery.key` encrypts the account recovery secrets, so changing it later makes every stored one unreadable. `.gitignore` covers `jwt.key*` but not `event.secret`, `recovery.key` or `instance.json`, so don't commit those.
 
     ```sh
     openssl ecparam -name secp521r1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -out jwt.key
     openssl ec -in jwt.key -pubout -out jwt.key.pub
-    openssl genpkey -algorithm ed25519 -out federation.key
     openssl rand -hex 32 > event.secret
     openssl rand -hex 32 > recovery.key
     ```
@@ -56,7 +55,7 @@ Run these from the repository root with `bunx wrangler@4.79.0`, the version the 
     cd ../..
     ```
 
-6. Deploy the API. Its build command, `bun build.ts`, bundles the compiled `dist`, so rebuild `dist` before every deploy. Leave out `FEDERATION_KEY` if federation is off.
+6. Deploy the API. Its build command, `bun build.ts`, bundles the compiled `dist`, so rebuild `dist` before every deploy.
 
     ```sh
     cd workers/api
@@ -67,7 +66,6 @@ Run these from the repository root with `bunx wrangler@4.79.0`, the version the 
     bunx wrangler@4.79.0 secret put CONFIG_JSON < ../../instance.json
     bunx wrangler@4.79.0 secret put EVENT_SECRET < ../../event.secret
     bunx wrangler@4.79.0 secret put E2EE_RECOVERY_MASTER_KEY < ../../recovery.key
-    bunx wrangler@4.79.0 secret put FEDERATION_KEY < ../../federation.key
     cd ../..
     ```
 
@@ -94,7 +92,6 @@ The API and the gateway keep the configuration in the database's `config` table,
 | `CONFIG_TTL_SECONDS`       | API, gateway  | Seconds before an isolate reloads the configuration, 30 by default.                                   |
 | `DB_POOL_SIZE`             | API, gateway  | Database connections per request or per hub, 5 by default. Hyperdrive does the real pooling.          |
 | `E2EE_RECOVERY_MASTER_KEY` | API           | 32 bytes as hex or base64url. Without it, account recovery answers 503.                               |
-| `FEDERATION_KEY`           | API           | The PEM Ed25519 key from `federation.key`. Without it the federation jobs do nothing.                 |
 | `JOBS_BUDGET_MS`           | API           | How long one cron run keeps starting jobs, 25000 by default.                                          |
 | `STORAGE_LOCATION`         | API           | Where files go when `MEDIA` isn't bound, `/tmp/files` by default. `/tmp` lasts for one request.       |
 | `DB_LOGGING`               | gateway       | `true` logs every query.                                                                              |
@@ -120,22 +117,20 @@ The router serves media under the same R2 keys as the Bun server's file and S3 s
 
 The Worker resizes images and the Bun CDN doesn't. `?size=`, `?width=` and `?height=` are clamped to 16 through 4096 pixels and only scale down. The URL's extension or `?format=` picks WebP, PNG, JPEG or AVIF, `?quality=` sets the quality and `?animated=false` takes the first frame. PNG, JPEG, WebP, AVIF, GIF and APNG files up to 20 MB are transformed, and Cloudflare bills each unique transformation once per calendar month.
 
-Videos are served as stored, because workerd can't run ffmpeg for preview frames. Standard stickers missing from R2, cloud attachment uploads and their clone into a message go to the API Worker, and a sticker answer is cached for 6 hours. The API Worker serves federated media, and `federation-upload` answers 404. Uploads over 100 MB fail, because that is the request body limit on the Free and Pro plans.
+Videos are served as stored, because workerd can't run ffmpeg for preview frames. Standard stickers missing from R2, cloud attachment uploads and their clone into a message go to the API Worker, and a sticker answer is cached for 6 hours. Uploads over 100 MB fail, because that is the request body limit on the Free and Pro plans.
 
 ## Background jobs
 
 The API Worker's Cron Trigger fires every minute and runs each job whose interval divides the minute. A job that loops over rows stops at its time slice and leaves the rest for the next run. Each job holds a PostgreSQL advisory lock, so two runs never do the same job at once. A Bun server on the same database doesn't take these locks, but the jobs that must not repeat work also claim a lease in `job_leases` or change rows with a conditional update, so a Bun server and the Workers send each update once.
 
-| Interval   | Jobs                                                                                                                                                                                               |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 minute   | `scheduled-messages`, `scheduled-events`, `poll-expiry`, `announcement-delivery`, `thread-archiver`, `message-purge`, `rate-limit-prune`, `attachment-files`, `image-files`, `federation-delivery` |
-| 5 minutes  | `temporary-sessions`, `cloud-uploads`, `federation-registry`                                                                                                                                       |
-| 10 minutes | `discovery-index`, `federation-presence`                                                                                                                                                           |
-| 1 hour     | `federation-inbox-prune`, `insight-rollups`                                                                                                                                                        |
+| Interval   | Jobs                                                                                                                                                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1 minute   | `scheduled-messages`, `scheduled-events`, `poll-expiry`, `announcement-delivery`, `thread-archiver`, `message-purge`, `rate-limit-prune`, `attachment-files`, `image-files` |
+| 5 minutes  | `temporary-sessions`, `cloud-uploads`                                                                                                                        |
+| 10 minutes | `discovery-index`                                                                                                                                            |
+| 1 hour     | `insight-rollups`                                                                                                                                            |
 
-The federation jobs run only when `federation.enabled` is on and `FEDERATION_KEY` is set. The `federation-registry` job announces once every 24 hours, so a change that the Bun server announces 30 seconds later, such as a server verified for global discovery, can wait until the next daily announce.
-
-The Workers don't do the federation startup sync that resumes and announces instance moves, the collectibles catalog refresh, delivery of announcements that have attachments, or rate limit counting shared between processes.
+The Workers don't do the collectibles catalog refresh, delivery of announcements that have attachments, or rate limit counting shared between processes.
 
 ## Gateway
 
@@ -146,7 +141,6 @@ All websockets go to one Durable Object, so one gateway handles at most 32,768 s
 - Voice, video, Go Live and DM calls. They need UDP and the SFU. A voice join still gets a `VOICE_SERVER_UPDATE` pointing at the first entry of `regions.available`, which is `127.0.0.1:3001/voice` by default and doesn't exist on Workers. DM call rings and the timer that ends a stage without speakers live in one API isolate's memory.
 - Files the Bun server keeps next to `config.json`, such as the `.e2ee-system` keys and the `.announcement-spool`. The recovery key comes from `E2EE_RECOVERY_MASTER_KEY` instead.
 - Storage quotas. The API writes to R2 without the Bun server's quota layer.
-- Federation between instances, which wasn't tested.
 - On the admin dashboard's System page, the client card shows no client, because the client lives in the router's assets where the API can't see it, and the performance card covers one API isolate since it started.
 - Request validation for schemas that don't compile, which fail on the Bun server too.
 

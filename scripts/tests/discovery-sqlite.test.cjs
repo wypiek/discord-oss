@@ -57,7 +57,6 @@ test("SQLite discovery search ranks, pages, filters categories and never lists h
         const pinned = await make({ name: "Quiet lanterns", member_count: 1, discovery_weight: 5 });
         const unpublished = await make({ name: "Lantern unpublished", features: [], member_count: 500 });
         const excluded = await make({ name: "Lantern excluded", discovery_excluded: true, member_count: 500 });
-        const mirror = await make({ name: "Lantern mirror", federated_instance: "meow.example", member_count: 500 });
         await Channel.create({ id: id(), guild_id: keyword.id, name: "general", type: 0, created_at: new Date(), last_message_id: Snowflake.generate() }).save();
 
         const changed = await discovery.reindexDiscovery();
@@ -81,7 +80,7 @@ test("SQLite discovery search ranks, pages, filters categories and never lists h
         assert.deepEqual(await discovery.localDiscoveryCategoryCounts({ query: "lantern" }), [{ id: 2, count: 1 }]);
 
         const browse = await discovery.searchLocalDiscovery({ offset: 0, limit: 48 });
-        for (const hidden of [unpublished, excluded, mirror]) {
+        for (const hidden of [unpublished, excluded]) {
             assert.ok(!ids(browse).includes(hidden.id), hidden.name);
             assert.ok(!ids(await discovery.searchLocalDiscovery({ query: hidden.name, offset: 0, limit: 48 })).includes(hidden.id), hidden.name);
         }

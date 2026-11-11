@@ -1,7 +1,6 @@
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
-import { assertMirrorGuildEditable } from "@spacebar/api/util/utility/federatedAdmin";
 import { auditLogReason } from "@spacebar/api/util/utility/fieldCaps";
 import { AuditLog, Guild, SoundboardSound } from "@spacebar/database";
 import { AuditLogEvents, SoundboardSoundModifySchema } from "@spacebar/schemas";
@@ -12,7 +11,7 @@ const AUDIT_KEYS = ["name", "volume", "emoji_id", "emoji_name"];
 
 const loadSound = async (req: Request) => {
     const guild_id = req.params.guild_id as string;
-    assertMirrorGuildEditable(await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true, federated_instance: true } }));
+    await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true } });
     const sound = await SoundboardSound.findOne({ where: { id: req.params.sound_id as string, guild_id } });
     if (!sound) throw new HTTPError("This server has no sound with that ID", 404);
     return { guild_id, sound };

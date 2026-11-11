@@ -7,7 +7,7 @@ import { RULES } from "../index";
 
 const router = Router({ mergeParams: true });
 
-const ACTIONS = ["suspend", "delete", "block", "log", "timeout", "disable", "federation_block", "ban", "hold", "flag"];
+const ACTIONS = ["suspend", "delete", "block", "log", "timeout", "disable", "ban", "hold", "flag"];
 const REVIEW_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 router.get(

@@ -4,7 +4,6 @@ import { HTTPError } from "lambert-server/HTTPError";
 import multer from "multer";
 import { assertNoHarmfulLinks, checkAutomod, checkSpam, enforceQuarantine, handleMessage, postHandleMessage, syncCrosspostCopies } from "@spacebar/api/util";
 import { route, parsePayloadJson } from "@spacebar/api/middlewares";
-import { relayedAuthorship } from "@spacebar/api/util/utility/federationAuthorship";
 import { Attachment, AuditLog, Channel, Message } from "@spacebar/database";
 import {
     MessageCreateEvent,
@@ -116,7 +115,7 @@ router.patch(
             assertNoHarmfulLinks(body.content ?? "");
             if (message.author_id === req.user_id)
                 await enforceQuarantine(
-                    { user_id: req.user_id, federated: !!req.user?.federated_instance, bot: req.user_bot, system: req.user?.system, rights: req.rights },
+                    { user_id: req.user_id, bot: req.user_bot, system: req.user?.system, rights: req.rights },
                     { content: body.content ?? "", guild_id: message.guild_id, channel_id },
                 );
             if (message.author_id === req.user_id)
@@ -167,8 +166,6 @@ router.patch(
             { componentsChanged: body.components !== undefined },
         );
         if (new_message.flags & suppress) new_message.embeds = new_message.embeds.filter((embed) => embed.type === EmbedType.rich);
-        const authorship = relayedAuthorship(req);
-        if (authorship && req.user_id === message.author_id) new_message.authorship = authorship;
 
         await new_message.save();
 

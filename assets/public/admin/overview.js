@@ -27,7 +27,7 @@
     {
       id: "messages",
       title: "Messages sent",
-      hint: "Messages from local and federated accounts",
+      hint: "Messages sent on this instance",
       metrics: ["messages"],
       noun: ["message", "messages"],
     },
@@ -62,14 +62,6 @@
       metrics: ["automod_actions"],
       noun: ["action", "actions"],
       access: "reports",
-    },
-    {
-      id: "federation",
-      title: "Federation",
-      hint: "New ids this instance learned from each instance, a measure of incoming traffic",
-      metrics: ["federation"],
-      noun: ["new id", "new ids"],
-      access: "operator",
     },
     {
       id: "storage",
@@ -163,7 +155,6 @@
 
   const seriesLabel = (chart, series) => {
     if (chart.labels?.[series.key]) return chart.labels[series.key];
-    if (series.key === "other") return `${fmtNumber(series.instances ?? 0)} other instances`;
     return series.key;
   };
 
@@ -234,7 +225,7 @@
       });
     } else {
       data.series.forEach((series, seriesIndex) => {
-        const color = series.key === "other" ? "var(--chart-other)" : SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
+        const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
         const path = series.points.map((value, index) => `${index ? "L" : "M"}${xAt(index).toFixed(1)},${yAt(value).toFixed(1)}`).join("");
         marks.append(svg("path", { d: path, fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
         marks.append(svg("circle", { cx: xAt(count - 1), cy: yAt(series.points.at(-1)), r: 4, fill: color, class: "chart-dot" }));
@@ -248,7 +239,7 @@
     const cursorDots = asBars
       ? []
       : data.series.map((series, seriesIndex) => {
-          const dot = svg("circle", { r: 4, fill: series.key === "other" ? "var(--chart-other)" : SERIES_COLORS[seriesIndex % SERIES_COLORS.length], class: "chart-dot" });
+          const dot = svg("circle", { r: 4, fill: SERIES_COLORS[seriesIndex % SERIES_COLORS.length], class: "chart-dot" });
           cursor.append(dot);
           return dot;
         });
@@ -276,7 +267,7 @@
           ${data.series.map(
             (series, seriesIndex) =>
               html`<span class="chart-tooltip-row"
-                >${data.series.length > 1 ? html`<span class="chart-key" style="background:${series.key === "other" ? "var(--chart-other)" : SERIES_COLORS[seriesIndex % SERIES_COLORS.length]}"></span>${seriesLabel(chart, series)}` : html`<span>${chart.title}</span>`}<span class="chart-tooltip-value">${fmtValue(series.points[active], unit)}</span></span
+                >${data.series.length > 1 ? html`<span class="chart-key" style="background:${SERIES_COLORS[seriesIndex % SERIES_COLORS.length]}"></span>${seriesLabel(chart, series)}` : html`<span>${chart.title}</span>`}<span class="chart-tooltip-value">${fmtValue(series.points[active], unit)}</span></span
               >`,
           )}`,
       );
@@ -392,7 +383,7 @@
         if (ticket !== request || !card.isConnected) return;
         data = next;
         mount($(".chart-summary", card), headline(chart, data));
-        mount($(".chart-legend", card), data.series.length > 1 ? data.series.map((series, index) => html`<li><span class="chart-key" style="background:${series.key === "other" ? "var(--chart-other)" : SERIES_COLORS[index % SERIES_COLORS.length]}"></span>${seriesLabel(chart, series)} <span class="muted">${fmtValue(series.total, chart.unit)}</span></li>`) : "");
+        mount($(".chart-legend", card), data.series.length > 1 ? data.series.map((series, index) => html`<li><span class="chart-key" style="background:${SERIES_COLORS[index % SERIES_COLORS.length]}"></span>${seriesLabel(chart, series)} <span class="muted">${fmtValue(series.total, chart.unit)}</span></li>`) : "");
         $(".chart-legend", card).hidden = data.series.length < 2;
         const empty = data.series.every((series) => series.points.every((value) => !value));
         $(".chart-empty", card).hidden = !empty;
@@ -578,8 +569,6 @@
             <div class="card stat stat-trend"><span class="stat-label">Loading trends…</span></div>
           </div>
           <div class="stats stats-small">
-            ${o.counts.remote_users ? total("Users from other instances", fmtCount(o.counts.remote_users), o.access.users ? "#/users/remote" : null) : ""}
-            ${o.counts.remote_guilds ? total("Servers on other instances", fmtCount(o.counts.remote_guilds), o.access.guilds ? "#/guilds/remote" : null) : ""}
             ${total("Memberships", fmtCount(o.counts.members))}
             ${total("Disabled accounts", fmtCount(o.counts.disabled_users), o.access.users ? "#/users" : null)}
             ${total("Open incidents", fmtCount(o.counts.open_incidents), o.access.status ? "#/status" : null)}

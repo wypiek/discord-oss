@@ -15,7 +15,7 @@ router.get(
         },
     }),
     async (req: Request, res: Response) => {
-        res.json(await Collectibles.shop());
+        res.json(await Collectibles.shop(typeof req.query.tab === "string" ? req.query.tab : undefined));
     },
 );
 

@@ -21,9 +21,7 @@ import { BRANDED_CLIENT_ASSETS } from "../util/util/BrandMarkup";
 import { sendMobileBundle } from "./MobileBundle";
 import { compressedStatic } from "../util/util/CompressedStatic";
 import { inviteCodeFromPath, invitePage } from "@spacebar/api/util";
-import { instanceId } from "@spacebar/api/util/utility/federation";
 import { User } from "@spacebar/database";
-import { IsNull } from "typeorm";
 import {
     appIconPng,
     appIconUrl,
@@ -188,7 +186,6 @@ const buildHtml = () => {
     const images = brandImageUrls();
     const env = clientEnvScript(baseGlobalEnv(sandbox.window.GLOBAL_ENV ?? {}), {
         instanceName: client.instanceName,
-        instanceId: instanceId(),
         activityApplicationHost: client.activityApplicationHost,
         loadingTips: client.loadingTips,
         loadingSvg: client.loadingSvg,
@@ -229,16 +226,15 @@ const clientRoots = () => {
 const FRIEND_NAME = /^[\p{L}\p{N}_.-]{1,32}$/u;
 
 const renderAddFriend = (origin: string, name: string) => {
-    const handle = `${name}@${instanceId() ?? new URL(origin).host}`;
     const preview = openGraphTags(origin, {
         title: `Add ${name} on ${instanceName()}`,
-        description: `Add ${handle} as a friend from any Meowcord instance.`,
+        description: `Add ${name} as a friend on ${instanceName()}.`,
         url: `/add/${encodeURIComponent(name)}`,
     });
     return brandPage(fs.readFileSync(path.join(ASSET_FOLDER_PATH, "public", "add-friend.html"), "utf8"))
         .replace("__OPEN_GRAPH__", preview)
         .replaceAll("__FRIEND_NAME__", escapeHtml(name))
-        .replaceAll("__FRIEND_HANDLE__", escapeHtml(handle))
+        .replaceAll("__FRIEND_HANDLE__", escapeHtml(name))
         .replaceAll("__OPEN_HREF__", escapeHtml(`/channels/@me?add=${encodeURIComponent(name)}`));
 };
 
@@ -313,9 +309,7 @@ export default function TestClient(app: Application) {
     app.get("/add/:name", async (req, res, next) => {
         const name = String(req.params.name);
         if (!FRIEND_NAME.test(name)) return next();
-        const user = await User.findOne({ where: { username: name, federated_instance: IsNull(), bot: false, deleted: false }, select: { id: true, username: true } }).catch(
-            () => null,
-        );
+        const user = await User.findOne({ where: { username: name, bot: false, deleted: false }, select: { id: true, username: true } }).catch(() => null);
         if (!user) return next();
         res.set("Cache-Control", "no-cache")
             .type("html")

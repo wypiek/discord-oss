@@ -123,7 +123,7 @@ router.post(
         if (ipVariants(ip).includes(normalizeIp(req.ip) ?? "")) throw new HTTPError("You can't ban the address you are using", 400);
         if (InstanceBan.sharedAddress(ip))
             throw new HTTPError(
-                "Private, loopback, Cloudflare and other shared addresses can't be banned, because a reverse proxy, Cloudflare, a container network or the federation relay can make many people share them. If every account shows this address, set security.trustedProxies so the server sees real addresses.",
+                "Private, loopback, Cloudflare and other shared addresses can't be banned, because a reverse proxy, Cloudflare or a container network can make many people share them. If every account shows this address, set security.trustedProxies so the server sees real addresses.",
                 400,
             );
         const existing = await InstanceBan.findOne({ where: ipVariants(ip).map((variant) => ({ ip_address: variant, is_allowlisted: false })) });

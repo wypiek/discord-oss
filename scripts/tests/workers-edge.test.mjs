@@ -19,6 +19,14 @@ test("the router sends websockets to the gateway and api paths to the api", () =
     assert.equal(route("/_meowcord/client.json", false), "hidden");
     assert.equal(route("/avatars/1/2.png", false), "edge");
     assert.equal(route("/channels/@me", false), "edge");
+    assert.equal(route("/status/history.atom", false), "api");
+    assert.equal(route("/status/history", false), "edge");
+    assert.equal(route("/blog", false), "api");
+    assert.equal(route("/blog/welcome", false), "api");
+    assert.equal(route("/blog/feed.atom", false), "api");
+    assert.equal(route("/support", false), "api");
+    assert.equal(route("/support/articles/creating-an-account", false), "api");
+    assert.equal(route("/site-images/0123456789abcdef0123456789abcdef.png", false), "edge");
 });
 
 test("uploads are typed from their bytes, not their names", () => {

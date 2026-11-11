@@ -56,12 +56,11 @@ async function identify(granted) {
         },
         "@spacebar/gateway": { CLOSECODES: { Authentication_failed: 4004 } },
         "@spacebar/schemas": { ChannelType: { GUILD_STAGE_VOICE: 13 }, validateSchema: (_, data) => data },
-        "@spacebar/util": { FederatedVoice: {}, getPermission: permissionsFor(granted), listenEvent: async () => async () => {} },
+        "@spacebar/util": { getPermission: permissionsFor(granted), listenEvent: async () => async () => {} },
         "@spacebar/webrtc": { generateSsrc: () => 1, mediaServer: { join: async () => client, port: 1, ip: "127.0.0.1" }, Send: async () => {}, VoiceOPCodes: { READY: 2 } },
         "./Video": { subscribeToProducers: async () => {} },
         "./Speaking": { relaySpeaking: async () => {} },
         "../util/VoiceSessions": { VoiceSessions: { register: async () => {}, find: () => undefined, end: async () => {} } },
-        "../util/DaveIdentity": { daveIdOf: async () => "1" },
     });
     const socket = { readyState: 1, close() {} };
     await onIdentify.call(socket, { op: 0, d: { server_id: "guild", user_id: "user", session_id: "session", token: "token" } });
@@ -103,7 +102,6 @@ async function joinWithVideo(granted) {
         "@spacebar/util": {
             Config: { get: () => ({ login: {}, regions: { default: "local", available: [{ id: "local", endpoint: "127.0.0.1" }] } }) },
             emitEvent: async () => {},
-            FederatedVoice: { setApplier() {} },
             getPermission: permissionsFor(granted),
             requiredAction: () => null,
         },

@@ -173,7 +173,7 @@ export async function applyAutomodMatch(opts: {
     const key = opts.match.rule === "word" ? "wordLists" : "slurs";
     const author = await User.findOne({
         where: { id: opts.user_id },
-        select: { id: true, username: true, system: true, flags: true, bot: true, verified: true, rights: true, federated_instance: true, created_at: true },
+        select: { id: true, username: true, system: true, flags: true, bot: true, verified: true, rights: true, created_at: true },
     });
     if (author && (await exemptionFrom(key, author, opts.guild_id))) return { action: "log", entry: null, blocked: false };
     const exempt = !author || author.system || (BigInt(author.flags ?? 0) & BigInt(UserFlags.FLAGS.SYSTEM)) !== 0n;
@@ -262,14 +262,12 @@ export async function automodVerifiedReport(opts: {
 }
 
 export async function reverseAutomodAction(entry: AutomodAction, staff_id: string, reversal: "undo" | "not_a_match" | "false_positive") {
-    const suspended = entry.action === "suspend" || (entry.action === "federation_block" && !!entry.suspended_until);
-    if (entry.user_id && suspended) {
+    if (entry.user_id && entry.action === "suspend") {
         const user = await User.findOne({ where: { id: entry.user_id }, select: { id: true, suspended_until: true } });
         if (user?.suspended_until && (!entry.suspended_until || new Date(user.suspended_until).getTime() <= new Date(entry.suspended_until).getTime() + 1000))
             await User.update({ id: user.id }, { suspended_until: null });
     }
-    if (entry.user_id && (entry.action === "disable" || (entry.action === "federation_block" && !entry.suspended_until)))
-        await User.update({ id: entry.user_id }, { disabled: false, flags: () => `flags & ~${UserFlags.FLAGS.DISABLED}` });
+    if (entry.user_id && entry.action === "disable") await User.update({ id: entry.user_id }, { disabled: false, flags: () => `flags & ~${UserFlags.FLAGS.DISABLED}` });
     if (entry.user_id && entry.action === "timeout") {
         const { liftSpamMute } = await import("./spamGuard.js");
         await liftSpamMute(entry.user_id);
@@ -278,10 +276,6 @@ export async function reverseAutomodAction(entry: AutomodAction, staff_id: strin
             const { emitMemberUpdate } = await import("./safety.js");
             await emitMemberUpdate(entry.guild_id, entry.user_id).catch(() => undefined);
         }
-    }
-    if (entry.user_id && entry.action === "federation_block") {
-        const { unblockFederatedUser } = await import("./spamGuard.js");
-        await unblockFederatedUser(entry.user_id);
     }
     if (entry.user_id && entry.action === "hold") await User.update({ id: entry.user_id, join_status: "pending" }, { join_status: "approved" });
     if (entry.user_id && entry.rule === "quarantine") {

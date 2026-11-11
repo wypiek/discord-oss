@@ -180,12 +180,6 @@ export class AutomodExplicitContentConfiguration {
     blockedHashes: string[] = [];
 }
 
-export class AutomodFederationConfiguration {
-    reportToHome: boolean = true;
-    acceptReports: boolean = true;
-    reportsPerHourPerInstance: number = 120;
-}
-
 export const AUTOMOD_POLICY_KEYS = [
     "everyoneSpam",
     "mentionSpam",
@@ -264,6 +258,5 @@ export class AutomodConfiguration {
     quarantine: AutomodQuarantineConfiguration = new AutomodQuarantineConfiguration();
     verification: AutomodVerificationConfiguration = new AutomodVerificationConfiguration();
     explicitContent: AutomodExplicitContentConfiguration = new AutomodExplicitContentConfiguration();
-    federation: AutomodFederationConfiguration = new AutomodFederationConfiguration();
     policies: AutomodPoliciesConfiguration = new AutomodPoliciesConfiguration();
 }

@@ -82,7 +82,7 @@ const listedFilter = (parameters: unknown[], hiddenIds: string[]) => {
         parameters.push(value);
         return `$${parameters.length}`;
     };
-    const clauses = ["g.discovery_excluded = false", "g.federated_instance IS NULL"];
+    const clauses = ["g.discovery_excluded = false"];
     if (!Config.get().guild.discovery.showAllGuilds) clauses.push(sqlArrayIncludes(add("DISCOVERABLE"), "g.features"));
     if (hiddenIds.length) clauses.push(`NOT (${sqlArrayIncludes("g.id", add(hiddenIds))})`);
     return { clauses, add };
@@ -130,7 +130,7 @@ export async function localDiscoveryCategoryCounts(options: { query?: unknown; h
     return rows.map((row) => ({ id: Number(row.id), count: Number(row.count) }));
 }
 
-type IndexableGuild = Pick<Guild, "id" | "name" | "description" | "features" | "discovery_excluded" | "federated_instance" | "primary_category_id" | "discovery_metadata">;
+type IndexableGuild = Pick<Guild, "id" | "name" | "description" | "features" | "discovery_excluded" | "primary_category_id" | "discovery_metadata">;
 
 const INDEX_SELECT = {
     id: true,
@@ -138,7 +138,6 @@ const INDEX_SELECT = {
     description: true,
     features: true,
     discovery_excluded: true,
-    federated_instance: true,
     primary_category_id: true,
     discovery_metadata: true,
 } as const;

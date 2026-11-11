@@ -23,6 +23,8 @@ router.patch(
         if (icon) badge.icon = icon;
         if (body.description !== undefined) badge.description = body.description.trim();
         if (body.link !== undefined) Object.assign(badge, { link: body.link?.trim() || null });
+        if (body.rarity !== undefined) badge.rarity = body.rarity;
+        if (body.details !== undefined) badge.details = body.details?.trim() || null;
         await badge.save();
 
         res.json(serializeBadge(badge));

@@ -45,7 +45,6 @@ async function load(relative, assets, overrides = {}) {
                 };
             if (id === "./ProcessLifecycle") return { ProcessLifecycle: { eventEmitter: new (require("node:events").EventEmitter)() } };
             if (id === "./Branding") return { instanceName: () => "Test instance" };
-            if (id === "./SteamFrames") return { steamFrameCategory: () => ({ products: [] }), steamFrameRecency: () => undefined };
             if (id === "node:fs/promises" && overrides.fs) return overrides.fs;
             if (id === "jimp" && overrides.jimp) return overrides.jimp;
             return require(id);
@@ -68,7 +67,7 @@ test("cached shop search preserves stable sorting, variants, duplicate precedenc
     const variants = {
         sku_id: "300",
         name: "Alpha",
-        type: 3000,
+        type: 2000,
         is_first_party: false,
         variants: [{ type: 2 }],
         items: [{ label: "special" }],

@@ -2,14 +2,11 @@ import { Router, Response, Request } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import { fileTypeFromBuffer } from "file-type";
 import { storage, setCacheControl, setCacheControlNotFound, internalUpload, validateServerAuth, fetchUpstreamAsset, sendAsset, safeMediaType } from "../../../util";
-import { COLLECTIBLE_ART_SLOTS, Config, steamFrameArtUrl, steamFrameBySku } from "@spacebar/util";
-import { sendRemoteFallback } from "../../../util/federationMedia";
+import { Config } from "@spacebar/util";
 import crypto from "node:crypto";
 
 const ANIMATED_MIME_TYPES = ["image/apng", "image/gif", "image/gifv"];
 const STATIC_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/avif", "image/svg+xml", "image/svg"];
-const REMOTE_ART = new RegExp(`^(\\d{1,20})\\/(${COLLECTIBLE_ART_SLOTS.join("|")})$`);
-const STEAM_ART = /^(\d{19})\/(animated|static)$/;
 
 const router = Router({ mergeParams: true });
 
@@ -69,16 +66,6 @@ async function sendUpstream(req: Request, res: Response, asset: string) {
     const path = `collectibles-shop-upstream/${asset}`;
     const stored = await storage.get(path);
     if (stored) return sendAsset(res, stored, asset);
-    const steam = STEAM_ART.exec(asset);
-    const frame = steam && steamFrameBySku(steam[1]);
-    if (steam && frame) {
-        const slot = steam[2] as "animated" | "static";
-        const file = await fetchUpstreamAsset(`steam-frames/${frame.asset}/${slot}`, steamFrameArtUrl(frame, slot));
-        if (!file) return setCacheControlNotFound(req, res);
-        return sendAsset(res, file, asset);
-    }
-    const art = REMOTE_ART.exec(asset);
-    if (art && (await sendRemoteFallback(req, res, art[1], (remote) => `/media/v1/collectibles-shop/${remote}/${art[2]}`))) return;
     const file = await fetchUpstreamAsset(path, `https://cdn.discordapp.com/media/v1/collectibles-shop/${asset}`);
     if (!file) return setCacheControlNotFound(req, res);
     return sendAsset(res, file, asset);

@@ -696,6 +696,13 @@ export const STRINGS: Record<string, Row> = {
         "Nie udało się odszyfrować tej wiadomości",
         "无法解密此消息",
     ],
+    "This message wasn't encrypted for you": [
+        "Diese Nachricht wurde nicht für dich verschlüsselt",
+        "Ce message n'a pas été chiffré pour vous",
+        "このメッセージはあなた宛てに暗号化されていません",
+        "Ta wiadomość nie została zaszyfrowana dla Ciebie",
+        "此消息未为你加密",
+    ],
     "Sent before encryption was reset": [
         "Vor dem Zurücksetzen der Verschlüsselung gesendet",
         "Envoyé avant la réinitialisation du chiffrement",

@@ -8,13 +8,14 @@ import { DEFAULT_AVATAR_COLORS } from "./DefaultAvatars";
 import { BrandAssetCache } from "./BrandAssetCache";
 import { fetchBrandAsset, readBrandAssetFile, withinBrandImageLimits } from "./BrandAssetRequest";
 import { DEFAULT_INSTANCE_NAME } from "../config/types/ClientConfiguration";
-import { APP_THEME_COLOR, brandPageMarkup, iconTileMarkup, INSTANCE_ICON_PATH, INSTANCE_WHISKERS_PATH, wordmarkMarkup } from "./BrandMarkup";
+import { APP_THEME_COLOR, brandPageMarkup, glyphMarkup, iconTileMarkup, wordmarkMarkup } from "./BrandMarkup";
 
 export {
     APP_THEME_COLOR,
     BRAND_COLOR,
+    glyphMarkup,
+    iconSvg,
     INSTANCE_ICON_PATH,
-    INSTANCE_WHISKERS_PATH,
     placeholderAvatarSvg,
     qrLogoSvg,
 } from "./BrandMarkup";
@@ -66,7 +67,10 @@ export const brandImageUrls = () => {
 
 export const instanceIconTile = () => iconTileMarkup(brandImageUrls().icon);
 
-export const brandPage = (html: string) => brandPageMarkup(html, instanceName(), brandImageUrls().icon);
+export const brandPage = (html: string) => {
+    const { icon, logo } = brandImageUrls();
+    return brandPageMarkup(html, instanceName(), icon, logo);
+};
 
 export const sendBrandImage = (res: Response, image: BrandImage, cacheControl = "public, max-age=21600") => {
     res.set("Cache-Control", cacheControl);
@@ -194,4 +198,4 @@ export const appManifest = () => {
 };
 
 export const defaultAvatarSvg = (index: number) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="${DEFAULT_AVATAR_COLORS[index % DEFAULT_AVATAR_COLORS.length]}"/><g fill="#fff" transform="translate(53 54) scale(6.25)"><path fill-rule="evenodd" d="${INSTANCE_ICON_PATH}"/><path d="${INSTANCE_WHISKERS_PATH}"/></g></svg>`;
+    `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="${DEFAULT_AVATAR_COLORS[index % DEFAULT_AVATAR_COLORS.length]}"/>${glyphMarkup(53, 53, 150, "#fff")}</svg>`;

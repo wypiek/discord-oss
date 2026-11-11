@@ -5,26 +5,29 @@ import { Payload, StickerMeta } from "./files";
 import { DispatchHandler, Dispatcher, FluxAction, GatewayStore, HttpCall, HttpClient, HttpMethod, HttpOptions, HttpResponse } from "./webpack";
 import { t } from "./i18n";
 
-export type MessageState = "decrypted" | "pending" | "locked" | "missing" | "reset" | "failed";
+export type MessageState = "decrypted" | "pending" | "locked" | "missing" | "excluded" | "reset" | "failed";
 
 export const DECRYPTING_CONTENT = "Decrypting…";
 export const MISSING_CONTENT = "Sent before this browser was set up";
 export const LOCKED_CONTENT = "Unlock this browser to read this message";
 export const RESET_CONTENT = "Sent before encryption was reset";
 export const FAILED_CONTENT = "This message couldn't be decrypted";
+export const EXCLUDED_CONTENT = "This message wasn't encrypted for you";
 
 const decryptingContent = () => t(DECRYPTING_CONTENT);
 
 const contentFor = (state: MessageState | undefined, fallback?: string, trustsServer = false) =>
     state === "missing"
         ? t(MISSING_CONTENT)
-        : state === "locked"
-          ? t(trustsServer ? "Preparing private chat…" : LOCKED_CONTENT)
-          : state === "reset"
-            ? t(RESET_CONTENT)
-            : state === "failed"
-              ? t(FAILED_CONTENT)
-              : fallback;
+        : state === "excluded"
+          ? t(EXCLUDED_CONTENT)
+          : state === "locked"
+            ? t(trustsServer ? "Preparing private chat…" : LOCKED_CONTENT)
+            : state === "reset"
+              ? t(RESET_CONTENT)
+              : state === "failed"
+                ? t(FAILED_CONTENT)
+                : fallback;
 
 const SEARCH_URL = /^\/channels\/(\d+)\/messages\/search(\/tabs)?$/;
 const SEARCH_PAGES = 10;
@@ -52,16 +55,25 @@ export interface HookContext {
     onCredentials: (path: string, body: { password?: unknown; new_password?: unknown }, response: unknown) => void;
     onLogout: () => void;
     onError: (error: unknown, channelId: string) => void;
+    conversationWith?: (userId: string) => string | null;
     fetchEmbeds: (urls: string[]) => Promise<Record<string, unknown[]>>;
     fetchSoundmoji: (refs: string[]) => Promise<unknown[]>;
 }
 
 const AUTH_URL = /^\/auth\/(login|register)$/;
 const REPORT_URL = /^\/reporting\/(message|first_dm)$/;
+const USER_REPORT_URL = "/reporting/user";
 
 const MESSAGE_URL = /^\/channels\/(\d+)\/messages(?:\/(\d+))?$/;
 
 const CREATE_ATTACHMENTS_URL = /^\/channels\/(\d+)\/attachments$/;
+
+const MISMATCH_RETRIES = 2;
+
+const DECRYPT_RETRY_MS = 2000;
+const DECRYPT_RETRIES = 6;
+
+const REPORT_READY_MS = 15000;
 
 const isEncryptedMessage = (value: unknown): value is RawMessage & { encrypted: NonNullable<RawMessage["encrypted"]> } => {
     const message = value as RawMessage | null;
@@ -177,6 +189,7 @@ export const createHooks = (ctx: HookContext) => {
             show(message, sync);
             states.set(message.id, { state: "decrypted" });
             retry.delete(message.id);
+            failed.delete(message.id);
             return soundmoji(message).then(() => {
                 remember(message);
                 previews(message);
@@ -204,15 +217,19 @@ export const createHooks = (ctx: HookContext) => {
                     const payload = await engine.decrypt(message);
                     states.set(message.id, { state: "decrypted" });
                     retry.delete(message.id);
+                    failed.delete(message.id);
+                    attempts.delete(message.id);
                     show(message, payload);
                     await soundmoji(message);
                     remember(message);
                     previews(message);
                 } catch (error) {
                     const code = error instanceof E2eeError ? error.code : null;
-                    const state: MessageState = code === "LOCKED" ? "locked" : code === "NO_KEY" ? "missing" : code === "RESET" ? "reset" : "failed";
+                    const state: MessageState =
+                        code === "LOCKED" ? "locked" : code === "NO_KEY" ? "missing" : code === "NOT_RECIPIENT" ? "excluded" : code === "RESET" ? "reset" : "failed";
                     states.set(message.id, { state, reason: errorText(error) });
                     if (state === "locked" || state === "missing") retry.set(message.id, original);
+                    if (!code || code === "UNKNOWN_SENDER" || code === "NOT_READY") retryLater(original);
                     message.content = contentFor(state, undefined, engine.trustsServer);
                 }
             })().finally(() => inflight.delete(key));
@@ -233,19 +250,56 @@ export const createHooks = (ctx: HookContext) => {
         if (states.get(copy.id)?.state === "decrypted") ctx.updateRecord(copy);
     };
 
+    const decryptAgain = (copy: RawMessage) => {
+        const before = states.get(copy.id)?.state;
+        decryptOne(copy).then(() => {
+            const after = states.get(copy.id)?.state;
+            if (after === before && after !== "pending") return;
+            redispatch(copy);
+            ctx.onState();
+        });
+    };
+
     const retryAll = () => {
         if (!ctx.isReady()) return;
         const queued = [...retry.values()];
         retry.clear();
-        for (const copy of queued) {
-            const before = states.get(copy.id)?.state;
-            decryptOne(copy).then(() => {
-                const after = states.get(copy.id)?.state;
-                if (after === before && after !== "pending") return;
-                redispatch(copy);
-                ctx.onState();
-            });
+        queued.forEach(decryptAgain);
+    };
+
+    const failed = new BoundedMap<string, { message: RawMessage; attempts: number }>(READABLE_PER_CHANNEL);
+    let failedTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const retryFailed = (senderId?: string) => {
+        if (!ctx.isReady()) return;
+        for (const [id, entry] of [...failed]) {
+            if (senderId && entry.message.author?.id !== senderId) continue;
+            failed.delete(id);
+            attempts.set(id, entry.attempts);
+            decryptAgain(entry.message);
         }
+    };
+
+    const scheduleFailed = () => {
+        if (failedTimer || !failed.size) return;
+        const next = Math.min(...[...failed.values()].map((entry) => entry.attempts));
+        if (next > DECRYPT_RETRIES) return;
+        failedTimer = setTimeout(
+            () => {
+                failedTimer = null;
+                retryFailed();
+            },
+            DECRYPT_RETRY_MS * 2 ** (next - 1),
+        );
+    };
+
+    const attempts = new BoundedMap<string, number>(READABLE_PER_CHANNEL);
+
+    const retryLater = (message: RawMessage) => {
+        const count = (attempts.get(message.id) ?? 0) + 1;
+        attempts.delete(message.id);
+        failed.set(message.id, { message, attempts: count });
+        scheduleFailed();
     };
 
     const decryptAll = async (value: unknown) => {
@@ -365,34 +419,41 @@ export const createHooks = (ctx: HookContext) => {
                     );
                     return result;
                 }
-                const reported = (opts.body ?? {}) as { channel_id?: unknown; message_id?: unknown };
-                if (
-                    method === "post" &&
-                    REPORT_URL.test(path) &&
-                    typeof reported.channel_id === "string" &&
-                    typeof reported.message_id === "string" &&
-                    engine.isEncrypted(reported.channel_id)
-                ) {
+                const reported = (opts.body ?? {}) as { channel_id?: unknown; message_id?: unknown; user_id?: unknown };
+                const reportedChannel =
+                    method !== "post"
+                        ? null
+                        : REPORT_URL.test(path) && typeof reported.channel_id === "string" && typeof reported.message_id === "string"
+                          ? reported.channel_id
+                          : path === USER_REPORT_URL && typeof reported.user_id === "string"
+                            ? (ctx.conversationWith?.(reported.user_id) ?? null)
+                            : null;
+                if (reportedChannel && engine.isEncrypted(reportedChannel)) {
                     const report = (async () => {
+                        if (!ctx.failClosed()) await Promise.race([ctx.ready, new Promise((resolve) => setTimeout(resolve, REPORT_READY_MS))]);
+                        const messageId = typeof reported.message_id === "string" ? reported.message_id : null;
                         const res = await originals
-                            .get({ url: `/channels/${reported.channel_id}/messages`, query: { around: reported.message_id, limit: 50 }, rejectWithError: false })
+                            .get({ url: `/channels/${reportedChannel}/messages`, query: { ...(messageId && { around: messageId }), limit: 50 }, rejectWithError: false })
                             .catch(() => null);
                         const nearby = (res?.ok ? res.body : []) as RawMessage[];
-                        const message = nearby.find((m) => m.id === reported.message_id);
+                        const message = messageId ? nearby.find((m) => m.id === messageId) : undefined;
                         const key = message && (await engine.contentKey(message));
                         const context = Object.fromEntries(
                             (
                                 await Promise.all(
-                                    nearby
-                                        .filter((m) => m.id !== reported.message_id && m.encrypted)
-                                        .map(async (m) => [m.id, await engine.contentKey(m).catch(() => undefined)] as const),
+                                    nearby.filter((m) => m.id !== messageId && m.encrypted).map(async (m) => [m.id, await engine.contentKey(m).catch(() => undefined)] as const),
                                 )
                             ).filter(([, contextKey]) => contextKey),
                         );
                         return original(
                             {
                                 ...opts,
-                                body: { ...(opts.body as object), ...(key && { e2ee_content_key: key }), ...(Object.keys(context).length && { e2ee_context_keys: context }) },
+                                body: {
+                                    ...(opts.body as object),
+                                    ...(!messageId && { channel_id: reportedChannel }),
+                                    ...(key && { e2ee_content_key: key }),
+                                    ...(Object.keys(context).length && { e2ee_context_keys: context }),
+                                },
                             },
                             callback,
                         );
@@ -460,15 +521,17 @@ export const createHooks = (ctx: HookContext) => {
                     })();
                 }
                 const pending = (async () => {
-                    let prepared: HttpOptions;
-                    try {
-                        prepared = await encryptBody(method, opts);
-                    } catch (error) {
-                        const match = MESSAGE_URL.exec(url.split("?")[0]);
-                        ctx.onError(error, match?.[1] ?? "");
-                        callback?.({ ok: false, hasErr: true, err: error, status: 0, body: null });
-                        throw error;
-                    }
+                    const channelId = MESSAGE_URL.exec(path)?.[1] ?? "";
+                    const encrypted = async () => {
+                        try {
+                            return await encryptBody(method, opts);
+                        } catch (error) {
+                            ctx.onError(error, channelId);
+                            callback?.({ ok: false, hasErr: true, err: error, status: 0, body: null });
+                            throw error;
+                        }
+                    };
+                    let prepared = await encrypted();
                     for (let attempt = 0; ; attempt++) {
                         let response: (HttpResponse & { hasErr?: boolean }) | undefined;
                         try {
@@ -480,14 +543,14 @@ export const createHooks = (ctx: HookContext) => {
                             return result;
                         } catch (error) {
                             const failure = error as { status?: number; body?: { message?: string } };
-                            if (attempt === 0 && failure?.status === 409 && failure.body?.message === "E2EE_DEVICE_MISMATCH" && prepared !== opts) {
-                                const match = MESSAGE_URL.exec(url.split("?")[0])!;
-                                engine.invalidateChannel(match[1]);
+                            if (attempt < MISMATCH_RETRIES && failure?.status === 409 && failure.body?.message === "E2EE_DEVICE_MISMATCH" && prepared !== opts) {
+                                engine.invalidateChannel(channelId);
                                 engine.invalidateAll();
-                                prepared = await encryptBody(method, opts);
+                                prepared = await encrypted();
                                 continue;
                             }
-                            if (response) callback?.(response);
+                            if (prepared !== opts && failure?.body?.message?.startsWith("E2EE_")) ctx.onError(error, channelId);
+                            callback?.(response ?? { ok: false, hasErr: true, err: error, status: failure?.status ?? 0, body: failure?.body ?? null });
                             throw error;
                         }
                     }
@@ -562,5 +625,5 @@ export const createHooks = (ctx: HookContext) => {
         });
     };
 
-    return { wrapHttp, wrapGateway, watchDispatcher, decryptAll, retryAll };
+    return { wrapHttp, wrapGateway, watchDispatcher, decryptAll, retryAll, retryFailed };
 };

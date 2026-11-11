@@ -2,7 +2,7 @@ import bcrypt from "bcrypt";
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import crypto from "node:crypto";
-import { ILike, IsNull, MoreThan } from "typeorm";
+import { ILike, MoreThan } from "typeorm";
 import {
     assertIpNotBanned,
     assertRegistrationAllowedForIp,
@@ -353,7 +353,6 @@ router.post(
             (await User.count({
                 where: {
                     created_at: MoreThan(new Date(Date.now() - limits.absoluteRate.register.window)),
-                    federated_instance: IsNull(),
                 },
             })) >= limits.absoluteRate.register.limit
         ) {

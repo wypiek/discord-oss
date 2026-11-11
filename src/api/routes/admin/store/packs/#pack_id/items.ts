@@ -14,7 +14,7 @@ router.post(
         right: "OPERATOR",
         spacebarOnly: true,
         requestBody: "AdminStoreItemCreateSchema",
-        description: "Add an avatar decoration, profile effect, nameplate or profile frame to a store pack",
+        description: "Add an avatar decoration, profile effect or nameplate to a store pack",
     }),
     async (req: Request, res: Response) => {
         const body = req.body as AdminStoreItemCreateSchema;

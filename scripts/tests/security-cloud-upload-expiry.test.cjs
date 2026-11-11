@@ -20,6 +20,7 @@ async function migratedDatabase() {
             loadModule(`${MIGRATIONS}/${file}`, {
                 typeorm: {},
                 "../../../util/util/Snowflake": { Snowflake: { generate: () => `${Date.now()}${Math.floor(Math.random() * 1e5)}` } },
+                "../SiteContentSeed": { seedSiteContent: async () => {} },
                 "../../../util/util/networking/PublicNetwork": { isPrivateAddress: () => false },
             }),
         )[0];

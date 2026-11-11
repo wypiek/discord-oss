@@ -66,7 +66,6 @@ cat > config.json <<JSON
   "cdn": { "endpointPublic": "http://localhost:$port/", "endpointPrivate": "http://localhost:$port/" },
   "gateway": { "endpointPublic": "ws://localhost:$port/" },
   "security": { "captcha": { "blockAutomatedBrowsers": false } },
-  "federation": { "announce": false },
   "limits": {
     "rate": {
       "routes": {

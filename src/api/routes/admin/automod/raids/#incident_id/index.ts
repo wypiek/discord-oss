@@ -35,7 +35,6 @@ router.get(
                           avatar: true,
                           suspended_until: true,
                           disabled: true,
-                          federated_instance: true,
                           created_at: true,
                       },
                   })

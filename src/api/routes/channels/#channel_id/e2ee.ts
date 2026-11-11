@@ -53,7 +53,7 @@ router.put(
         if (channel.e2ee_enabled_at) return res.json(toResponse(channel));
 
         const members = channel.recipients?.map((r) => r.user_id) ?? [];
-        const devices = (await e2eeDevicesOf(members, { channel_id: channel.id })).filter((d) => d.status === "active");
+        const devices = (await e2eeDevicesOf(members)).filter((d) => d.status === "active");
         const missing = members.filter((id) => !devices.some((d) => d.user_id === id));
         if (missing.length)
             return res.status(400).json({

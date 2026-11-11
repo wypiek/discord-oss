@@ -1,6 +1,6 @@
 # End-to-end encrypted messages
 
-Every DM and group DM encrypts new messages and attachments, and nobody can turn it off. That includes messages from bots, applications and webhooks in private channels, and DMs with people on other instances. Guild channels are not encrypted. Messages sent before a conversation was encrypted stay in plaintext.
+Every DM and group DM encrypts new messages and attachments, and nobody can turn it off. That includes messages from bots, applications and webhooks in private channels. Guild channels are not encrypted. Messages sent before a conversation was encrypted stay in plaintext.
 
 Users set nothing up. Signing up or logging in creates or unlocks the key backup.
 
@@ -18,7 +18,7 @@ The advanced option "Review safety number changes and new browser approvals" in 
 
 ## Cryptography
 
-For each message the sending browser encrypts the payload with a random 256-bit content key in AES-256-GCM. It wraps the content key to each recipient device's signed X25519 prekey with HPKE base mode and signs the envelope with its Ed25519 device key. Keys are non-extractable WebCrypto keys in IndexedDB.
+For each message the sending browser encrypts the payload with a random 256-bit content key in AES-256-GCM. It wraps the content key to each recipient device's signed X25519 prekey with HPKE base mode and signs the envelope with its Ed25519 device key. Every envelope is version 1, and the server refuses any other version. Keys are non-extractable WebCrypto keys in IndexedDB.
 
 | Key | Type | Scope |
 | --- | --- | --- |
@@ -72,7 +72,11 @@ When nothing can unlock the backup, "Reset encryption" in the unlock dialog or i
 
 ## What users see
 
-When a send can't be encrypted, the draft stays in the composer with an error, and nothing is sent in plaintext.
+When a send can't be encrypted, the draft stays in the composer with an error, and nothing is sent in plaintext. When the check before sending passes but encrypting or the server's checks fail later, the message shows as failed with a notice that says why, and the messages after it still go out.
+
+The server rejects an envelope that skips a member's active device or still names someone who left with `E2EE_DEVICE_MISMATCH`. The browser then reloads the members and their keys, encrypts again and resends, up to 2 times, so a member joining or leaving while a message is on its way doesn't make it fail. Each browser also forgets its member lists when the gateway reconnects or a group is created or left.
+
+A message that can't be decrypted because a key lookup failed, or because it came from a device of the sender that the browser doesn't know yet, is tried again after 2 seconds, then after twice as long each time, 6 times in all, and again whenever the sender's devices or identity change. A message whose signature doesn't check out is never tried again. A member who was added to a group sees "This message wasn't encrypted for you" on messages sent before they joined, because those were encrypted only for the members at the time.
 
 A member who never signed in since encryption existed has no keys and can't read new messages. When every other member is in that state, the browser refuses the send and names them. Otherwise the message goes to the rest with a warning that names them.
 
@@ -89,23 +93,13 @@ Polls, clips, forwards, components and text-to-speech are not available.
 
 Every message is encrypted to every member at send time, so remaining members can still read messages from someone who left. To check their signatures, the server keeps answering key requests about a former member to current members of that channel only.
 
-Across instances the former member's home answers when the asking instance hosts the group or still has a user in it, and an instance keeps its cached copy of the keys when the home refuses. A third instance that never cached the keys gets nothing once the home's last local member has left the group. ENC-022 in the [work backlog](../development/work-backlog.md) tracks that gap.
-
-## Conversations with users of other instances
-
-A DM or group DM with someone on another [federated](federation.md) instance is encrypted from its first message. The instance where it started hosts it and stores the ciphertext, and each other member's home keeps a mirror. A home never turns encryption off on a mirror and refuses to relay a message or edit without an envelope, so a malicious host can't downgrade the conversation.
-
-These conversations use version 2 envelopes, which sign canonical `@snowflake@instance` ids because local ids differ on each instance. [federation-protocol.md](../development/federation-protocol.md) has the format.
-
-Each instance fetches a remote user's keys from that user's home and caches them for 10 minutes. The home only answers instances that share a DM, a group DM or a friendship with the user, or host a conversation the user is in. Adding someone to an encrypted group DM fails with `E2EE_RECIPIENT_NO_DEVICES` when their instance returns no active device. In default mode a browser trusts both its own instance and the contact's home for key changes, and strict mode pins the key against both.
-
-No instance gets a content key, except through a report.
-
 ## Reporting encrypted messages
 
-When a user reports a message in an encrypted conversation, their browser sends the content keys of the reported message and of the messages around it, at most 50 in all. The server checks that the sender's device belonged to the author and was active at the time, verifies the signature and decrypts the stored ciphertext. It saves up to 4000 characters of text and up to 10 file names in the report and never stores the keys, so a reporter can't change what the message says.
+When a user reports a message in an encrypted conversation, their browser sends the content keys of the reported message and of the messages around it, at most 50 in all. The server checks that the sender's device belonged to the author and was active at the time, verifies the signature and decrypts the stored ciphertext. It saves up to 4000 characters of text and up to 10 file names in the report, the 15 messages before it and the 10 after it, and never stores the keys, so a reporter can't change what the message says. A browser that is still starting waits up to 15 seconds for encryption before it collects the keys.
 
-The admin dashboard shows a report that passes as "Verified encrypted text", and one with a missing or wrong key or a bad signature as "Encrypted, not verified" with the reason. A report about a conversation hosted on another instance goes to the host, which verifies it the same way. Instance automod only acts on a verified report, as [automod.md](automod.md#encrypted-messages) describes.
+When a user reports a person with Report User Profile, the browser picks the open DM or group DM that person is in, or else their DM with the reporter, and sends that channel with the content keys of its last 50 messages. The server only saves the conversation when the reporter is a member and the reported person is or was one, and stores its last 25 messages, verified the same way.
+
+The admin dashboard shows a report that passes as "Verified encrypted text", and one with a missing or wrong key or a bad signature as "Encrypted, not verified" with the reason. Each message around it shows its verified text, or "Encrypted, not shared" when the reporter's browser couldn't read it. A user report shows the conversation as "Their conversation with the reporter". Instance automod only acts on a verified report, as [automod.md](automod.md#encrypted-messages) describes.
 
 ## Limits
 
@@ -127,7 +121,7 @@ The message endpoints answer these codes. The device, identity and backup endpoi
 
 | Code | Name | Meaning |
 | --- | --- | --- |
-| 90001 | `E2EE_DEVICE_MISMATCH` | The envelope skipped an active device. The client refetches keys and retries. |
+| 90001 | `E2EE_DEVICE_MISMATCH` | The envelope skipped an active device of a member, or named a device, backup key or mention of someone who isn't a member. The client reloads the members and keys and retries up to 2 times. |
 | 90002 | `E2EE_REQUIRED` | A plaintext message was sent into an encrypted conversation. |
 | 90003 | `E2EE_INVALID_ENVELOPE` | The envelope is malformed or has the wrong version. |
 | 90004 | `E2EE_UNSUPPORTED` | Polls, forwards, components, text-to-speech or plaintext stickers. The recovery endpoints also answer it when `trustServerByDefault` is `false`. |
@@ -146,7 +140,6 @@ Run the browser tests from a terminal or through `scripts/dev/outside-app.sh`:
 
 ```sh
 PORT=<port> E2EE_TEST_DATABASE_NAME=<db> bun scripts/dev/e2ee-test.mjs
-bun scripts/dev/federation-e2ee-test.mjs
 ```
 
-`e2ee-test.mjs` refuses to run unless the database in `.env` is named `E2EE_TEST_DATABASE_NAME`, `fosscord_codex_admin` by default. `federation-e2ee-test.mjs` tests two instances on new databases, `meowcord_fed_e2ee_a` and `meowcord_fed_e2ee_b` unless `FED_DB_A` and `FED_DB_B` say otherwise. It refuses ones that already exist and drops them at the end unless `FED_KEEP` is set. The unit tests in `scripts/tests/e2ee-*.test.cjs` and `encrypted-report.test.cjs` run with `bun run test`.
+`E2EE_ONLY` runs only the phases whose names contain one of its comma-separated parts, such as `E2EE_ONLY="change during a send,report from the message menu"`. Those two phases create their own accounts, so they run on their own. `e2ee-test.mjs` refuses to run unless the database in `.env` is named `E2EE_TEST_DATABASE_NAME`, `fosscord_codex_admin` by default. The unit tests in `scripts/tests/e2ee-*.test.cjs` and `encrypted-report.test.cjs` run with `bun run test`.

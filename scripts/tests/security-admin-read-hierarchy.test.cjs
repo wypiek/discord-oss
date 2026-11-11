@@ -82,13 +82,12 @@ for (const file of ["index.ts", "mfa.ts", "sessions/index.ts", "invites/index.ts
 
 test("customization reads such as settings, widgets and pride badges are hierarchy gated", async () => {
     const { adminCustomizationTarget } = loadModule("src/api/util/handlers/AdminUserCustomization.ts", {
-        "@spacebar/database": { AuditLog: {}, User: { findOneOrFail: async () => ({ id: "admin", rights: "8", bot: false, federated_instance: null }) } },
+        "@spacebar/database": { AuditLog: {}, User: { findOneOrFail: async () => ({ id: "admin", rights: "8", bot: false }) } },
         "@spacebar/util": { loadStaffRoles: async () => ({}) },
         "../utility/adminTargets": { canActOn: () => false },
         "lambert-server/HTTPError": { HTTPError: StubError },
         "@spacebar/schemas": { AuditLogEvents: { ADMIN_USER_CUSTOMIZATION: 1 } },
         typeorm: {},
-        "../utility/federatedAdmin": { assertShadowUserEditable: () => undefined },
     });
     await assert.rejects(adminCustomizationTarget(supportRequest), /view staff at or above/);
     await assert.rejects(adminCustomizationTarget({ ...supportRequest, method: "PATCH" }), /edit staff at or above/);

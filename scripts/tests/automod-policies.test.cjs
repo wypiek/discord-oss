@@ -79,23 +79,20 @@ test("exemptions match on user, server, staff, bots, verified email and account 
     assert.equal(policyExemption(Object.assign(new AutomodRulePolicy(), { exemptBots: true }), { user_id: "2", bot: true }, null, now), "bot");
     const verified = Object.assign(new AutomodRulePolicy(), { exemptVerifiedEmail: true });
     assert.equal(policyExemption(verified, { user_id: "2", verified: true }, null, now), "verified_email");
-    assert.equal(policyExemption(verified, { user_id: "2", verified: true, federated: true }, null, now), null);
     const aged = Object.assign(new AutomodRulePolicy(), { exemptAccountAgeDays: 30 });
     assert.equal(policyExemption(aged, { user_id: "2", createdAt: now - 30 * DAY }, null, now), "account_age");
     assert.equal(policyExemption(aged, { user_id: "2", createdAt: now - 29 * DAY }, null, now), null);
     assert.deepEqual(policyFor(undefined, "flood"), new AutomodRulePolicy());
 });
 
-test("the API helper looks staff up only when the rule skips staff, and remote accounts use their real age", async () => {
+test("the API helper looks staff up only when the rule skips staff", async () => {
     const automod = new AutomodConfiguration();
     automod.policies.flood.exemptAccountAgeDays = 100;
     const staffId = snowflake(Date.now() - 1000);
     const helper = policyModule(automod, [staffId]);
     assert.equal(await helper.exemptionFrom("flood", { id: staffId, rights: "0" }), "staff");
     assert.equal(await helper.exemptionFrom("slurs", { id: staffId, rights: "0" }), null);
-    const remote = { id: snowflake(Date.now() - 1000), federated_instance: "remote.example", created_at: new Date(Date.now() - 400 * DAY) };
-    assert.equal(await helper.exemptionFrom("flood", remote), "account_age");
-    assert.equal(await helper.exemptionFrom("flood", { ...remote, federated_instance: null }), null);
+    assert.equal(await helper.exemptionFrom("flood", { id: snowflake(Date.now() - 1000) }), null);
 });
 
 test("hold sits between timeout and suspend and escalation skips it", () => {

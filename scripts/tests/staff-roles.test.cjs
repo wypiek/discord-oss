@@ -205,7 +205,6 @@ test("the admin user editor checks the right for each field before loading the a
         "@spacebar/schemas": { AccountStandingState: { SUSPENDED: 3 } },
         typeorm: { In: (value) => value, Not: (value) => value },
         "@spacebar/api/util": {},
-        "@spacebar/api/util/utility/federatedAdmin": { SHADOW_USER_LOCAL_FIELDS: ["disabled", "suspended_until"], assertShadowUserEditable: () => undefined },
         "../index": { ADMIN_USER_COLUMNS: [], applyUserTag: () => undefined, assertCanManage: () => undefined, pickAdminUser: (user) => user },
     });
     const patch = async (actor, body) => {

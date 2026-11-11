@@ -23,7 +23,3 @@
 .user-profile-sidebar.fosscord-framed-sidebar [class*="footerContainer_"] {
     z-index: 3;
 }
-
-img[src*="/media/v1/collectibles-shop/8000000000"] {
-    transform: scale(1.0145);
-}

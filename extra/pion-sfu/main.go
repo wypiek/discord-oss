@@ -535,16 +535,6 @@ func main() {
 	log.Printf("WebRTC Public IP: %s", publicIP)
 	log.Printf("WebRTC UDP port: %d", *webrtcPort)
 
-	if cfg, enabled, err := turnConfigFromEnv(publicIP); err != nil {
-		log.Printf("TURN disabled: %v", err)
-	} else if enabled {
-		if turnServer, err := startTurn(cfg, logFactory); err != nil {
-			log.Printf("TURN disabled: %v", err)
-		} else {
-			defer turnServer.Close()
-		}
-	}
-
 	// Create an InterceptorRegistry. This is the user configurable RTP/RTCP Pipeline.
 	// This provides NACKs, RTCP Reports and other features. If you use `webrtc.NewPeerConnection`
 	// this is enabled by default. If you are manually managing You MUST create a InterceptorRegistry

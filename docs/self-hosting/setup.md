@@ -8,7 +8,7 @@ This page runs a public instance with Docker Compose on one Linux host. [native.
 | ---------- | ------------ |
 | `postgres` | PostgreSQL 18, reachable only inside the Compose network. |
 | `client`   | Downloads the Discord web client into the `client` volume on the first start, then exits with code 0. |
-| `sfu`      | The Go media server from `extra/pion-sfu`, carrying voice, video and Go Live on one UDP port, plus the TURN relay. |
+| `sfu`      | The Go media server from `extra/pion-sfu`, carrying voice, video and Go Live on one UDP port. |
 | `warp`     | Cloudflare WARP as a SOCKS5 proxy for fetches of user-chosen URLs. |
 | `server`   | API, CDN, gateway, voice gateway and web client on port 3001, published on `127.0.0.1:3001`. |
 | `caddy`    | Optional. TLS with automatic certificates, HTTP/1.1, HTTP/2 and HTTP/3. |
@@ -19,7 +19,7 @@ Compose builds the `meowcord-server` and `meowcord-sfu` images from this checkou
 
 - A Linux host with Docker Engine and the Compose plugin.
 - A DNS record for the instance's domain that points at the host.
-- Open ports: 80/tcp, 443/tcp, 443/udp, and 50000/udp for voice unless you change `WRTC_PORT`. With `TURN_SECRET` set, also 3478/udp, 3478/tcp and 49160 to 49200/udp.
+- Open ports: 80/tcp, 443/tcp, 443/udp, and 50000/udp for voice unless you change `WRTC_PORT`.
 
 ## Install
 
@@ -45,8 +45,6 @@ Compose passes these from `.env` and refuses to start without the first three. `
 | `POSTGRES_PASSWORD` | Letters and digits only, for example from `openssl rand -hex 24`. Postgres reads it only when its volume is empty, so changing it later also needs `ALTER USER`. |
 | `WRTC_PUBLIC_IP` | Public IPv4 address or host name that clients send media to. Behind NAT, use the outside address and forward the voice port. A host name is resolved once at startup. |
 | `WRTC_PORT` | UDP port for all media, 50000 by default. |
-| `TURN_SECRET` | Secret for the TURN relay that carries your users' calls in servers on other instances, from `openssl rand -hex 32`. Empty refuses those calls. |
-| `TURN_PUBLIC_IP`, `TURN_PORT`, `TURN_RELAY_PORT_MIN`, `TURN_RELAY_PORT_MAX` | `WRTC_PUBLIC_IP`, 3478, 49160 and 49200 by default. [federation.md](../features/federation.md#turn-relay) lists every relay variable. |
 | `INSTANCE_NAME` | Name shown in the client, emails, developer portal and status page. It is applied on the first start and whenever you change it here, and otherwise a name set in the admin dashboard stays. |
 | `POSTGRES_USER`, `POSTGRES_DB`, `MEOWCORD_VOLUME_PREFIX` | `meowcord` in `.env.example`, and `fosscord` when absent, the names older installations use. |
 | `COMPOSE_PROFILES` | `caddy` starts the bundled Caddy. Empty means you run your own proxy. |
@@ -73,7 +71,7 @@ Sign in again and open `/admin`. `revoke` removes the right, and other rights st
 
 ## Configuration file
 
-The server and the admin dashboard share `/data/state/config.json` in the `state` volume. Before every start, `scripts/docker-configure.js` writes the public URLs, the voice endpoint `<DOMAIN>/voice`, the trusted proxies and, when their variables are set, the instance name, Cap and SMTP. Unsetting `CAP_*` or `SMTP_*` later leaves the old values, so change those in the dashboard. [CONTRIBUTING.MD](../../CONTRIBUTING.MD#configuration) lists the keys specific to Meowcord. To edit the file by hand:
+The server and the admin dashboard share `/data/state/config.json` in the `state` volume. Before every start, `scripts/docker-configure.js` writes the public URLs, the voice endpoint `<DOMAIN>/voice`, the trusted proxies and, when their variables are set, the instance name, Cap and SMTP. Unsetting `CAP_*` or `SMTP_*` later leaves the old values, so change those in the dashboard. [CONTRIBUTING.MD](../../CONTRIBUTING.MD#configuration) lists the keys specific to Discord OSS. To edit the file by hand:
 
 ```sh
 state_volume=$(bun scripts/ops/compose-resource.mjs state)
@@ -93,7 +91,7 @@ TLS_CERT=/etc/ssl/meowcord.pem TLS_KEY=/etc/ssl/meowcord.key HTTPS_PORT=443 bun 
 
 ## Voice
 
-Clients send media straight to `WRTC_PUBLIC_IP:WRTC_PORT` over UDP, so a client whose network blocks outgoing UDP can't join calls on your instance. The TURN relay only carries calls in servers on other instances. Leave `THREADS` unset. When the SFU restarts, clients in running calls reconnect.
+Clients send media straight to `WRTC_PUBLIC_IP:WRTC_PORT` over UDP, so a client whose network blocks outgoing UDP can't join calls on your instance. Leave `THREADS` unset. When the SFU restarts, clients in running calls reconnect.
 
 ## Local trial
 
@@ -119,7 +117,7 @@ For a browser, add `127.0.0.1 meowcord.test` to `/etc/hosts` and trust `caddy-ro
 | Volume | Holds |
 | --- | --- |
 | `postgres` | The database. |
-| `state` | `config.json`, `jwt.key`, `jwt.key.pub`, `federation.key`, `.e2ee-recovery.key`, managed sender keys in `.e2ee-system` and queued announcements in `.announcement-spool`. |
+| `state` | `config.json`, `jwt.key`, `jwt.key.pub`, `.e2ee-recovery.key`, managed sender keys in `.e2ee-system` and queued announcements in `.announcement-spool`. |
 | `storage` | Uploads and the cache of Discord assets. |
 | `client` | The downloaded web client. |
 | `sfu` | The socket between the server and the SFU. |
@@ -207,9 +205,9 @@ The free Shop lists `assets/collectibles.json` and `assets/profile-effects.json`
 
 Or set `COLLECTIBLES_EXTERNAL_REFRESH=true`, `COLLECTIBLES_CATALOG_URL` and `PROFILE_EFFECTS_CATALOG_URL` without read-only mounts. The server then downloads both every 12 hours, or every `COLLECTIBLES_REFRESH_HOURS`, and keeps the last good copy in memory. It also tries to save the copy in `assets`, which only lasts on a native install where that directory is writable. The admin dashboard's Shop catalogue card shows the source and the last error.
 
-### Steam avatar frames
+The Shop's Orbs Shop tab comes from the same catalogue. Every product with a price in Orbs shows there, and products priced only in Orbs are marked Orbs exclusive. Their prices are 0 like the rest of the Shop, so claiming one never needs or spends an Orb balance. The tab also offers the Orbs Apprentice badge, even without a catalogue, and claiming it adds the Orbs Apprentice badge (icon `83d8a1eb09a8d64e59233eec5d4d5c2d`) to the profile. The server creates that badge if it is missing. The badge sits in a pack called Orbs Exclusives, which the admin dashboard's Shop page can rename, reorder or hide like any mirrored pack. Discord's 1-day and 3-day Nitro credit products are left out of the catalogue.
 
-The Shop's Steam category ships in `assets/steam-frames.json`, so it needs no setup. `bun scripts/steam-frames.mjs` refreshes it from Steam, and the CDN downloads each frame's art from Steam's CDN through `PUBLIC_FETCH_PROXY` the first time someone views it while `externalRequests.steamAssetFallback` is on, which is the default. See [steam-frames.md](../features/steam-frames.md).
+The catalogue's profile frames are in the Shop too, and a profile wears one frame next to one profile effect. Art downloaded for the removed Steam avatar frames stays in storage under `steam-frames/` as upstream cache until the cache limit evicts it, or until someone deletes that folder.
 
 ### Standard stickers
 

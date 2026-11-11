@@ -23,7 +23,7 @@ export class StorageInventoryReferences {
             throw new HTTPError("Invalid inventory locator", 400);
         if (/^(?:collectibles-shop-upstream|avatar-decoration-presets|krisp_browser_models|content-assets|media_channel)\//.test(path))
             return { principal: "system:cache", category: "cache" };
-        if (/^collectibles-shop\//.test(path)) return { principal: "system:managed", category: "managed" };
+        if (/^(?:collectibles-shop|site-images)\//.test(path)) return { principal: "system:managed", category: "managed" };
         if (path.startsWith("attachments/")) {
             const stage = /^attachments\/(\d+)\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(path);
             if (stage) {

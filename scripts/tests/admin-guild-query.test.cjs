@@ -3,7 +3,6 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const ts = require("typescript");
-const { loadFederatedAdmin } = require("./federated-admin-module.cjs");
 function harness(guilds = [], counts = []) {
     let handler;
     const memberCalls = [];
@@ -50,15 +49,6 @@ function harness(guilds = [], counts = []) {
             if (name === "@spacebar/api/middlewares") return { route: (options) => options };
             if (name === "@spacebar/database")
                 return { Guild: { createQueryBuilder: () => query }, Member: { createQueryBuilder: () => memberQuery }, User: { find: async () => [] } };
-            if (name === "@spacebar/api/util/utility/federatedAdmin")
-                return loadFederatedAdmin(
-                    class extends Error {
-                        constructor(message, status) {
-                            super(message);
-                            this.status = status;
-                        }
-                    },
-                );
             if (name === "lambert-server/HTTPError")
                 return {
                     HTTPError: class extends Error {
@@ -134,21 +124,6 @@ test("server search escapes wildcard characters and preserves exact ids", async 
     const exact = id.calls.find(([name]) => name === "where");
     assert.equal(exact[1], "guild.id = :id");
     assert.equal(exact[2].id, "123456789012345678");
-});
-
-test("the server list shows servers hosted here by default and mirrors only when asked", async () => {
-    const clauses = async (parameters) => {
-        const h = harness();
-        await h.run(parameters);
-        return h.calls.filter(([name]) => name === "andWhere").map(([, clause]) => clause);
-    };
-    assert.deepEqual(await clauses({}), ["guild.federated_instance IS NULL"]);
-    assert.deepEqual(await clauses({ origin: "remote", q: "cats" }), ["guild.federated_instance IS NOT NULL"]);
-    assert.deepEqual(await clauses({ origin: "all" }), []);
-    assert.deepEqual(await clauses({ q: "123456789012345678" }), []);
-    const h = harness();
-    await assert.rejects(h.run({ origin: "mirrors" }), (error) => (error.status ?? error.code) === 400);
-    assert.equal(h.calls.length, 0);
 });
 
 test("server search sorts by age, name or member count and refuses unknown sorts", async () => {

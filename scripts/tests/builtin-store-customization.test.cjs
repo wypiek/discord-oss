@@ -45,7 +45,6 @@ async function load(relative, assets, overrides = {}) {
                 };
             if (id === "./ProcessLifecycle") return { ProcessLifecycle: { eventEmitter: new (require("node:events").EventEmitter)() } };
             if (id === "./Branding") return { instanceName: () => "Test instance" };
-            if (id === "./SteamFrames") return { steamFrameCategory: () => ({ products: [] }), steamFrameRecency: () => undefined };
             if (id === "node:fs/promises" && overrides.fs) return overrides.fs;
             if (id === "jimp" && overrides.jimp) return overrides.jimp;
             return require(id);
@@ -93,9 +92,9 @@ test("local builtin metadata overrides remain offline, restore cleanly and prese
     assert.notEqual(changed, first);
     assert.deepEqual(
         Array.from(changed.categories, (pack) => pack.sku_id),
-        ["20", "30"],
+        ["20", "8100000000000000000", "30"],
     );
-    const pack = changed.categories[1];
+    const pack = changed.categories[2];
     assert.equal(pack.name, "Local name");
     assert.equal(pack.summary, "Local summary");
     assert.equal(pack.customized, true);
@@ -109,8 +108,11 @@ test("local builtin metadata overrides remain offline, restore cleanly and prese
     assert.equal((await Collectibles.product("31")).name, "Art");
     hidden = ["30"];
     Collectibles.reload();
-    assert.equal((await Collectibles.categories()).length, 1);
-    assert.equal((await Collectibles.builtinCategories())[1].name, "Local name");
+    assert.deepEqual(
+        Array.from(await Collectibles.categories(), (item) => item.sku_id),
+        ["20", "8100000000000000000"],
+    );
+    assert.equal((await Collectibles.builtinCategories())[2].name, "Local name");
     assert.equal((await Collectibles.item("32", 0)).asset, "art");
     overrides = {};
     Collectibles.reload();

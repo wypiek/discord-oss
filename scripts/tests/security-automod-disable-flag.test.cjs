@@ -32,7 +32,7 @@ test("automod spam disables set the staff disabled flag", async () => {
         "./staffDisable": { staffDisableColumns },
         "@spacebar/util/util/AutomodPolicy": anything(),
     });
-    await applySpamAction({ id: "spammer", federated_instance: null }, "disable", { guild_ids: [], reason: "spam" });
+    await applySpamAction({ id: "spammer" }, "disable", { guild_ids: [], reason: "spam" });
     assert.equal(writes.length, 1);
     assert.equal(writes[0][1].disabled, true);
     assert.ok(appliesDisabledFlag(writes[0][1]));

@@ -1,7 +1,6 @@
 import { assertIdentityNameAllowed } from "@spacebar/util/util/IdentityModeration";
 import { Request, Response, Router } from "express";
 import { authorizeMemberRoleChanges } from "@spacebar/api/util/utility/memberRoleAuthorization";
-import { remoteDecorationFor } from "@spacebar/api/util/utility/remoteCollectibles";
 import { route } from "@spacebar/api/middlewares";
 import { Application, AuditLog, Ban, Channel, Emoji, Guild, Member, OAuth2Token, PublicGuildRelations, Role, Sticker, VoiceChannels, VoiceState } from "@spacebar/database";
 import { IsNull, MoreThan, Not } from "typeorm";
@@ -276,11 +275,7 @@ router.patch(
         else if (changes.avatar === null) Object.assign(member, { avatar: null });
 
         if (avatar_decoration_sku_id !== undefined) {
-            const home = member_id === req.user_id ? member.user?.federated_instance : null;
-            const decoration = avatar_decoration_sku_id
-                ? ((await Collectibles.item(avatar_decoration_sku_id, CollectibleItemType.AVATAR_DECORATION)) ??
-                  (home ? await remoteDecorationFor(home, avatar_decoration_sku_id) : undefined))
-                : undefined;
+            const decoration = avatar_decoration_sku_id ? await Collectibles.item(avatar_decoration_sku_id, CollectibleItemType.AVATAR_DECORATION) : undefined;
             if (avatar_decoration_sku_id && !decoration?.asset) throw FieldErrors({ avatar_decoration_sku_id: { code: "50057", message: "Invalid SKU" } });
             Object.assign(member, {
                 avatar_decoration_data: decoration?.asset ? { asset: decoration.asset, sku_id: decoration.sku_id, expires_at: null } : null,

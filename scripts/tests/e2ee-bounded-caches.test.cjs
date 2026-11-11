@@ -108,7 +108,7 @@ test("forced lookups ask the server again", async () => {
 
 test("plaintext, key and lookup caches in the encryption client are bounded", () => {
     const engineSource = fs.readFileSync("client/e2ee/src/engine.ts", "utf8");
-    for (const field of ["directory", "members", "profiles", "canonical", "resolvedCanonical", "localOf", "plaintext", "contentKeys", "storedKeys"])
+    for (const field of ["directory", "members", "profiles", "plaintext", "contentKeys", "storedKeys"])
         assert.match(engineSource, new RegExp(`private ${field} = new BoundedMap<`), field);
     const hooks = fs.readFileSync("client/e2ee/src/hooks.ts", "utf8");
     for (const field of ["readable", "payloads", "previewed", "soundCache"]) assert.match(hooks, new RegExp(`const ${field} = new BoundedMap<`), field);

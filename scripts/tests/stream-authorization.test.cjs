@@ -33,7 +33,6 @@ function createFixture() {
         "@spacebar/gateway": {},
         "@spacebar/util": {
             getPermission: async () => ({ has: (name) => permissions.has(name) }),
-            FederatedVoice: { relayStream: async () => false },
             Config: { get: () => ({ regions: { default: "local", available: [{ id: "local" }] } }) },
             Snowflake: { generate: () => "stream" },
         },
@@ -99,7 +98,6 @@ function identifyFixture(owner = false) {
         "./Video": {},
         "./Speaking": {},
         "../util/VoiceSessions": { VoiceSessions: { register: async () => {} } },
-        "../util/DaveIdentity": { daveIdOf: async (user_id) => user_id },
     };
     return {
         ...load("src/webrtc/opcodes/Identify.ts", mocks),
@@ -158,7 +156,7 @@ test("stream delete only announces to the guild the stream is in", async () => {
                 Member: { findOne: async () => null },
             },
             "@spacebar/gateway": { parseStreamKey: () => ({ type: "guild", channelId: "voice", guildId, userId: "owner" }) },
-            "@spacebar/util": { emitEvent: async (event) => events.push(event), FederatedVoice: { relayStream: async () => false } },
+            "@spacebar/util": { emitEvent: async (event) => events.push(event) },
             "@spacebar/schemas": {},
             "./instanceOf": { check() {} },
         });
@@ -188,7 +186,6 @@ test("stream watch refuses token issuance without current membership and connect
             "@spacebar/util": {
                 getPermission: async () => ({ has: (name) => name !== denied }),
                 emitEvent: async (event) => events.push(event),
-                FederatedVoice: { relayStream: async () => false },
             },
             "@spacebar/schemas": {},
             "./instanceOf": { check() {} },

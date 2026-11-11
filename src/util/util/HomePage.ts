@@ -15,9 +15,11 @@ export const homePage = (origin?: string) => {
     const email = general.correspondenceEmail?.trim();
     const contact = email ? `<a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a>` : null;
 
-    const actions = closed
-        ? `<a class="button primary" href="/login">Sign in</a>`
-        : `<a class="button primary" href="/register">Create an account</a><a class="button" href="/login">Sign in</a>`;
+    const personIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>`;
+    const actions = `${
+        closed ? `<a class="button light" href="/login">${personIcon}Sign in</a>` : `<a class="button light" href="/register">${personIcon}Create an account</a>`
+    }<a class="button blurple" href="/channels/@me">Open ${name} in your browser</a>`;
+    const navAction = `<a class="nav-cta" href="/channels/@me">Open ${name}</a>`;
 
     const joinNote = closed
         ? "New accounts are closed right now. Existing accounts can still sign in."
@@ -34,9 +36,12 @@ export const homePage = (origin?: string) => {
     const faq: [string, string][] = [
         [
             `What is ${name}?`,
-            `<p>${name} is a chat service with servers, channels, DMs, voice and video. It runs on <a href="https://github.com/meowcorded/meowcord">Meowcord</a>, a self-hosted server that speaks the same protocol as Discord, so the app in your browser looks and works the way you'd expect.</p>`,
+            `<p>${name} is a chat service with servers, channels, DMs, voice and video. It runs on <a href="https://github.com/meowcorded/meowcord">Discord OSS</a>, a self-hosted server that speaks the same protocol as Discord, so the app in your browser looks and works the way you'd expect.</p>`,
         ],
-        ["Is this Discord?", `<p>No. ${name} is its own service with its own accounts. Your Discord account doesn't work here, and nothing you post here is sent to Discord.</p>`],
+        [
+            "Is this Discord?",
+            `<p>No. ${name} isn't made by or affiliated with Discord Inc. It's its own service with its own accounts. Your Discord account doesn't work here, and nothing you post here is sent to Discord.</p>`,
+        ],
         ["How do I join?", joinAnswer],
         [
             "Does anything cost money?",
@@ -52,7 +57,7 @@ export const homePage = (origin?: string) => {
         ],
         [
             `Who runs ${name}?`,
-            `<p>${name} is run independently by its own operators, not by the Meowcord project.${contact ? ` You can reach them at ${contact}.` : ""} Read the <a href="/terms">terms</a>, the <a href="/privacy">privacy policy</a> and the <a href="/guidelines">community guidelines</a> before you join.</p>`,
+            `<p>${name} is run independently by its own operators, not by the Discord OSS project.${contact ? ` You can reach them at ${contact}.` : ""} Read the <a href="/terms">terms</a>, the <a href="/privacy">privacy policy</a> and the <a href="/guidelines">community guidelines</a> before you join.</p>`,
         ],
     ];
 
@@ -61,7 +66,8 @@ export const homePage = (origin?: string) => {
         page
             .replace("__OPEN_GRAPH__", origin ? openGraphTags(origin, instancePage()) : "")
             .replaceAll("__TAGLINE__", escapeHtml(instanceDescription()))
-            .replace("__ACTIONS__", actions)
+            .replaceAll("__ACTIONS__", actions)
+            .replaceAll("__NAV_ACTION__", navAction)
             .replace("__JOIN_NOTE__", joinNote)
             .replace(
                 "__FAQ__",
@@ -69,6 +75,6 @@ export const homePage = (origin?: string) => {
                     .map(([question, answer]) => `<details><summary><span>${question}</span><i aria-hidden="true"></i></summary><div class="answer">${answer}</div></details>`)
                     .join(""),
             )
-            .replace("__CONTACT__", contact ? `<a href="mailto:${escapeHtml(email!)}">Contact</a>` : ""),
+            .replace("__CONTACT__", contact ? `<li><a href="mailto:${escapeHtml(email!)}">Contact</a></li>` : ""),
     );
 };

@@ -14,7 +14,6 @@ function memberRoute(rights) {
         "@spacebar/util/util/IdentityModeration": { assertIdentityNameAllowed() {} },
         express: { Router: () => ({ get() {}, put() {}, delete() {}, patch: (_, ...steps) => (patch = steps.at(-1)) }) },
         "@spacebar/api/util/utility/memberRoleAuthorization": { authorizeMemberRoleChanges: async () => [] },
-        "@spacebar/api/util/utility/remoteCollectibles": { remoteDecorationFor: async () => undefined },
         "@spacebar/api/middlewares": { route: () => () => {} },
         "@spacebar/database": stubs({
             Member: {

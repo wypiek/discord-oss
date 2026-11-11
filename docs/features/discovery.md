@@ -1,14 +1,13 @@
 # Server discovery
 
-Discover lists the public servers on this instance. Its Other instances tab lists servers on other approved instances, which [federation.md](federation.md#discover-on-other-instances) covers.
+Discover lists the public servers on this instance.
 
 ## What gets listed
 
-A local server shows up in Discover when all of these hold:
+A server shows up in Discover when all of these hold:
 
 - It has the `DISCOVERABLE` feature, which the owner turns on in Server Settings, or `guild.discovery.showAllGuilds` is on.
 - Its `discovery_excluded` column is false. No route or admin page sets it, so an operator excludes a server in the database.
-- It isn't a mirror of a server on another instance.
 - When `guild.discovery.hideJoinedGuilds` is on, the person searching isn't a member of it.
 
 A server that loses `DISCOVERABLE` or gets excluded drops out of the results at once.

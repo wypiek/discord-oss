@@ -211,14 +211,12 @@ test("every api route that can be called without a token has its own rate limit"
     );
 });
 
-test("every top-level route has an ip rate limit except signed federation requests", () => {
+test("every top-level route has an ip rate limit", () => {
     const module = limiterModule({}, limitedConfig);
     const { app, registrations } = recordingApp();
     module.initTopLevelRateLimits(app);
     const routes = handlers("src/api/routes_toplevel", false);
-    const missing = routes.filter(
-        (handler) => !module.topLevelRateLimitExemptions.some((prefix) => handler.url.startsWith(prefix)) && !registrations.some((registration) => covers(registration, handler)),
-    );
+    const missing = routes.filter((handler) => !registrations.some((registration) => covers(registration, handler)));
     assert.deepEqual(
         missing.map((handler) => `${handler.method.toUpperCase()} ${handler.url}`),
         [],

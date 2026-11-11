@@ -1,6 +1,6 @@
 import { Channel, Guild, Member, Recipient, Relationship, User, VoiceChannels, VoiceState } from "@spacebar/database";
 import { Payload, WebSocket, genVoiceToken } from "@spacebar/gateway";
-import { Config, emitEvent, FederatedVoice, getPermission, requiredAction, VoiceServerUpdateEvent, VoiceStateRequest, VoiceStateUpdateEvent } from "@spacebar/util";
+import { Config, emitEvent, getPermission, requiredAction, VoiceServerUpdateEvent, VoiceStateUpdateEvent } from "@spacebar/util";
 import { ChannelType, ConfigVoiceRegion, VoiceStateUpdateSchema } from "@spacebar/schemas";
 import { check } from "./instanceOf";
 
@@ -44,11 +44,10 @@ async function canJoin(userId: string, guildId: string | undefined, channelId: s
 export async function onVoiceStateUpdate(this: WebSocket, data: Payload) {
     check.call(this, VoiceStateUpdateSchema, data.d);
     const body = data.d as VoiceStateUpdateSchema;
-    if (await FederatedVoice.relay(this.user_id, this.session_id, body)) return;
     await applyVoiceStateUpdate(this.user_id, this.session_id, body);
 }
 
-export async function applyVoiceStateUpdate(user_id: string, session_id: string, body: VoiceStateRequest) {
+export async function applyVoiceStateUpdate(user_id: string, session_id: string, body: VoiceStateUpdateSchema) {
     const startTime = Date.now();
     const guildId = body.guild_id ?? undefined;
     const channelId = body.channel_id ?? undefined;
@@ -173,5 +172,3 @@ export async function applyVoiceStateUpdate(user_id: string, session_id: string,
     console.log(`[Gateway/${user_id}] VOICE_STATE_UPDATE for user ${user_id} in channel ${voiceState.channel_id} in guild ${voiceState.guild_id} in ${Date.now() - startTime}ms`);
     return { ...voiceState.toPublicVoiceState(), guild_id: voiceState.guild_id ?? null } as Record<string, unknown>;
 }
-
-FederatedVoice.setApplier(applyVoiceStateUpdate);
