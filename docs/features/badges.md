@@ -22,6 +22,8 @@ The directory shows the current level, the next one, a progress bar with Discord
 
 The admin dashboard's Discord presets (Staff, Partner, Moderator Programs Alumni, HypeSquad Events and the three HypeSquad houses, Bug Hunter, Golden Bug Hunter, Early Verified Bot Developer and Early Supporter) are recognised by their icon and shown with Discord's large artwork, the MYTHIC pill (RARE for the houses), a flavour line such as "Professional lurker" and an "Unlocked by" text. The texts use the instance name where Discord's say Discord. Staff and staff role badges show first unless the user moves them, and users can hide them like any other badge. The Active Developer preset is not seeded: a migration removes it from instances where nobody holds it, and admins can still create it from the Discord presets on the Badges page.
 
+When an admin adds the `PARTNERED` feature flag to a server, its owner gets the Partner badge and the `PARTNERED_SERVER_OWNER` user flag right away, and so does anyone who later becomes owner of a partnered server. Removing the flag or transferring the server doesn't take the badge away, as on Discord. Admins can still remove it from the user's badges.
+
 ## Beta Tester
 
 Every instance has a Beta Tester badge with id `1000`, seeded by a migration with the test tube icon in `assets/badge-icons/beta_tester.png`, Mythic rarity and the text "Unlocked by being a <instance name> Beta Tester". Give it to users like any other badge on their admin page.

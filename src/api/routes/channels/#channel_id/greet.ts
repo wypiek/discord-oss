@@ -1,6 +1,6 @@
 import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
-import { assertCanSendDirectMessage, handleMessage, postHandleMessage, reopenDirectMessage } from "@spacebar/api/util";
+import { assertCanSendDirectMessage, handleMessage, markDirectMessageStarted, postHandleMessage, reopenDirectMessage } from "@spacebar/api/util";
 import { Channel, Message, ReadState } from "@spacebar/database";
 import { DiscordApiErrors, emitEvent, MessageCreateEvent } from "@spacebar/util";
 import { GreetRequestSchema, MessageType } from "@spacebar/schemas";
@@ -68,6 +68,7 @@ router.post(
         });
 
         await reopenDirectMessage(channel, req.user_id);
+        await markDirectMessageStarted(channel);
 
         const readState = (await ReadState.findOne({ where: { user_id: req.user_id, channel_id } })) ?? ReadState.create({ user_id: req.user_id, channel_id });
         readState.last_message_id = message.id;

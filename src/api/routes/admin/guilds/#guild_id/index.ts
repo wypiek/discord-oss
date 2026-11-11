@@ -4,7 +4,7 @@ import { route } from "@spacebar/api/middlewares";
 import { Channel, Guild, Member, User } from "@spacebar/database";
 import { Config, dropGuildTags, handleFile, emitEvent, GuildDeleteEvent } from "@spacebar/util";
 import { AdminGuildUpdateSchema } from "@spacebar/schemas";
-import { applyGuildTag, purgeDeletedChannels, syncTagAdopters } from "@spacebar/api/util";
+import { applyGuildTag, grantPartnerBadgeOnChange, purgeDeletedChannels, syncTagAdopters } from "@spacebar/api/util";
 import { reindexDiscoverySoon } from "@spacebar/api/util/handlers/Discovery";
 import { pickOwner } from "../index";
 
@@ -104,6 +104,7 @@ router.patch(
         const body = req.body as AdminGuildUpdateSchema;
         const guild_id = req.params.guild_id as string;
         const guild = await Guild.findOneOrFail({ where: { id: guild_id } });
+        const before = { owner_id: guild.owner_id, features: [...guild.features] };
 
         if (body.owner_id !== undefined && body.owner_id !== guild.owner_id) {
             if (!(await Member.findOne({ where: { id: body.owner_id, guild_id }, select: { id: true } }))) throw new HTTPError("The new owner must be a member of the server", 400);
@@ -153,6 +154,7 @@ router.patch(
         await guild.save();
         reindexDiscoverySoon(guild_id);
         if (tagChanged) await syncTagAdopters(guild);
+        await grantPartnerBadgeOnChange(before, guild);
         await Guild.emitUpdate(guild_id);
 
         res.json(await describeGuild(guild_id));

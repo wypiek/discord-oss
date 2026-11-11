@@ -3,6 +3,7 @@ import { RelationshipType } from "@spacebar/schemas";
 import { Config, DiscordApiErrors, PresenceUpdateEvent, RelationshipAddEvent, Snowflake, emitEvent, getUserPresence } from "@spacebar/util";
 import { In, IsNull, LessThan, MoreThan } from "typeorm";
 import crypto from "node:crypto";
+import { openNewFriendDirectMessage } from "./newFriends";
 
 export const FRIEND_INVITE_MAX_AGE = 7 * 24 * 60 * 60;
 export const FRIEND_INVITE_MAX_USES = 5;
@@ -89,5 +90,8 @@ export async function acceptFriendInvite(invite: Invite, user_id: string) {
         emitEvent({ event: "PRESENCE_UPDATE", data: { user: inviter.toPublicUser(), ...inviterPresence }, user_id } satisfies PresenceUpdateEvent),
         emitEvent({ event: "PRESENCE_UPDATE", data: { user: me.toPublicUser(), ...ownPresence }, user_id: inviter_id } satisfies PresenceUpdateEvent),
     ]);
+    await openNewFriendDirectMessage(user_id, inviter_id).catch((error) =>
+        console.error(`[FriendInvites] could not open the DM of new friends ${user_id} and ${inviter_id}`, error),
+    );
     return { new_friend: true };
 }

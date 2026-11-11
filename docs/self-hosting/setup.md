@@ -10,8 +10,7 @@ This page runs a public instance with Docker Compose on one Linux host. [native.
 | `client`   | Downloads the Discord web client into the `client` volume on the first start, then exits with code 0. |
 | `sfu`      | The Go media server from `extra/pion-sfu`, carrying voice, video and Go Live on one UDP port. |
 | `warp`     | Cloudflare WARP as a SOCKS5 proxy for fetches of user-chosen URLs. |
-| `server`   | API, CDN, gateway, voice gateway and web client on port 3001, published on `127.0.0.1:3001`. |
-| `caddy`    | Optional. TLS with automatic certificates, HTTP/1.1, HTTP/2 and HTTP/3. |
+| `server`   | API, CDN, gateway, voice gateway and web client on port 3001 inside the container, published on `127.0.0.1:32171`. |
 
 Compose builds the `meowcord-server` and `meowcord-sfu` images from this checkout, with Equicord at the commit pinned in `client/vencord.json`. Neither image is published.
 
@@ -19,7 +18,8 @@ Compose builds the `meowcord-server` and `meowcord-sfu` images from this checkou
 
 - A Linux host with Docker Engine and the Compose plugin.
 - A DNS record for the instance's domain that points at the host.
-- Open ports: 80/tcp, 443/tcp, 443/udp, and 50000/udp for voice unless you change `WRTC_PORT`.
+- A reverse proxy or tunnel that serves the domain over HTTPS and forwards to the server, such as Caddy, nginx or Cloudflare Tunnel.
+- Open ports: 50000/udp for voice unless you change `WRTC_PORT`, plus whatever your proxy needs, usually 80/tcp and 443/tcp.
 
 ## Install
 
@@ -31,7 +31,7 @@ docker compose up -d --build
 docker compose logs -f client
 ```
 
-The client service downloads about 300 MB in 12,000 files, which takes several minutes. The server starts when the client service exits, and Caddy starts once the server is healthy. Then open `https://<DOMAIN>/register`. Nothing from Discord goes into the image or into git.
+The client service downloads about 300 MB in 12,000 files, which takes several minutes. The server starts when the client service exits and listens on `127.0.0.1:32171`. Point your reverse proxy or tunnel at it, as [Your own reverse proxy](#your-own-reverse-proxy) describes, then open `https://<DOMAIN>/register`. Nothing from Discord goes into the image or into git.
 
 To use an env file other than `.env`, pass it to every `docker compose` command, as in `docker compose --env-file prod.env up -d`, and set `ENV_FILE=prod.env` for the scripts in `scripts/ops` and `scripts/auto-update.sh`.
 
@@ -41,15 +41,14 @@ Compose passes these from `.env` and refuses to start without the first three. `
 
 | Variable | Meaning |
 | --- | --- |
-| `DOMAIN` | Host name of the instance, such as `chat.example.com`. The server builds every public URL from it. `http://localhost:3001` works for a local trial. |
+| `DOMAIN` | Host name of the instance, such as `chat.example.com`. The server builds every public URL from it. `http://localhost:32171` works for a local trial. |
 | `POSTGRES_PASSWORD` | Letters and digits only, for example from `openssl rand -hex 24`. Postgres reads it only when its volume is empty, so changing it later also needs `ALTER USER`. |
 | `WRTC_PUBLIC_IP` | Public IPv4 address or host name that clients send media to. Behind NAT, use the outside address and forward the voice port. A host name is resolved once at startup. |
 | `WRTC_PORT` | UDP port for all media, 50000 by default. |
 | `INSTANCE_NAME` | Name shown in the client, emails, developer portal and status page. It is applied on the first start and whenever you change it here, and otherwise a name set in the admin dashboard stays. |
 | `POSTGRES_USER`, `POSTGRES_DB`, `MEOWCORD_VOLUME_PREFIX` | `meowcord` in `.env.example`, and `fosscord` when absent, the names older installations use. |
-| `COMPOSE_PROFILES` | `caddy` starts the bundled Caddy. Empty means you run your own proxy. |
-| `SERVER_PORT` | Port on `127.0.0.1` for your own proxy, 3001 by default. |
-| `CADDY_GLOBAL_OPTIONS` | One line of Caddy global options, such as `email you@example.com` or `local_certs`. |
+| `SERVER_PORT` | Port the server is published on, 32171 by default. |
+| `SERVER_BIND` | Host address the server is published on, `127.0.0.1` by default so only a proxy or tunnel on the same host reaches it. `0.0.0.0` publishes it on every interface without TLS. |
 | `TRUSTED_PROXIES` | Express `trust proxy` value, `uniquelocal` by default, which covers Docker's private ranges. |
 | `CAP_INSTANCE_URL`, `CAP_SITE_KEY`, `CAP_SECRET_KEY` | A [Cap Standalone](https://capjs.js.org/guide/standalone/) server, used only when all three are set. Otherwise the built-in Cap runs, see [signup.md](../features/signup.md). |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_STARTTLS`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM` | Email over SMTP, off without `SMTP_HOST`. The port is 465 with `SMTP_SECURE=true` and 587 otherwise, STARTTLS is required unless `SMTP_STARTTLS=false`, and the sender is `noreply@<DOMAIN>` by default. |
@@ -81,7 +80,7 @@ docker compose restart server
 
 ## Your own reverse proxy
 
-Leave `COMPOSE_PROFILES` empty and point your proxy at `127.0.0.1:SERVER_PORT` with websocket upgrades. For a system Caddy, use `docker/Caddyfile` with `server:3001` replaced by `localhost:3001`, and remove the `stream_close_delay` line on Caddy older than 2.7. A stack that ran with Caddy keeps its container until you run `docker compose --profile caddy rm -sf caddy`.
+Compose doesn't run a proxy or terminate TLS. Point your reverse proxy or tunnel at `127.0.0.1:32171`, or `SERVER_BIND:SERVER_PORT` if you changed them, with websocket upgrades, and have it serve `DOMAIN` over HTTPS. [native.md](native.md) has a Caddy example for a proxy installed on the host. A stack that ran the bundled Caddy before keeps that container and its `caddy_data` and `caddy_config` volumes until you remove them with `docker rm -f` and `docker volume rm`.
 
 Outside Docker, the server can serve HTTPS and HTTP/2 itself on a port other than `PORT`, because TLS on the shared port fails under Bun:
 
@@ -95,22 +94,7 @@ Clients send media straight to `WRTC_PUBLIC_IP:WRTC_PORT` over UDP, so a client 
 
 ## Local trial
 
-Set `DOMAIN=http://localhost:3001`, `WRTC_PUBLIC_IP=127.0.0.1`, a free `WRTC_PORT` and an empty `COMPOSE_PROFILES`, then open `http://localhost:3001`. To test TLS with a made-up domain and Caddy's own CA:
-
-```sh
-cat > local.env <<EOF
-DOMAIN=meowcord.test
-POSTGRES_PASSWORD=local
-WRTC_PUBLIC_IP=127.0.0.1
-COMPOSE_PROFILES=caddy
-CADDY_GLOBAL_OPTIONS=local_certs
-EOF
-docker compose --env-file local.env up -d --build --wait
-docker compose --env-file local.env cp caddy:/data/caddy/pki/authorities/local/root.crt caddy-root.crt
-curl --cacert caddy-root.crt --resolve meowcord.test:443:127.0.0.1 https://meowcord.test/api/ping
-```
-
-For a browser, add `127.0.0.1 meowcord.test` to `/etc/hosts` and trust `caddy-root.crt`.
+Set `DOMAIN=http://localhost:32171`, `WRTC_PUBLIC_IP=127.0.0.1` and a free `WRTC_PORT`, then open `http://localhost:32171`.
 
 ## Data and backups
 
@@ -122,7 +106,6 @@ For a browser, add `127.0.0.1 meowcord.test` to `/etc/hosts` and trust `caddy-ro
 | `client` | The downloaded web client. |
 | `sfu` | The socket between the server and the SFU. |
 | `warp` | The WARP registration. |
-| `caddy_data`, `caddy_config` | Certificates and Caddy's CA. |
 
 Volume names start with `MEOWCORD_VOLUME_PREFIX`. **Losing `state` signs everyone out and loses the keys for encrypted account recovery, managed Official conversations and queued announcements.** Never run `docker compose down -v` on data you want to keep.
 

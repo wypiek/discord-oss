@@ -3,7 +3,7 @@ import { route } from "@spacebar/api/middlewares";
 import { AuditLog, Channel, Guild, Tag } from "@spacebar/database";
 import { ChannelCreateEvent, ChannelUpdateEvent, Config, DiscordApiErrors, emitEvent, FieldErrors, getPermission } from "@spacebar/util";
 import { assertOverwriteChanges, enforceNameAutomod, THREAD_TYPES } from "@spacebar/api/util";
-import { AuditLogEvents, GuildChannelCreateSchema, ChannelReorderSchema, ChannelType } from "@spacebar/schemas";
+import { AuditLogEvents, GuildChannelCreateSchema, ChannelReorderSchema, ChannelType, normalizeDefaultReaction } from "@spacebar/schemas";
 import { In, Not } from "typeorm";
 
 const router = Router({ mergeParams: true });
@@ -93,25 +93,24 @@ router.post(
         }
 
         if (body.permission_overwrites) assertOverwriteChanges(req.permission!, [], body.permission_overwrites, false);
-        const { available_tags, ...fields } = body;
+        const { available_tags, default_reaction_emoji, ...fields } = body;
         if (available_tags && available_tags.length > 20)
             throw FieldErrors({
                 available_tags: { code: "BASE_TYPE_MAX_LENGTH", message: "Must be 20 or fewer in length." },
             });
-        const channel = await Channel.createChannel({ ...fields, type: body.type ?? ChannelType.GUILD_TEXT, guild_id }, req.user_id, { skipEventEmit: true });
+        const channel = await Channel.createChannel(
+            {
+                ...fields,
+                ...(default_reaction_emoji !== undefined && { default_reaction_emoji: normalizeDefaultReaction(default_reaction_emoji) }),
+                type: body.type ?? ChannelType.GUILD_TEXT,
+                guild_id,
+            },
+            req.user_id,
+            { skipEventEmit: true },
+        );
         if (available_tags?.length && channel.isForum()) {
             channel.available_tags = [];
-            for (const [position, input] of available_tags.entries())
-                channel.available_tags.push(
-                    await Tag.create({
-                        channel_id: channel.id,
-                        position,
-                        name: input.name.slice(0, 20),
-                        moderated: !!input.moderated,
-                        emoji_id: input.emoji_id ?? undefined,
-                        emoji_name: input.emoji_id ? undefined : (input.emoji_name ?? undefined),
-                    }).save(),
-                );
+            for (const [position, input] of available_tags.entries()) channel.available_tags.push(await Tag.create({ channel_id: channel.id, position }).assignInput(input).save());
         }
         await emitEvent({
             event: "CHANNEL_CREATE",

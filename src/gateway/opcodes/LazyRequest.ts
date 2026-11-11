@@ -15,6 +15,9 @@ const RANGE_SIZE = 100;
 const MAX_RANGES = 5;
 const MAX_OPS = 50;
 const REFRESH_DELAY = 500;
+const FILL_LIMIT = 20;
+const MAX_VIEWS = 32;
+const PLACEHOLDER_ITEM: MemberListItem = { group: { id: "offline", count: 0 } };
 
 type MemberListItem = { group: { id: string; count: number } } | { member: Record<string, unknown> };
 type ListEntry = { key: string; compare: string; item: MemberListItem };
@@ -40,7 +43,13 @@ type ListState = {
     timer?: NodeJS.Timeout;
     subscribers: Set<WebSocket>;
 };
-type ListOp = { op: "SYNC"; range: [number, number]; items: MemberListItem[] } | { op: "INSERT" | "UPDATE"; index: number; item: MemberListItem } | { op: "DELETE"; index: number };
+type ListOp =
+    | { op: "SYNC"; range: [number, number]; items: MemberListItem[] }
+    | { op: "INVALIDATE"; range: [number, number] }
+    | { op: "INSERT" | "UPDATE"; index: number; item: MemberListItem }
+    | { op: "DELETE"; index: number };
+type DiffOp = { op: "INSERT" | "UPDATE"; index: number; entry: ListEntry } | { op: "DELETE"; index: number };
+export type MemberListView = { base?: MemberList; rows: (string | undefined)[] };
 
 const lists = new Map<string, ListState>();
 const guildLists = new Map<string, Set<string>>();
@@ -50,13 +59,16 @@ const broadcasts = new Set<Promise<unknown>>();
 let stopping = false;
 const shutdownRequested = () => stopping || ProcessLifecycle.shutdownRequested;
 
-function getListId(channel: Channel) {
+function getListId(channel: Pick<Channel, "permission_overwrites">, everyone?: Pick<Role, "permissions">) {
+    const overwrites = channel.permission_overwrites ?? [];
+    const everyoneViews = !everyone || (BigInt(everyone.permissions) & Permissions.FLAGS.VIEW_CHANNEL) === Permissions.FLAGS.VIEW_CHANNEL;
+    if (everyoneViews && !overwrites.some(({ deny }) => BigInt(deny) & Permissions.FLAGS.VIEW_CHANNEL)) return "everyone";
     const perms: string[] = [];
-    for (const { id, allow, deny } of channel.permission_overwrites ?? []) {
+    for (const { id, allow, deny } of overwrites) {
         if (BigInt(allow) & Permissions.FLAGS.VIEW_CHANNEL) perms.push(`allow:${id}`);
         else if (BigInt(deny) & Permissions.FLAGS.VIEW_CHANNEL) perms.push(`deny:${id}`);
     }
-    return perms.length ? murmur(perms.sort().join(",")).toString() : "everyone";
+    return murmur(perms.sort().join(",")).toString();
 }
 
 function loadGuildMembers(guild_id: string) {
@@ -153,7 +165,10 @@ async function layoutMembers({ roles, channel, members, visible }: LoadedMembers
     }
 
     return {
-        id: getListId(channel),
+        id: getListId(
+            channel,
+            roles.find((role) => role.id === guild_id),
+        ),
         guild_id,
         member_count: members.length,
         online_count: visible.filter((x) => presences.has(x.id)).length,
@@ -182,11 +197,11 @@ function rebuild(state: ListState) {
     return state.pending;
 }
 
-function diffEntries(before: ListEntry[], after: ListEntry[]): ListOp[] | undefined {
+function diffEntries(before: ListEntry[], after: ListEntry[]): DiffOp[] | undefined {
     const keys = before.map((x) => x.key);
     const compares = before.map((x) => x.compare);
     const target = new Map(after.map((x, i) => [x.key, i]));
-    const ops: ListOp[] = [];
+    const ops: DiffOp[] = [];
     for (let i = keys.length - 1; i >= 0; i--) {
         if (target.has(keys[i])) continue;
         ops.push({ op: "DELETE", index: i });
@@ -195,9 +210,10 @@ function diffEntries(before: ListEntry[], after: ListEntry[]): ListOp[] | undefi
     }
     for (let i = 0; i < after.length; i++) {
         if (ops.length > MAX_OPS) return undefined;
-        const { key, compare, item } = after[i];
+        const entry = after[i];
+        const { key, compare } = entry;
         if (keys[i] === key) {
-            if (compares[i] !== compare) ops.push({ op: "UPDATE", index: i, item });
+            if (compares[i] !== compare) ops.push({ op: "UPDATE", index: i, entry });
             compares[i] = compare;
             continue;
         }
@@ -215,19 +231,96 @@ function diffEntries(before: ListEntry[], after: ListEntry[]): ListOp[] | undefi
             keys.splice(from, 1);
             compares.splice(from, 1);
         }
-        ops.push({ op: "INSERT", index: i, item });
+        ops.push({ op: "INSERT", index: i, entry });
         keys.splice(i, 0, key);
         compares.splice(i, 0, compare);
     }
     return ops.length > MAX_OPS ? undefined : ops;
 }
 
-const syncOps = (list: MemberList, ranges: [number, number][]): ListOp[] =>
-    ranges.map((range) => ({
-        op: "SYNC",
-        range,
-        items: list.entries.slice(range[0], range[1] + 1).map((x) => x.item),
-    }));
+function syncRange(list: MemberList, range: [number, number], rows: (string | undefined)[]): ListOp {
+    const entries = list.entries.slice(range[0], range[1] + 1);
+    entries.forEach((entry, offset) => (rows[range[0] + offset] = entry.key));
+    return { op: "SYNC", range, items: entries.map((x) => x.item) };
+}
+
+function resetView(view: MemberListView | undefined, list: MemberList, ranges: [number, number][]) {
+    const ops: ListOp[] = [];
+    const loaded = view?.rows ?? [];
+    for (let start = 0; start < loaded.length; start++) {
+        if (loaded[start] === undefined) continue;
+        let end = start;
+        while (loaded[end + 1] !== undefined) end++;
+        ops.push({ op: "INVALIDATE", range: [start, end] });
+        start = end;
+    }
+    const rows: (string | undefined)[] = new Array(list.entries.length);
+    for (const range of ranges) ops.push(syncRange(list, range, rows));
+    return { ops, view: { base: list, rows } };
+}
+
+function planListOps(view: MemberListView | undefined, list: MemberList, ranges: [number, number][], requested: boolean, diffs = new Map<MemberList, DiffOp[] | undefined>()) {
+    const base = view?.base;
+    if (base && !diffs.has(base)) diffs.set(base, base === list ? [] : diffEntries(base.entries, list.entries));
+    const diff = base && diffs.get(base);
+    if (!view || !diff) return resetView(view, list, ranges);
+    const rows = [...view.rows];
+    const ops: ListOp[] = [];
+    const inRange = (index: number) => ranges.some(([start, end]) => index >= start && index <= end);
+    const loadedFrom = (index: number) => {
+        for (let i = rows.length - 1; i >= index; i--) if (rows[i] !== undefined) return true;
+        return false;
+    };
+    for (const change of diff) {
+        if (change.op === "UPDATE") {
+            if (rows[change.index] === undefined && !inRange(change.index)) continue;
+            ops.push({ op: "UPDATE", index: change.index, item: change.entry.item });
+            rows[change.index] = change.entry.key;
+            continue;
+        }
+        if (!loadedFrom(change.index)) continue;
+        if (change.op === "INSERT") {
+            ops.push({ op: "INSERT", index: change.index, item: change.entry.item });
+            rows.splice(change.index, 0, change.entry.key);
+            continue;
+        }
+        if (rows[change.index] === undefined) ops.push({ op: "UPDATE", index: change.index, item: PLACEHOLDER_ITEM });
+        ops.push({ op: "DELETE", index: change.index });
+        rows.splice(change.index, 1);
+    }
+    rows.length = list.entries.length;
+    for (const range of ranges) {
+        const missing: number[] = [];
+        for (let i = range[0]; i <= Math.min(range[1], list.entries.length - 1); i++) if (rows[i] !== list.entries[i].key) missing.push(i);
+        if (requested || missing.length > FILL_LIMIT) {
+            ops.push(syncRange(list, range, rows));
+            continue;
+        }
+        for (const index of missing) {
+            ops.push({ op: "UPDATE", index, item: list.entries[index].item });
+            rows[index] = list.entries[index].key;
+        }
+    }
+    if (ops.filter((op) => op.op !== "SYNC").length > MAX_OPS) return resetView(view, list, ranges);
+    return { ops, view: { base: list, rows } };
+}
+
+const sameSummary = (a: MemberList, b: MemberList) =>
+    a.online_count === b.online_count && a.member_count === b.member_count && JSON.stringify(a.groups) === JSON.stringify(b.groups);
+
+function deliverList(socket: WebSocket, key: string, list: MemberList, requested: boolean, diffs?: Map<MemberList, DiffOp[] | undefined>) {
+    const subscription = socket.member_lists?.[list.guild_id];
+    if (!subscription || subscription.key !== key) return;
+    const views = (subscription.views ??= new Map());
+    const view = views.get(key);
+    const plan = planListOps(view, list, subscription.ranges, requested, diffs);
+    views.delete(key);
+    for (const other of views.values()) other.base = undefined;
+    views.set(key, plan.view);
+    while (views.size > MAX_VIEWS) views.delete(views.keys().next().value!);
+    if (!requested && view?.base && !plan.ops.length && sameSummary(view.base, list)) return;
+    return sendListUpdate(socket, list, plan.ops);
+}
 
 function sendListUpdate(socket: WebSocket, list: MemberList, ops: ListOp[]) {
     const work = Send(socket, {
@@ -289,7 +382,6 @@ function refresh(state: ListState): Promise<void> {
 
 async function refreshOnce(state: ListState) {
     if (!liveSubscribers(state).length) return dropState(state);
-    const before = state.list;
     const after = await rebuild(state);
     if (shutdownRequested()) return;
     if (state.key !== `${state.guild_id}:${after.id}`) {
@@ -301,13 +393,10 @@ async function refreshOnce(state: ListState) {
         );
         return;
     }
-    const ops = before ? diffEntries(before.entries, after.entries) : undefined;
-    if (ops?.length === 0 && before?.online_count === after.online_count && before?.member_count === after.member_count) return;
+    const diffs = new Map<MemberList, DiffOp[] | undefined>();
     await Promise.all(
         liveSubscribers(state).map((socket) =>
-            sendListUpdate(socket, after, ops ?? syncOps(after, socket.member_lists![state.guild_id].ranges)).catch((e) =>
-                console.error(`[Gateway/${socket.user_id}] member list update failed`, e),
-            ),
+            deliverList(socket, state.key, after, false, diffs)?.catch((e) => console.error(`[Gateway/${socket.user_id}] member list update failed`, e)),
         ),
     );
 }
@@ -349,7 +438,9 @@ function normalizeRanges(ranges: unknown[]) {
 
 async function subscribeMemberList(socket: WebSocket, guild_id: string, channel: Channel, ranges: [number, number][]) {
     if (shutdownRequested()) return;
-    const key = `${guild_id}:${getListId(channel)}`;
+    const everyone = await Role.findOne({ where: { id: guild_id }, select: { id: true, permissions: true } });
+    if (shutdownRequested()) return;
+    const key = `${guild_id}:${getListId(channel, everyone ?? undefined)}`;
     let state = lists.get(key);
     if (!state) {
         state = { key, guild_id, channel_id: channel.id, subscribers: new Set() };
@@ -364,12 +455,12 @@ async function subscribeMemberList(socket: WebSocket, guild_id: string, channel:
     });
     if (!guildWatched) guildMembers.delete(guild_id);
     socket.member_lists ??= {};
-    socket.member_lists[guild_id] = { channel_id: channel.id, ranges, key };
+    socket.member_lists[guild_id] = { channel_id: channel.id, ranges, key, views: socket.member_lists[guild_id]?.views };
     state.subscribers.add(socket);
     if (!watched) state.stale = "members";
     const list = (watched && state.list) || (await rebuild(state));
-    if (shutdownRequested() || socket.readyState !== 1 || socket.member_lists[guild_id]?.key !== key) return;
-    await sendListUpdate(socket, list, syncOps(list, ranges));
+    if (shutdownRequested() || socket.readyState !== 1) return;
+    await deliverList(socket, key, list, true);
 }
 
 export async function resyncMemberList(socket: WebSocket, guild_id: string) {

@@ -40,7 +40,8 @@ router.patch(
     "/",
     route({
         requestBody: "MessageEditSchema",
-        permission: "SEND_MESSAGES",
+        permission: "VIEW_CHANNEL",
+        channelRelations: { recipients: true },
         right: "SEND_MESSAGES",
         responses: {
             200: {
@@ -55,6 +56,7 @@ router.patch(
     }),
     async (req: Request, res: Response) => {
         const { message_id, channel_id } = req.params as { [key: string]: string };
+        req.permission!.hasThrow(req.channel!.isThread() ? "SEND_MESSAGES_IN_THREADS" : "SEND_MESSAGES");
         let body = req.body as MessageEditSchema;
         if (body.components?.length && !req.user_bot)
             throw FieldErrors({

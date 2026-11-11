@@ -27,13 +27,21 @@ export class Tag extends BaseClass {
     moderated: boolean = false;
 
     @Column({ nullable: true, type: "int8" })
-    emoji_id?: string;
+    emoji_id?: string | null;
 
-    @Column({ nullable: true })
-    emoji_name?: string;
+    @Column({ nullable: true, type: "varchar" })
+    emoji_name?: string | null;
 
     @Column({ type: "int", default: 0 })
     position: number = 0;
+
+    assignInput(input: { name: string; moderated?: boolean | null; emoji_id?: string | null; emoji_name?: string | null }) {
+        this.name = input.name.slice(0, 20);
+        this.moderated = !!input.moderated;
+        this.emoji_id = input.emoji_id || null;
+        this.emoji_name = input.emoji_id ? null : input.emoji_name || null;
+        return this;
+    }
 
     toJSON() {
         return {

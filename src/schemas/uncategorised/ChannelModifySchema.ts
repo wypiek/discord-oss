@@ -1,5 +1,5 @@
 import { GuildIdList } from "./GuildCappedLists";
-import { ChannelPermissionOverwriteType, ChannelType, DefaultReaction, TagCreateSchema } from "@spacebar/schemas";
+import { ChannelPermissionOverwriteType, ChannelType, DefaultReactionInput, TagCreateSchema } from "@spacebar/schemas";
 
 export interface ChannelModifySchema {
     /**
@@ -57,7 +57,7 @@ export interface ChannelModifySchema {
      */
     rtc_region?: string | null;
     default_auto_archive_duration?: number | null;
-    default_reaction_emoji?: DefaultReaction | null;
+    default_reaction_emoji?: DefaultReactionInput | null;
     default_sort_order?: number | null;
     default_forum_layout?: number | null;
     /**

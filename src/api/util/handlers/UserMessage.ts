@@ -6,7 +6,7 @@ import { emitEvent, MessageCreateEvent, MessageFlags, Permissions, getPermission
 import { MessageOptionAttachment } from "@spacebar/util/dtos/MessageOptions";
 import { MessageCreateSchema, MessageReferenceType, MessageType } from "@spacebar/schemas";
 import { handleMessage, postHandleMessage } from "./Message";
-import { reopenDirectMessage } from "./DirectMessage";
+import { markDirectMessageStarted, reopenDirectMessage } from "./DirectMessage";
 import { onThreadMessage } from "./Thread";
 import { persistWithMessageSlowmode } from "./Slowmode";
 import { applyExplicitContentFilter } from "../utility/safety";
@@ -118,6 +118,7 @@ export async function publishUserMessage(opts: {
         channel.total_message_sent = (channel.total_message_sent ?? 0) + 1;
     }
     await reopenDirectMessage(channel, user_id, { last_message_id });
+    if (!ephemeral) await markDirectMessageStarted(channel);
 
     if (channel.isThread())
         await onThreadMessage(

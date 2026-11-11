@@ -16,8 +16,9 @@ import {
 } from "@spacebar/api/util";
 import { route, parsePayloadJson } from "@spacebar/api/middlewares";
 import { Channel, Member, ReadState, ThreadMember } from "@spacebar/database";
-import { ChannelFlags, emitEvent, FieldErrors, MessageCreateEvent, Snowflake, uploadMessageFiles } from "@spacebar/util";
+import { ChannelFlags, DiscordApiErrors, emitEvent, FieldErrors, MessageCreateEvent, Snowflake, uploadMessageFiles } from "@spacebar/util";
 import { AttachmentFlags, ChannelType, MessageType, ThreadCreationSchema } from "@spacebar/schemas";
+import { assertPostSlowmode, recordPostSlowmode } from "@spacebar/api/util/handlers/Slowmode";
 import { messageUpload } from "./messages";
 
 const router = Router({ mergeParams: true });
@@ -53,13 +54,7 @@ router.post(
             type = ChannelType.GUILD_PUBLIC_THREAD;
             const tags = new Map((channel.available_tags ?? []).map((tag) => [tag.id, tag]));
             const applied = [...new Set(body.applied_tags ?? [])];
-            if (!applied.length && channel.flags & Number(ChannelFlags.FLAGS.REQUIRE_TAG) && !req.permission!.hasWithMfa("MANAGE_THREADS"))
-                throw FieldErrors({
-                    applied_tags: {
-                        code: "TAG_REQUIRED",
-                        message: "A tag is required to create a forum post in this channel",
-                    },
-                });
+            if (!applied.length && channel.flags & Number(ChannelFlags.FLAGS.REQUIRE_TAG) && !req.permission!.hasWithMfa("MANAGE_THREADS")) throw DiscordApiErrors.TAG_REQUIRED;
             if (applied.length > 5)
                 throw FieldErrors({
                     applied_tags: { code: "BASE_TYPE_MAX_LENGTH", message: "Must be 5 or fewer in length." },
@@ -68,6 +63,7 @@ router.post(
             if (bad) throw FieldErrors({ applied_tags: { code: "INVALID_TAG", message: `Invalid tag ${bad}` } });
             if (applied.some((tag) => tags.get(tag)?.moderated)) req.permission!.hasThrow("MANAGE_THREADS");
             body.applied_tags = applied;
+            await assertPostSlowmode(channel, req.user_id, req.permission!);
         } else {
             type = body.type ?? ChannelType.GUILD_PRIVATE_THREAD;
             if (type === ChannelType.GUILD_PUBLIC_THREAD && channel.type === ChannelType.GUILD_NEWS) type = ChannelType.GUILD_NEWS_THREAD;
@@ -123,6 +119,8 @@ router.post(
             applied_tags: body.applied_tags,
             reason: req.headers["x-audit-log-reason"],
         });
+
+        if (channel.threadOnly()) await recordPostSlowmode(channel, req.user_id, req.permission!);
 
         if (!channel.threadOnly() && type !== ChannelType.GUILD_PRIVATE_THREAD)
             await sendMessage({

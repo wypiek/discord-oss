@@ -1,7 +1,18 @@
 import { route } from "@spacebar/api/middlewares";
 import { APPLICATION_BYPASS_INVITE_FLAG, acceptFriendInvite, isApplyGuild, onGuildMemberJoin, startJoinRequest } from "@spacebar/api/util";
 import { AuditLog, Ban, Channel, Guild, GuildScheduledEvent, Invite, Member, PublicInviteRelation, Recipient, Role, ScheduledEvents, User } from "@spacebar/database";
-import { ChannelRecipientAddEvent, Config, DiscordApiErrors, DmChannelDTO, emitEvent, getPermission, InviteDeleteEvent, Permissions } from "@spacebar/util";
+import {
+    ChannelRecipientAddEvent,
+    Config,
+    DiscordApiErrors,
+    DmChannelDTO,
+    emitEvent,
+    getPermission,
+    InviteDeleteEvent,
+    isInstanceStaff,
+    loadStaffRoles,
+    Permissions,
+} from "@spacebar/util";
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import { AuditLogEvents, ChannelPermissionOverwriteType, ChannelType, MessageType, UserFlags } from "@spacebar/schemas";
@@ -182,7 +193,7 @@ router.post(
             throw DiscordApiErrors.UNKNOWN_INVITE;
         }
 
-        if (features.includes("INTERNAL_EMPLOYEE_ONLY") && (public_flags & 1) !== 1) {
+        if (features.includes("INTERNAL_EMPLOYEE_ONLY") && !isInstanceStaff(req.user, await loadStaffRoles())) {
             console.log(`[Invite] User ${req.user_id} tried to join guild ${guild_id} but is not staff.`);
             throw new HTTPError("Only intended for the staff of this instance.", 401);
         }

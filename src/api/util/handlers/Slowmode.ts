@@ -32,6 +32,32 @@ export async function assertMessageSlowmode(channel: Channel, user_id: string, p
         });
 }
 
+const postSlowmodeKey = (forum: Channel, user_id: string) => `post-slowmode:${forum.id}:${user_id}`;
+
+export async function assertPostSlowmode(forum: Channel, user_id: string, permission: Permissions) {
+    if (!requiresMessageSlowmode(forum, permission)) return;
+    const cooldown = await RateLimit.findOneBy({ id: postSlowmodeKey(forum, user_id) });
+    const remaining = cooldown ? cooldown.expires_at.getTime() - Date.now() : 0;
+    if (remaining > 0)
+        throw Object.assign(new ApiError("You are being rate limited.", 20016, 429), {
+            retry_after: remaining / 1000,
+        });
+}
+
+export async function recordPostSlowmode(forum: Channel, user_id: string, permission: Permissions) {
+    if (!requiresMessageSlowmode(forum, permission)) return;
+    await RateLimit.upsert(
+        {
+            id: postSlowmodeKey(forum, user_id),
+            executor_id: user_id,
+            hits: forum.rate_limit_per_user!,
+            blocked: true,
+            expires_at: new Date(Date.now() + forum.rate_limit_per_user! * 1000),
+        },
+        ["id"],
+    );
+}
+
 export async function persistWithMessageSlowmode<T>(
     channel: Channel,
     user_id: string,

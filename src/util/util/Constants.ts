@@ -441,6 +441,7 @@ export const VerificationLevels = ["NONE", "LOW", "MEDIUM", "HIGH", "VERY_HIGH"]
  * * TARGET_USER_IS_NOT_CONNECTED_TO_VOICE
  * * ALREADY_CROSSPOSTED
  * * APPLICATION_COMMAND_ALREADY_EXISTS
+ * * TAG_REQUIRED
  * * MISSING_ACCESS
  * * INVALID_ACCOUNT_TYPE
  * * CANNOT_EXECUTE_ON_DM
@@ -752,6 +753,9 @@ export const DiscordApiErrors = {
     },
     get APPLICATION_COMMAND_ALREADY_EXISTS() {
         return new ApiError("An application command with that name already exists", 40041);
+    },
+    get TAG_REQUIRED() {
+        return new ApiError("A tag is required to create a forum post in this channel", 40067);
     },
     get MISSING_ACCESS() {
         return new ApiError("Missing Access", 50001, 403);

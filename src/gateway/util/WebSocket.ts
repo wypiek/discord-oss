@@ -4,6 +4,7 @@ import { ZstdStreamEncoder } from "./ZstdStream";
 import { Session } from "@spacebar/database";
 import { Intents, ListenEventOpts, Permissions } from "@spacebar/util";
 import { QoSPayload } from "../opcodes/Heartbeat";
+import type { MemberListView } from "../opcodes/LazyRequest";
 import { Capabilities } from "./Capabilities";
 import { Payload } from "./Constants";
 
@@ -51,6 +52,6 @@ export interface WebSocket extends WS {
     fullMemberRequests?: Record<string, number>;
     affinityUsers?: Set<string>;
     presenceSubscriptions?: Record<string, Set<string>>;
-    member_lists?: Record<string, { channel_id: string; ranges: [number, number][]; key: string }>;
+    member_lists?: Record<string, { channel_id: string; ranges: [number, number][]; key: string; views?: Map<string, MemberListView> }>;
     resumeGatewayUrl?: string;
 }

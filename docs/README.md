@@ -49,3 +49,5 @@ Read [CONTRIBUTING.MD](../CONTRIBUTING.MD) first.
 | [native-ui.md](development/native-ui.md) | Shared native UI adapters for plugins. |
 | [dialog-dismissal.md](development/dialog-dismissal.md) | How owned dialogs and the developer portal dismiss. |
 | [admin-api-coverage.md](development/admin-api-coverage.md) | Which API operations the admin dashboard covers. |
+| [instance-discovery.md](development/instance-discovery.md) | `/.well-known/discord-oss`, which tells clients an instance's name, icon, endpoints and signup rules. |
+| [e2ee-protocol.md](development/e2ee-protocol.md) | The encryption protocol byte by byte, for writing another client. |
