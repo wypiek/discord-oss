@@ -46,6 +46,8 @@ jobs:
           bun "$HOME/.cache/fosscord-tools/node_modules/playwright/cli.js" install --with-deps chromium webkit
           bun -e 'const {chromium}=require(process.env.HOME+"/.cache/fosscord-tools/node_modules/playwright-core"); console.log("CHROME_PATH="+chromium.executablePath())' >> "$GITHUB_ENV"
       - run: bun run test
+        env:
+          DATABASE: sqlite:${{ runner.temp }}/unit-tests.sqlite
       - if: always()
         run: dropdb --if-exists "$STORAGE_RUNTIME_TEST_DATABASE"
   voice:
