@@ -8,6 +8,7 @@ import {
     emitThreadUpdate,
     enforceNameAutomod,
     purgeDeletedChannels,
+    removeAppliedTags,
     sendMessage,
     setThreadArchived,
     threadAuditState,
@@ -29,7 +30,7 @@ import {
     Snowflake,
     ThreadDeleteEvent,
 } from "@spacebar/util";
-import { AuditLogEvents, ChannelModifySchema, ChannelType, MessageType } from "@spacebar/schemas";
+import { AuditLogEvents, ChannelModifySchema, ChannelType, MessageType, normalizeDefaultReaction } from "@spacebar/schemas";
 
 const router: Router = Router({ mergeParams: true });
 
@@ -263,7 +264,8 @@ router.patch(
                     relations: { available_tags: true },
                 });
                 const realTags = new Map((parent.available_tags ?? []).map((tag) => [tag.id, tag]));
-                const applied = [...new Set(payload.applied_tags)];
+                const previous = new Set(channel.applied_tags ?? []);
+                const applied = [...new Set(payload.applied_tags)].filter((tag) => realTags.has(tag) || !previous.has(tag));
                 if (applied.length > 5)
                     throw new FieldError(50035, "Invalid Form Body", {
                         applied_tags: makeObjectErrorContent("BASE_TYPE_MAX_LENGTH", "Must be 5 or fewer in length."),
@@ -359,17 +361,15 @@ router.patch(
             const keep = new Set<string>();
             const tags: Tag[] = [];
             for (const [position, input] of payload.available_tags.entries()) {
-                const tag = (input.id && existing.get(input.id)) || Tag.create({ channel_id: channel.id });
+                const tag = ((input.id && existing.get(input.id)) || Tag.create({ channel_id: channel.id })).assignInput(input);
                 tag.position = position;
-                tag.name = input.name.slice(0, 20);
-                tag.moderated = !!input.moderated;
-                tag.emoji_id = input.emoji_id ?? undefined;
-                tag.emoji_name = input.emoji_id ? undefined : (input.emoji_name ?? undefined);
                 await tag.save();
                 keep.add(tag.id);
                 tags.push(tag);
             }
-            await Promise.all([...existing.values()].filter((tag) => !keep.has(tag.id)).map((tag) => Tag.delete({ id: tag.id })));
+            const removed = [...existing.keys()].filter((id) => !keep.has(id));
+            await Promise.all(removed.map((id) => Tag.delete({ id })));
+            await removeAppliedTags(channel.id, removed);
             channel.available_tags = tags;
             delete payload.available_tags;
         }
@@ -394,11 +394,7 @@ router.patch(
                     },
                 });
         }
-        if (payload.default_reaction_emoji)
-            payload.default_reaction_emoji = {
-                emoji_id: payload.default_reaction_emoji.emoji_id ?? null,
-                emoji_name: payload.default_reaction_emoji.emoji_id ? null : (payload.default_reaction_emoji.emoji_name ?? null),
-            };
+        if (payload.default_reaction_emoji !== undefined) payload.default_reaction_emoji = normalizeDefaultReaction(payload.default_reaction_emoji);
 
         if (![ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE].includes(channel.type)) {
             delete payload.bitrate;

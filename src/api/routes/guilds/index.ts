@@ -4,7 +4,7 @@ import { enforceNameAutomod } from "@spacebar/api/util";
 import { reindexDiscoverySoon } from "@spacebar/api/util/handlers/Discovery";
 import { Guild, Member } from "@spacebar/database";
 import { Config, DiscordApiErrors, getRights } from "@spacebar/util";
-import { GuildCreateSchema } from "@spacebar/schemas";
+import { GuildCreateSchema, normalizeDefaultReaction } from "@spacebar/schemas";
 
 const router: Router = Router({ mergeParams: true });
 
@@ -40,6 +40,10 @@ router.post(
 
         const guild = await Guild.createGuild({
             ...body,
+            channels: body.channels?.map(({ default_reaction_emoji, ...channel }) => ({
+                ...channel,
+                ...(default_reaction_emoji !== undefined && { default_reaction_emoji: normalizeDefaultReaction(default_reaction_emoji) }),
+            })),
             owner_id: req.user_id,
             source_guild_id: null,
         });

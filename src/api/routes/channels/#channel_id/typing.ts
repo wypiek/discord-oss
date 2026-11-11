@@ -9,7 +9,7 @@ const router: Router = Router({ mergeParams: true });
 router.post(
     "/",
     route({
-        permission: "SEND_MESSAGES",
+        permission: "VIEW_CHANNEL",
         responses: {
             200: {},
             204: {},
@@ -24,6 +24,7 @@ router.post(
         const channel = await Channel.findOneOrFail({
             where: { id: channel_id },
         });
+        req.permission!.hasThrow(channel.isThread() ? "SEND_MESSAGES_IN_THREADS" : "SEND_MESSAGES");
 
         if (channel.rate_limit_per_user) {
             const permission = req.permission ?? (await getPermission(user_id, channel.guild_id, channel));

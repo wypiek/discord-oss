@@ -4940,6 +4940,7 @@ backup:${ownId}`).catch(() => null);
   var REPORT_URL = /^\/reporting\/(message|first_dm)$/;
   var USER_REPORT_URL = "/reporting/user";
   var MESSAGE_URL = /^\/channels\/(\d+)\/messages(?:\/(\d+))?$/;
+  var GREET_URL = /^\/channels\/(\d+)\/greet$/;
   var CREATE_ATTACHMENTS_URL = /^\/channels\/(\d+)\/attachments$/;
   var MISMATCH_RETRIES = 2;
   var DECRYPT_RETRY_MS = 2000;
@@ -5170,7 +5171,9 @@ backup:${ownId}`).catch(() => null);
       if (messages.length)
         await Promise.all(messages.map(decryptOne));
     };
-    const encryptBody = async (method, opts) => {
+    const encryptBody = async (method, input) => {
+      const greet = method === "post" ? GREET_URL.exec(input.url.split("?")[0]) : null;
+      const opts = greet && engine.isEncrypted(greet[1]) ? { ...input, url: `/channels/${greet[1]}/messages` } : input;
       const match = MESSAGE_URL.exec(opts.url.split("?")[0]);
       if (!match || method !== "post" && method !== "patch")
         return opts;
@@ -5379,7 +5382,7 @@ backup:${ownId}`).catch(() => null);
             })();
           }
           const pending = (async () => {
-            const channelId = MESSAGE_URL.exec(path)?.[1] ?? "";
+            const channelId = (MESSAGE_URL.exec(path) ?? GREET_URL.exec(path))?.[1] ?? "";
             const encrypted = async () => {
               try {
                 return await encryptBody(method, opts);

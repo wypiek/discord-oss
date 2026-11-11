@@ -161,6 +161,19 @@ export async function createThread(opts: CreateThreadOptions) {
     return { thread, member };
 }
 
+export async function removeAppliedTags(parent_id: string, tag_ids: string[]) {
+    if (!tag_ids.length) return;
+    const removed = new Set(tag_ids);
+    const threads = await Channel.find({ where: { parent_id, type: In(THREAD_TYPES) }, select: { id: true, applied_tags: true } });
+    for (const thread of threads) {
+        const applied_tags = thread.applied_tags ?? [];
+        if (!applied_tags.some((tag) => removed.has(tag))) continue;
+        await Channel.update({ id: thread.id }, { applied_tags: applied_tags.filter((tag) => !removed.has(tag)) });
+        const updated = await Channel.findOne({ where: { id: thread.id } });
+        if (updated) await emitThreadUpdate(updated);
+    }
+}
+
 export async function emitThreadUpdate(thread: Channel) {
     await emitEvent({
         event: "THREAD_UPDATE",

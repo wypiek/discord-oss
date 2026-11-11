@@ -65,6 +65,7 @@ const REPORT_URL = /^\/reporting\/(message|first_dm)$/;
 const USER_REPORT_URL = "/reporting/user";
 
 const MESSAGE_URL = /^\/channels\/(\d+)\/messages(?:\/(\d+))?$/;
+const GREET_URL = /^\/channels\/(\d+)\/greet$/;
 
 const CREATE_ATTACHMENTS_URL = /^\/channels\/(\d+)\/attachments$/;
 
@@ -307,7 +308,9 @@ export const createHooks = (ctx: HookContext) => {
         if (messages.length) await Promise.all(messages.map(decryptOne));
     };
 
-    const encryptBody = async (method: HttpMethod, opts: HttpOptions) => {
+    const encryptBody = async (method: HttpMethod, input: HttpOptions) => {
+        const greet = method === "post" ? GREET_URL.exec(input.url.split("?")[0]) : null;
+        const opts = greet && engine.isEncrypted(greet[1]) ? { ...input, url: `/channels/${greet[1]}/messages` } : input;
         const match = MESSAGE_URL.exec(opts.url.split("?")[0]);
         if (!match || (method !== "post" && method !== "patch")) return opts;
         const [, channelId, messageId] = match;
@@ -521,7 +524,7 @@ export const createHooks = (ctx: HookContext) => {
                     })();
                 }
                 const pending = (async () => {
-                    const channelId = MESSAGE_URL.exec(path)?.[1] ?? "";
+                    const channelId = (MESSAGE_URL.exec(path) ?? GREET_URL.exec(path))?.[1] ?? "";
                     const encrypted = async () => {
                         try {
                             return await encryptBody(method, opts);

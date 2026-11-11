@@ -25,6 +25,7 @@ export class ChannelFlags extends BitField {
         OBFUSCATED: BigInt(1) << BigInt(17),
         //Missing 18
         IS_MODERATOR_REPORT_CHANNEL: BigInt(1) << BigInt(19),
+        HAS_ONLY_SYSTEM_MESSAGES: BigInt(1) << BigInt(23),
     };
 
     static USER_SETTABLE = Number(

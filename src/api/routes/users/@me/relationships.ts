@@ -3,7 +3,7 @@ import { ILike } from "typeorm";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
 import { Member, Relationship, User, UserSettingsProtos } from "@spacebar/database";
-import { checkContactSpam } from "@spacebar/api/util";
+import { checkContactSpam, openNewFriendDirectMessage } from "@spacebar/api/util";
 import {
     Config,
     DiscordApiErrors,
@@ -422,6 +422,9 @@ async function updateRelationship(req: Request, res: Response, friend: User, typ
         note: note || undefined,
     });
 
+    const acceptedNote = relationship?.type === RelationshipType.INCOMING_REQUEST ? relationship.note : null;
+    const friendsSince = new Date();
+
     if (friendRequest) {
         if (friendRequest.type === RelationshipType.BLOCKED) throw DiscordApiErrors.FRIEND_REQUEST_BLOCKED;
         if (friendRequest.type === RelationshipType.FRIEND) throw DiscordApiErrors.ALREADY_FRIENDS;
@@ -429,6 +432,7 @@ async function updateRelationship(req: Request, res: Response, friend: User, typ
         incoming_relationship = friendRequest;
         incoming_relationship.type = RelationshipType.FRIEND;
         incoming_relationship.note = null;
+        incoming_relationship.since = friendsSince;
     }
 
     if (relationship) {
@@ -438,6 +442,7 @@ async function updateRelationship(req: Request, res: Response, friend: User, typ
         outgoing_relationship = relationship;
         outgoing_relationship.type = RelationshipType.FRIEND;
         outgoing_relationship.note = null;
+        outgoing_relationship.since = friendsSince;
     }
 
     await Promise.all([
@@ -459,6 +464,9 @@ async function updateRelationship(req: Request, res: Response, friend: User, typ
     ]);
 
     if (incoming_relationship.type === RelationshipType.FRIEND && outgoing_relationship.type === RelationshipType.FRIEND) {
+        await openNewFriendDirectMessage(req.user_id, id, acceptedNote).catch((error) =>
+            console.error(`[Relationships] could not open the DM of new friends ${req.user_id} and ${id}`, error),
+        );
         const [ownPresence, friendPresence, ownUser] = await Promise.all([getUserPresence(req.user_id), getUserPresence(id), User.getPublicUser(req.user_id)]);
         await Promise.all([
             emitEvent({

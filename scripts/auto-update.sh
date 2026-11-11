@@ -8,7 +8,7 @@
 #   ENV_FILE        compose env file, when it isn't .env (for example prod.env)
 #   UPDATE_CODE     0 to leave the code alone and only update the web client
 #   UPDATE_CLIENT   0 to leave the web client alone and only update the code
-#   SERVER_PORT     the server's port on the host's loopback, 3001 unless you changed it in the env file
+#   SERVER_PORT     the server's port on the host, 32171 unless you changed it in the env file
 #   NOTIFY_WEBHOOK  a Discord or Fosscord webhook URL that gets a message when something was updated or went wrong
 #   LOCK_FILE       where the lock that stops two runs overlapping lives, /tmp/fosscord-auto-update.lock by default
 
@@ -104,7 +104,7 @@ else
     exit 0
 fi
 
-port=${SERVER_PORT:-3001}
+port=${SERVER_PORT:-32171}
 summary=""
 [ "$code_updated" = 1 ] && summary="code $(git rev-parse --short HEAD)"
 [ "$client_updated" = 1 ] && summary="${summary:+$summary and }web client build $latest"

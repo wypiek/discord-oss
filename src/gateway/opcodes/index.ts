@@ -16,6 +16,7 @@ import { onRequestChannelInfo } from "./RequestChannelInfo";
 import { onCallConnect } from "./CallConnect";
 import { onStreamSetPaused } from "./StreamSetPaused";
 import { onRequestSoundboardSounds } from "./RequestSoundboardSounds";
+import { onRequestForumUnreads } from "./RequestForumUnreads";
 
 export type OPCodeHandler = (this: WebSocket, data: Payload) => unknown;
 
@@ -38,6 +39,7 @@ export default {
     20: onStreamWatch,
     21: () => {},
     22: onStreamSetPaused,
+    28: onRequestForumUnreads,
     31: onRequestSoundboardSounds,
     36: onRequestChannelStatuses,
     37: onGuildSubscriptionsBulk,

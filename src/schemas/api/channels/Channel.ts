@@ -68,6 +68,23 @@ export interface DefaultReaction {
     emoji_name: string | null;
 }
 
+export interface DefaultReactionInput {
+    /**
+     * @maxLength 20
+     */
+    emoji_id?: string | null;
+    /**
+     * @maxLength 32
+     */
+    emoji_name?: string | null;
+}
+
+export function normalizeDefaultReaction(input: DefaultReactionInput | null): DefaultReaction | null {
+    if (input?.emoji_id) return { emoji_id: input.emoji_id, emoji_name: null };
+    if (input?.emoji_name) return { emoji_id: null, emoji_name: input.emoji_name };
+    return null;
+}
+
 export enum ForumSortOrder {
     LATEST_ACTIVITY = 0,
     CREATION_DATE = 1,

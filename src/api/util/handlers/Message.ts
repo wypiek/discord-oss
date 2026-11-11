@@ -593,7 +593,8 @@ export async function handleMessage(
         }
         permission ||= authorPermission ?? (await getPermission(opts.author_id, channel.guild_id, channel));
         if (permission === null) throw new HTTPError("permission was null after getPermission", 500);
-        permission.hasThrow("SEND_MESSAGES");
+        if (!channel.isThread()) permission.hasThrow("SEND_MESSAGES");
+        else if (message.id !== channel.id) permission.hasThrow("SEND_MESSAGES_IN_THREADS");
         if (permission.cache.member) {
             message.member = permission.cache.member;
         }

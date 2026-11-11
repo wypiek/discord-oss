@@ -1793,7 +1793,7 @@
             "default_reaction_emoji": {
                 "anyOf": [
                     {
-                        "$ref": "#/definitions/DefaultReaction"
+                        "$ref": "#/definitions/DefaultReactionInput"
                     },
                     {
                         "type": "null"
@@ -8416,7 +8416,7 @@
             "default_reaction_emoji": {
                 "anyOf": [
                     {
-                        "$ref": "#/definitions/DefaultReaction"
+                        "$ref": "#/definitions/DefaultReactionInput"
                     },
                     {
                         "type": "null"
@@ -8641,7 +8641,7 @@
             "default_reaction_emoji": {
                 "anyOf": [
                     {
-                        "$ref": "#/definitions/DefaultReaction"
+                        "$ref": "#/definitions/DefaultReactionInput"
                     },
                     {
                         "type": "null"
@@ -13836,6 +13836,329 @@
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
+    "DiscordOssWellKnownResponse": {
+        "type": "object",
+        "properties": {
+            "software": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "const": "discord-oss"
+                    },
+                    "version": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "name",
+                    "version"
+                ]
+            },
+            "protocol": {
+                "type": "integer"
+            },
+            "instance": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "url": {
+                        "type": "string"
+                    },
+                    "icon": {
+                        "type": "string"
+                    },
+                    "logo": {
+                        "type": [
+                            "null",
+                            "string"
+                        ]
+                    },
+                    "theme_color": {
+                        "type": "string"
+                    },
+                    "contact_email": {
+                        "type": [
+                            "null",
+                            "string"
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "contact_email",
+                    "description",
+                    "icon",
+                    "id",
+                    "logo",
+                    "name",
+                    "theme_color",
+                    "url"
+                ]
+            },
+            "api": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string"
+                    },
+                    "default_version": {
+                        "type": "string"
+                    },
+                    "versions": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "default_version",
+                    "url",
+                    "versions"
+                ]
+            },
+            "gateway": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string"
+                    },
+                    "encodings": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "compression": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "compression",
+                    "encodings",
+                    "url"
+                ]
+            },
+            "cdn": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "url"
+                ]
+            },
+            "voice": {
+                "type": "object",
+                "properties": {
+                    "dave": {
+                        "type": "boolean"
+                    },
+                    "regions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "endpoint": {
+                                    "type": "string"
+                                },
+                                "default": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                                "default",
+                                "endpoint",
+                                "id",
+                                "name"
+                            ]
+                        }
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "dave",
+                    "regions"
+                ]
+            },
+            "registration": {
+                "type": "object",
+                "properties": {
+                    "open": {
+                        "type": "boolean"
+                    },
+                    "invite_required": {
+                        "type": "boolean"
+                    },
+                    "approval_required": {
+                        "type": "boolean"
+                    },
+                    "email_required": {
+                        "type": "boolean"
+                    },
+                    "minimum_age": {
+                        "type": "integer"
+                    },
+                    "join_reason": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "required": {
+                                        "type": "boolean"
+                                    },
+                                    "min_length": {
+                                        "type": "integer"
+                                    },
+                                    "max_length": {
+                                        "type": "integer"
+                                    }
+                                },
+                                "additionalProperties": false,
+                                "required": [
+                                    "max_length",
+                                    "min_length",
+                                    "required"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "captcha": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "service": {
+                                        "type": "string",
+                                        "const": "cap"
+                                    },
+                                    "sitekey": {
+                                        "type": "string"
+                                    },
+                                    "endpoint": {
+                                        "type": "string"
+                                    }
+                                },
+                                "additionalProperties": false,
+                                "required": [
+                                    "endpoint",
+                                    "service",
+                                    "sitekey"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "approval_required",
+                    "captcha",
+                    "email_required",
+                    "invite_required",
+                    "join_reason",
+                    "minimum_age",
+                    "open"
+                ]
+            },
+            "e2ee": {
+                "type": "object",
+                "properties": {
+                    "protocol": {
+                        "type": "integer"
+                    },
+                    "direct_messages": {
+                        "type": "boolean"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "direct_messages",
+                    "protocol"
+                ]
+            },
+            "links": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string"
+                    },
+                    "support": {
+                        "type": "string"
+                    },
+                    "blog": {
+                        "type": "string"
+                    },
+                    "terms": {
+                        "type": "string"
+                    },
+                    "privacy": {
+                        "type": "string"
+                    },
+                    "guidelines": {
+                        "type": "string"
+                    },
+                    "developers": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "blog",
+                    "developers",
+                    "guidelines",
+                    "privacy",
+                    "status",
+                    "support",
+                    "terms"
+                ]
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "api",
+            "cdn",
+            "e2ee",
+            "gateway",
+            "instance",
+            "links",
+            "protocol",
+            "registration",
+            "software",
+            "voice"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
     "AdminAutomodWordListSchema": {
         "type": "object",
         "properties": {
@@ -17821,10 +18144,16 @@
                 "default": false
             },
             "emoji_id": {
-                "type": "string"
+                "type": [
+                    "null",
+                    "string"
+                ]
             },
             "emoji_name": {
-                "type": "string"
+                "type": [
+                    "null",
+                    "string"
+                ]
             },
             "position": {
                 "type": "integer",
@@ -22665,6 +22994,7 @@
             61,
             62,
             63,
+            67,
             1000,
             255
         ],
@@ -24359,6 +24689,27 @@
             "unknown"
         ],
         "type": "string",
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "DefaultReactionInput": {
+        "type": "object",
+        "properties": {
+            "emoji_id": {
+                "maxLength": 20,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "emoji_name": {
+                "maxLength": 32,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            }
+        },
+        "additionalProperties": false,
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "AllowedMentions": {

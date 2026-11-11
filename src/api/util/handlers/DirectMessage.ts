@@ -1,6 +1,6 @@
 import { In } from "typeorm";
-import { Channel, Member, Message, Relationship, User, UserSettingsProtos } from "@spacebar/database";
-import { ChannelCreateEvent, ChannelUpdateEvent, DiscordApiErrors, DmChannelDTO, emitEvent } from "@spacebar/util";
+import { Channel, Member, Message, Recipient, Relationship, User, UserSettingsProtos } from "@spacebar/database";
+import { ChannelCreateEvent, ChannelFlags, ChannelUpdateEvent, DiscordApiErrors, DmChannelDTO, emitEvent } from "@spacebar/util";
 import { ChannelType, RelationshipType, UserFlags } from "@spacebar/schemas";
 
 export async function assertCanSendDirectMessage(channel: Channel, senderId: string): Promise<string[]> {
@@ -105,4 +105,18 @@ export async function reopenDirectMessage(
             } as ChannelCreateEvent);
         }),
     );
+}
+
+export async function markDirectMessageStarted(channel: Channel) {
+    const flag = Number(ChannelFlags.FLAGS.HAS_ONLY_SYSTEM_MESSAGES);
+    if (channel.type !== ChannelType.DM || !(channel.flags & flag)) return;
+    channel.flags &= ~flag;
+    const { affected } = await Channel.createQueryBuilder()
+        .update()
+        .set({ flags: () => `flags & ~${flag}` })
+        .where("id = :id AND flags & :flag <> 0", { id: channel.id, flag })
+        .execute();
+    if (!affected) return;
+    channel.recipients ??= await Recipient.find({ where: { channel_id: channel.id } });
+    await Channel.emitPrivateChannelUpdate(channel);
 }

@@ -127,9 +127,9 @@ services:
       COLLECTIBLES_CATALOG_URL: ${COLLECTIBLES_CATALOG_URL:-}
       PROFILE_EFFECTS_CATALOG_URL: ${PROFILE_EFFECTS_CATALOG_URL:-}
       COLLECTIBLES_REFRESH_HOURS: ${COLLECTIBLES_REFRESH_HOURS:-}
-    # only on the host's loopback, for a reverse proxy running outside compose instead of the caddy service
+    # on the host's loopback by default, for a reverse proxy or tunnel in front of the server
     ports:
-      - "127.0.0.1:${SERVER_PORT:-3001}:3001"
+      - "${SERVER_BIND:-127.0.0.1}:${SERVER_PORT:-32171}:3001"
     volumes:
       - state:/data/state
       - storage:/data/storage
@@ -149,32 +149,6 @@ services:
       retries: 3
       start_period: 2m
 
-  # optional: starts only with the caddy profile, COMPOSE_PROFILES=caddy in .env
-  caddy:
-    image: caddy:2-alpine
-    profiles: ["caddy"]
-    restart: unless-stopped
-    depends_on:
-      server:
-        condition: service_healthy
-    environment:
-      DOMAIN: ${DOMAIN}
-      CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    healthcheck:
-      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:2019/config/"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
 volumes:
   postgres:
     name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_postgres
@@ -188,7 +162,3 @@ volumes:
     name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_sfu
   warp:
     name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_warp
-  caddy_data:
-    name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_caddy_data
-  caddy_config:
-    name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_caddy_config

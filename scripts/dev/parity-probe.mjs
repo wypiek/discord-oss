@@ -901,6 +901,71 @@ await check("threads", "media channel post", async () => {
     });
     return st(f, 201, 200);
 });
+const probeForum = await call("POST", `/guilds/${guild.id}/channels`, A, {
+    name: `forum-probe-${suffix}`,
+    type: 15,
+    default_reaction_emoji: { emoji_name: "👍" },
+    available_tags: [{ name: "one", emoji_name: "🐛" }, { name: "two" }],
+});
+const forumCheck = (name, fn) => check("threads", name, async () => (probeForum.status === 201 ? fn(probeForum.body) : st(probeForum, 201)));
+await forumCheck("forum settings save a unicode default reaction without emoji_id", async (forum) => {
+    const p = await call("PATCH", `/channels/${forum.id}`, A, { topic: "guidelines", default_reaction_emoji: { emoji_name: "🔥" } });
+    const reaction = p.body?.default_reaction_emoji;
+    return {
+        ok: forum.default_reaction_emoji?.emoji_name === "👍" && p.status === 200 && reaction?.emoji_name === "🔥" && reaction?.emoji_id === null,
+        note: `${p.status} ${JSON.stringify(reaction)}`,
+    };
+});
+await forumCheck("forum replies need Send Messages in Posts, not Create Posts", async (forum) => {
+    const floodChannelWindow = 31_000;
+    await sleep(floodChannelWindow);
+    await call("PUT", `/channels/${forum.id}/permissions/${guild.id}`, A, { type: 0, allow: "0", deny: String(1n << 11n) });
+    const post = await call("POST", `/channels/${forum.id}/threads`, A, { name: "replies only", message: { content: "body" } });
+    const reply = await call("POST", `/channels/${post.body?.id}/messages`, B, { content: "reply" });
+    const typing = await call("POST", `/channels/${post.body?.id}/typing`, B);
+    const edit = reply.body?.id ? await call("PATCH", `/channels/${post.body.id}/messages/${reply.body.id}`, B, { content: "edited" }) : { status: 0 };
+    const create = await call("POST", `/channels/${forum.id}/threads`, B, { name: "blocked", message: { content: "body" } });
+    await call("DELETE", `/channels/${forum.id}/permissions/${guild.id}`, A);
+    return {
+        ok: reply.status === 200 && typing.status === 204 && edit.status === 200 && create.status === 403,
+        note: `reply ${reply.status} typing ${typing.status} edit ${edit.status} create ${create.status}`,
+    };
+});
+await forumCheck("forum unread counts over the gateway", async (forum) => {
+    const post = await call("POST", `/channels/${forum.id}/threads`, A, { name: "unread", message: { content: "body" } });
+    for (const content of ["first unread reply", "second unread reply", "third unread reply"]) await call("POST", `/channels/${post.body?.id}/messages`, A, { content });
+    const g = gateway(A);
+    await g.ready;
+    g.send(28, { guild_id: guild.id, channel_id: forum.id, threads: [{ thread_id: post.body?.id, ack_message_id: post.body?.id }] });
+    const unreads = await g.waitFor((m) => m.t === "FORUM_UNREADS");
+    g.close();
+    const count = unreads?.d?.threads?.find((t) => t.thread_id === post.body?.id)?.count;
+    return { ok: count === 3, note: `count ${count}` };
+});
+await forumCheck("forum tag edits replace the emoji and deleted tags leave posts", async (forum) => {
+    const [one, two] = forum.available_tags;
+    const post = await call("POST", `/channels/${forum.id}/threads`, A, { name: "tagged", applied_tags: [one.id, two.id], message: { content: "body" } });
+    const cleared = await call("PUT", `/channels/${forum.id}/tags/${one.id}`, A, { name: "one", emoji_name: null, moderated: false });
+    const tag = cleared.body?.available_tags?.find((t) => t.id === one.id);
+    await call("DELETE", `/channels/${forum.id}/tags/${two.id}`, A);
+    const after = await call("GET", `/channels/${post.body?.id}`, A);
+    const onPost = await call("POST", `/channels/${post.body?.id}/tags`, A, { name: "nope" });
+    return {
+        ok: tag?.emoji_name === null && JSON.stringify(after.body?.applied_tags) === JSON.stringify([one.id]) && onPost.status === 400 && onPost.body?.code === 50024,
+        note: `emoji ${JSON.stringify(tag)} applied ${JSON.stringify(after.body?.applied_tags)} non-forum ${onPost.status}`,
+    };
+});
+await forumCheck("forum post slowmode and required tags", async (forum) => {
+    await call("PATCH", `/channels/${forum.id}`, A, { rate_limit_per_user: 60 });
+    const first = await call("POST", `/channels/${forum.id}/threads`, A, { name: "first", message: { content: "first post under slowmode" } });
+    const second = await call("POST", `/channels/${forum.id}/threads`, A, { name: "second", message: { content: "second post under slowmode" } });
+    await call("PATCH", `/channels/${forum.id}`, A, { flags: 16, rate_limit_per_user: 0 });
+    const untagged = await call("POST", `/channels/${forum.id}/threads`, B, { name: "untagged", message: { content: "three" } });
+    return {
+        ok: first.status === 201 && second.status === 429 && second.body?.code === 20016 && untagged.status === 400 && untagged.body?.code === 40067,
+        note: `first ${first.status} second ${second.status} ${second.body?.code} untagged ${untagged.status} ${untagged.body?.code}`,
+    };
+});
 
 await check("guilds", "create from template code", async () => {
     const created = await call("POST", `/guilds/${guild.id}/templates`, A, { name: "probe tpl" });

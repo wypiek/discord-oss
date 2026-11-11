@@ -4,7 +4,7 @@ import { route } from "@spacebar/api/middlewares";
 import { AuditLog, Channel, Guild, Member } from "@spacebar/database";
 import { ApiError, DiscordApiErrors, FieldErrors, GuildUpdateEvent, Permissions, emitEvent, getPermission, getRights, handleFile } from "@spacebar/util";
 import { AuditLogEvents, GuildCreateResponse, GuildUpdateSchema } from "@spacebar/schemas";
-import { bulkActionJoinRequests, enforceNameAutomod, isApplyGuild, noteRightsBypass } from "@spacebar/api/util";
+import { bulkActionJoinRequests, enforceNameAutomod, grantPartnerBadgeOnChange, isApplyGuild, noteRightsBypass } from "@spacebar/api/util";
 import { reindexDiscoverySoon } from "@spacebar/api/util/handlers/Discovery";
 
 const router = Router({ mergeParams: true });
@@ -295,6 +295,7 @@ router.patch(
             guild_id,
         } satisfies GuildUpdateEvent);
         if (wasApply && !isApplyGuild(guild.features)) await bulkActionJoinRequests(guild_id, req.user_id, "APPROVED");
+        await grantPartnerBadgeOnChange({ owner_id: auditBefore.owner_id as string, features: guild.features }, guild);
 
         return res.json(data);
     },

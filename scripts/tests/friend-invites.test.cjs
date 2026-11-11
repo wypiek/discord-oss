@@ -12,7 +12,7 @@ const errors = {
     MAXIMUM_FRIENDS: { withParams: () => new Error("Maximum friends") },
 };
 
-const load = (rows, invites, events) => {
+const load = (rows, invites, events, opened = []) => {
     const module = { exports: {} };
     const key = (where) => `${where.from_id}>${where.to_id}`;
     class Relationship {
@@ -42,6 +42,7 @@ const load = (rows, invites, events) => {
                 "node:crypto": require("node:crypto"),
                 typeorm: { In: (v) => v, IsNull: () => null, LessThan: (v) => v, MoreThan: (v) => v },
                 "@spacebar/schemas": { RelationshipType: { FRIEND, BLOCKED } },
+                "./newFriends": { openNewFriendDirectMessage: async (...users) => opened.push(users) },
                 "@spacebar/util": {
                     Config: { get: () => ({ limits: { user: { maxFriends: 2 } } }) },
                     DiscordApiErrors: errors,
@@ -69,7 +70,8 @@ test("accepting a friend invite makes both users friends and counts the use", as
     const found = invite();
     const invites = new Map([["abc", found]]);
     const events = [];
-    const { acceptFriendInvite } = load(rows, invites, events);
+    const opened = [];
+    const { acceptFriendInvite } = load(rows, invites, events, opened);
     const result = await acceptFriendInvite(found, "2");
     assert.equal(result.new_friend, true);
     assert.equal(rows.get("2>1").type, FRIEND);
@@ -79,7 +81,9 @@ test("accepting a friend invite makes both users friends and counts the use", as
         events.map((e) => `${e.event}:${e.user_id}`),
         ["RELATIONSHIP_ADD:2", "RELATIONSHIP_ADD:1", "PRESENCE_UPDATE:2", "PRESENCE_UPDATE:1"],
     );
+    assert.deepEqual(opened, [["2", "1"]]);
     assert.equal((await acceptFriendInvite(found, "2")).new_friend, false);
+    assert.equal(opened.length, 1);
 });
 
 test("a friend invite turns pending requests into a friendship and is deleted at its last use", async () => {

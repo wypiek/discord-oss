@@ -123,4 +123,9 @@ export function actorLevel(user: { id: string; rights: string | bigint | number 
 
 export const isStaffAccount = (user: { id: string; rights: string | bigint | number | null | undefined }, snap = snapshot) => staffLevel(user, snap) !== NON_STAFF_LEVEL;
 
+const STAFF_USER_FLAG = 1n;
+
+export const isInstanceStaff = (user: { id: string; rights: string | bigint | number | null | undefined; public_flags?: string | bigint | number | null }, snap = snapshot) =>
+    (BigInt(user.public_flags ?? 0) & STAFF_USER_FLAG) === STAFF_USER_FLAG || isStaffAccount(user, snap);
+
 export const staffBadgeRole = (user_id: string, snap = snapshot) => rolesOf(user_id, snap).find((role) => role.show_badge) ?? null;

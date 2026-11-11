@@ -27,3 +27,16 @@ export function getRevInfoOrFail(): { rev: string | null; lastModified: number }
         return { rev: null, lastModified: 0 };
     }
 }
+
+let cachedPackageVersion: string | undefined;
+
+export function packageVersion() {
+    if (cachedPackageVersion === undefined) {
+        try {
+            cachedPackageVersion = String(JSON.parse(fs.readFileSync(path.join(__dirname, "../../../package.json"), "utf-8")).version ?? "0.0.0");
+        } catch {
+            cachedPackageVersion = "0.0.0";
+        }
+    }
+    return cachedPackageVersion;
+}

@@ -13,6 +13,7 @@ class HTTPError extends Error {
 
 function tagRoute() {
     const removed = [];
+    const stripped = [];
     const tag = (id, channel_id) => ({ id, channel_id, remove: async () => removed.push(id) });
     const channels = {
         mine: { id: "mine", available_tags: [tag("own-tag", "mine")] },
@@ -24,6 +25,7 @@ function tagRoute() {
         express: { Router: () => ({ post() {}, put() {}, delete: (_, ...steps) => (remove = steps.at(-1)) }) },
         "lambert-server/HTTPError": { HTTPError },
         "@spacebar/api/middlewares": { route: () => () => {} },
+        "@spacebar/api/util": { removeAppliedTags: async (channel_id, tags) => stripped.push([channel_id, ...tags]) },
         "@spacebar/database": {
             Channel: {
                 findOneOrFail: async ({ where }) => {
@@ -47,7 +49,7 @@ function tagRoute() {
                 },
             },
         },
-        "@spacebar/util": { emitEvent: async () => {}, FieldErrors: () => new Error("field") },
+        "@spacebar/util": { DiscordApiErrors: {}, emitEvent: async () => {}, FieldErrors: () => new Error("field") },
         "@spacebar/schemas": {},
     };
     const loaded = { exports: {} };
@@ -66,6 +68,7 @@ function tagRoute() {
     );
     return {
         removed,
+        stripped,
         remove: (channel_id, tag_id) => remove({ params: { channel_id, tag_id } }, { json() {} }),
     };
 }
@@ -80,4 +83,5 @@ test("a forum's own tag can still be deleted", async () => {
     const route = tagRoute();
     await route.remove("mine", "own-tag");
     assert.deepEqual(route.removed, ["own-tag"]);
+    assert.deepEqual(route.stripped, [["mine", "own-tag"]]);
 });

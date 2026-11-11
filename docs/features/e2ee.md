@@ -83,6 +83,7 @@ A member who never signed in since encryption existed has no keys and can't read
 These work in encrypted conversations too:
 
 - Attachments, stickers and voice messages. The browser encrypts files in 64 KiB chunks before upload, so the server only sees an opaque `.bin` file of the same size plus 16 bytes per chunk. A service worker at `/e2ee-sw.js` decrypts them for display.
+- Waves. The client sends the wave from an empty DM to `POST /channels/:id/greet`, and in an encrypted DM the browser sends it to `/channels/:id/messages` instead, with the sticker inside the envelope.
 - Mentions. The sending browser lists up to 100 mentioned members in the envelope in plaintext, so badges and push notifications work.
 - Search. The browser decrypts the channel's last 1000 messages and searches them, and the query never reaches the server.
 - Link previews. The reader's browser sends up to 5 links to `POST /e2ee/embeds` and gets their previews back. The server stores no embed on the message.
