@@ -1,0 +1,131 @@
+import { isSqlite } from "@spacebar/database/Sql";
+import { Request, Response, Router } from "express";
+import { route } from "@spacebar/api/middlewares";
+import { HTTPError } from "lambert-server/HTTPError";
+import { In } from "typeorm";
+import { Channel, Guild, Recipient, Relationship } from "@spacebar/database";
+import { checkContactSpam, enforceQuarantineDm } from "@spacebar/api/util";
+import { Config, DiscordApiErrors, DmChannelDTO, FieldErrors, getPermission } from "@spacebar/util";
+import { BulkLeaveGroupDmsSchema, ChannelType, DmChannelCreateSchema, RelationshipType } from "@spacebar/schemas";
+
+const router: Router = Router({ mergeParams: true });
+
+router.get(
+    "/",
+    route({
+        responses: {
+            200: {
+                body: "APIDMChannelArray",
+            },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const recipients = await Recipient.find({
+            where: { user_id: req.user_id, closed: false },
+            relations: { channel: { recipients: true } },
+        });
+        const userIds = [...new Set(recipients.flatMap((r) => r.channel.recipients?.map((x) => x.user_id) ?? []))].filter((id) => id !== req.user_id);
+        const users = new Map((userIds.length ? await DmChannelDTO.users(userIds) : []).map((u) => [u.id, u]));
+        res.json(
+            await Promise.all(
+                recipients.map(async (r) => ({
+                    ...(await DmChannelDTO.from(r.channel, [req.user_id], undefined, users)),
+                    is_spam: false,
+                    is_message_request: !!r.message_request_timestamp,
+                    is_message_request_timestamp: r.message_request_timestamp?.toISOString() ?? null,
+                    ...(r.channel.type === ChannelType.GROUP_DM && { blocked_user_warning_dismissed: !!r.blocked_user_warning_dismissed }),
+                })),
+            ),
+        );
+    },
+);
+
+router.post(
+    "/",
+    route({
+        requestBody: "DmChannelCreateSchema",
+        responses: {
+            200: {
+                body: "DmChannelDTO",
+            },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const body = req.body as DmChannelCreateSchema;
+        const targets = body.recipients || (body.recipient_id ? [body.recipient_id] : []);
+        // the creator is in the group too
+        const { maxGroupDmRecipients, maxStaffGroupDmRecipients } = Config.get().limits.channel;
+        const maxOthers = (req.rights?.has("BYPASS_RATE_LIMITS") ? Math.max(maxGroupDmRecipients, maxStaffGroupDmRecipients ?? 0) : maxGroupDmRecipients) - 1;
+        if (new Set(targets.filter((id) => id !== req.user_id)).size > maxOthers)
+            throw FieldErrors({
+                recipients: {
+                    code: "BASE_TYPE_MAX_LENGTH",
+                    message: `Must be ${maxOthers} or fewer in length.`,
+                },
+            });
+        // nobody can start a group with someone who blocked them or whom they blocked
+        const others = [...new Set(targets.filter((id) => id !== req.user_id))];
+        if (others.length > 1 && (await Relationship.blockedAmong(req.user_id, others)).size) throw DiscordApiErrors.CANNOT_MESSAGE_USER;
+        const other = targets.length === 1 && targets[0] !== req.user_id ? targets[0] : null;
+        if (other && !req.user_bot) {
+            const [friends, existing, paused] = await Promise.all([
+                Relationship.exists({
+                    where: { from_id: req.user_id, to_id: other, type: RelationshipType.FRIEND },
+                }),
+                Recipient.query(
+                    `SELECT 1 FROM recipients a INNER JOIN recipients b ON a.channel_id = b.channel_id INNER JOIN channels c ON c.id = a.channel_id WHERE a.user_id = $1 AND b.user_id = $2 AND c.type = $3 LIMIT 1`,
+                    [req.user_id, other, ChannelType.DM],
+                ),
+                Guild.query(
+                    `SELECT g.id FROM guilds g INNER JOIN members a ON a.guild_id = g.id AND a.id = $1 INNER JOIN members b ON b.guild_id = g.id AND b.id = $2 WHERE ${isSqlite() ? "datetime(g.incidents_data ->> 'dms_disabled_until') > datetime('now')" : "(g.incidents_data ->> 'dms_disabled_until')::timestamptz > now()"}`,
+                    [req.user_id, other],
+                ),
+            ]);
+            if (!friends && !existing.length)
+                for (const { id } of paused as { id: string }[]) {
+                    const permission = await getPermission(req.user_id, `${id}`);
+                    if (!permission.has("KICK_MEMBERS") && !permission.has("BAN_MEMBERS") && !permission.has("MODERATE_MEMBERS") && !permission.has("MANAGE_GUILD"))
+                        throw new HTTPError("Direct messages between members of this server are paused.", 403);
+                }
+            if (!friends && !existing.length) {
+                await checkContactSpam({ user_id: req.user_id, target_id: other, kind: "dm", rights: req.rights, federated: !!req.user?.federated_instance, account: req.user });
+                await enforceQuarantineDm({ user_id: req.user_id, federated: !!req.user?.federated_instance, rights: req.rights });
+            }
+        } else if (others.length > 1 && !req.user_bot) {
+            for (const target of others)
+                await checkContactSpam({ user_id: req.user_id, target_id: target, kind: "dm", rights: req.rights, federated: !!req.user?.federated_instance, account: req.user });
+            await enforceQuarantineDm({ user_id: req.user_id, federated: !!req.user?.federated_instance, rights: req.rights });
+        }
+        res.json(await Channel.createDMChannel(body.recipients || (body.recipient_id ? [body.recipient_id] : []), req.user_id, body.name));
+    },
+);
+
+router.post(
+    "/bulk-leave",
+    route({
+        requestBody: "BulkLeaveGroupDmsSchema",
+        responses: {
+            204: {},
+            400: { body: "APIErrorResponse" },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const channel_ids = [...new Set((req.body as BulkLeaveGroupDmsSchema).channel_ids)].filter((id) => /^\d{1,20}$/.test(id));
+        const memberships = channel_ids.length
+            ? await Recipient.find({
+                  where: { user_id: req.user_id, channel_id: In(channel_ids) },
+                  select: { channel_id: true },
+              })
+            : [];
+        const channels = memberships.length
+            ? await Channel.find({
+                  where: { id: In(memberships.map((recipient) => recipient.channel_id)), type: ChannelType.GROUP_DM },
+                  relations: { recipients: true },
+              })
+            : [];
+        for (const channel of channels) await Channel.removeRecipientFromChannel(channel, req.user_id, req.user_id, true);
+        res.sendStatus(204);
+    },
+);
+
+export default router;

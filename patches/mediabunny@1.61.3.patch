@@ -1,0 +1,22 @@
+diff --git a/src/index.ts b/src/index.ts
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -7,7 +7,6 @@
+  */
+ 
+ /// <reference types="dom-mediacapture-transform" preserve="true" />
+-/// <reference types="dom-webcodecs" preserve="true" />
+ 
+ import { Logging } from './logging';
+ 
+diff --git a/dist/modules/src/index.d.ts b/dist/modules/src/index.d.ts
+--- a/dist/modules/src/index.d.ts
++++ b/dist/modules/src/index.d.ts
+@@ -6,7 +6,6 @@
+  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+  */
+ /// <reference types="dom-mediacapture-transform" preserve="true" />
+-/// <reference types="dom-webcodecs" preserve="true" />
+ export { Output, type OutputOptions, OutputTrack, OutputVideoTrack, OutputAudioTrack, OutputSubtitleTrack, OutputTrackGroup, type BaseTrackMetadata, type VideoTrackMetadata, type AudioTrackMetadata, type SubtitleTrackMetadata, type OutputEvents, } from './output.js';
+ export { OutputFormat, AdtsOutputFormat, type AdtsOutputFormatOptions, CmafOutputFormat, type CmafOutputFormatOptions, FlacOutputFormat, type FlacOutputFormatOptions, HlsOutputFormat, type HlsOutputFormatOptions, type HlsOutputPlaylistInfo, type HlsOutputSegmentInfo, IsobmffOutputFormat, type IsobmffOutputFormatOptions, MkvOutputFormat, type MkvOutputFormatOptions, MovOutputFormat, Mp3OutputFormat, type Mp3OutputFormatOptions, Mp4OutputFormat, MpegTsOutputFormat, type MpegTsOutputFormatOptions, OggOutputFormat, type OggOutputFormatOptions, WavOutputFormat, type WavOutputFormatOptions, WebMOutputFormat, type WebMOutputFormatOptions, type InclusiveIntegerRange, type TrackCountLimits, } from './output-format.js';
+ export { MediaSource, VideoSource, AudioSource, SubtitleSource, AudioBufferSource, type AudioBufferSourceOptions, AudioSampleSource, CanvasSource, EncodedAudioPacketSource, EncodedVideoPacketSource, MediaStreamAudioTrackSource, type MediaStreamAudioTrackSourceOptions, MediaStreamVideoTrackSource, type MediaStreamVideoTrackSourceOptions, TextSubtitleSource, VideoSampleSource, } from './media-source.js';

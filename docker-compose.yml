@@ -1,0 +1,204 @@
+name: meowcord
+
+x-server: &server
+  build:
+    context: .
+    target: server
+    args:
+      REVISION: ${REVISION:-}
+      REVISION_TIME: ${REVISION_TIME:-0}
+  image: meowcord-server:latest
+  pull_policy: build
+  init: true
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fosscord}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-fosscord}
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  client:
+    image: meowcord-server:latest
+    pull_policy: never
+    init: true
+    command: ["client"]
+    restart: "no"
+    environment:
+      CLIENT_CONCURRENCY: ${CLIENT_CONCURRENCY:-8}
+    volumes:
+      - client:/data/client
+
+  sfu:
+    build:
+      context: .
+      target: sfu
+    image: meowcord-sfu:latest
+    pull_policy: build
+    init: true
+    restart: unless-stopped
+    environment:
+      WRTC_PUBLIC_IP: ${WRTC_PUBLIC_IP:?set WRTC_PUBLIC_IP in .env}
+      WRTC_PORT: ${WRTC_PORT:-50000}
+      PION_SFU_VERBOSE: ${PION_SFU_VERBOSE:-}
+      TURN_SECRET: ${TURN_SECRET:-}
+      TURN_PUBLIC_IP: ${TURN_PUBLIC_IP:-}
+      TURN_PORT: ${TURN_PORT:-3478}
+      TURN_RELAY_PORT_MIN: ${TURN_RELAY_PORT_MIN:-49160}
+      TURN_RELAY_PORT_MAX: ${TURN_RELAY_PORT_MAX:-49200}
+    ports:
+      - "${WRTC_PORT:-50000}:${WRTC_PORT:-50000}/udp"
+      - "${TURN_PORT:-3478}:${TURN_PORT:-3478}/udp"
+      - "${TURN_PORT:-3478}:${TURN_PORT:-3478}/tcp"
+      - "${TURN_RELAY_PORT_MIN:-49160}-${TURN_RELAY_PORT_MAX:-49200}:${TURN_RELAY_PORT_MIN:-49160}-${TURN_RELAY_PORT_MAX:-49200}/udp"
+    volumes:
+      - sfu:/run/sfu
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/sfu/sfu.sock"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  warp:
+    image: caomingjun/warp:2026.7.1377.0-2.12.0
+    restart: unless-stopped
+    device_cgroup_rules:
+      - "c 10:200 rwm"
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - MKNOD
+      - AUDIT_WRITE
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      WARP_SLEEP: 2
+      WARP_LICENSE_KEY: ${WARP_LICENSE_KEY:-}
+    volumes:
+      - warp:/var/lib/cloudflare-warp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --max-time 5 --socks5-hostname 127.0.0.1:1080 https://cloudflare.com/cdn-cgi/trace | grep -q warp=on"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  server:
+    <<: *server
+    restart: unless-stopped
+    stop_grace_period: 35s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sfu:
+        condition: service_healthy
+      warp:
+        condition: service_healthy
+      client:
+        condition: service_completed_successfully
+    environment:
+      DATABASE: postgres://${POSTGRES_USER:-fosscord}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-fosscord}
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      PUBLIC_FETCH_PROXY: ${PUBLIC_FETCH_PROXY:-socks5://warp:1080}
+      INSTANCE_NAME: ${INSTANCE_NAME:-}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      WRTC_PUBLIC_IP: ${WRTC_PUBLIC_IP}
+      WRTC_PORT_MIN: ${WRTC_PORT:-50000}
+      WRTC_PORT_MAX: ${WRTC_PORT:-50000}
+      TURN_SECRET: ${TURN_SECRET:-}
+      TURN_PUBLIC_IP: ${TURN_PUBLIC_IP:-}
+      TURN_PORT: ${TURN_PORT:-3478}
+      CAP_INSTANCE_URL: ${CAP_INSTANCE_URL:-}
+      CAP_SITE_KEY: ${CAP_SITE_KEY:-}
+      CAP_SECRET_KEY: ${CAP_SECRET_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      E2EE_RECOVERY_KEY_FILE: ${E2EE_RECOVERY_KEY_FILE:-}
+      E2EE_RECOVERY_MASTER_KEY: ${E2EE_RECOVERY_MASTER_KEY:-}
+      LOG_REQUESTS: ${LOG_REQUESTS:-500,501}
+      COLLECTIBLES_EXTERNAL_REFRESH: ${COLLECTIBLES_EXTERNAL_REFRESH:-}
+      COLLECTIBLES_CATALOG_URL: ${COLLECTIBLES_CATALOG_URL:-}
+      PROFILE_EFFECTS_CATALOG_URL: ${PROFILE_EFFECTS_CATALOG_URL:-}
+      COLLECTIBLES_REFRESH_HOURS: ${COLLECTIBLES_REFRESH_HOURS:-}
+    # only on the host's loopback, for a reverse proxy running outside compose instead of the caddy service
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-3001}:3001"
+    volumes:
+      - state:/data/state
+      - storage:/data/storage
+      - client:/data/client
+      - sfu:/run/sfu
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "Promise.all(['/readyz', '/api/ping', '/login'].map(async (path) => { try { const r = await fetch('http://127.0.0.1:3001' + path, { signal: AbortSignal.timeout(3000) }); return { path, status: r.status, ok: r.ok }; } catch { return { path, status: 'unreachable', ok: false }; } })).then((checks) => { console.log(JSON.stringify(checks)); process.exit(checks.every((c) => c.ok) ? 0 : 1); })",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+
+  # optional: starts only with the caddy profile, COMPOSE_PROFILES=caddy in .env
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["caddy"]
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN}
+      CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  postgres:
+    name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_postgres
+  state:
+    name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_state
+  storage:
+    name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_storage
+  client:
+    name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_client
+  sfu:
+    name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_sfu
+  warp:
+    name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_warp
+  caddy_data:
+    name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_caddy_data
+  caddy_config:
+    name: ${MEOWCORD_VOLUME_PREFIX:-fosscord}_caddy_config

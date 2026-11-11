@@ -1,0 +1,311 @@
+import { isSqlite } from "@spacebar/database/Sql";
+import { enforceNameAutomod } from "../utility/instanceAutomod";
+import { ProcessLifecycle } from "../../../util/util/ProcessLifecycle";
+import { In } from "typeorm";
+import { AuditLog, Channel, Member, Message, ThreadMember, ThreadMemberFlags } from "@spacebar/database";
+import {
+    ChannelFlags,
+    DiscordApiErrors,
+    emitEvent,
+    FieldErrors,
+    getPermission,
+    InvisibleCharacters,
+    Snowflake,
+    ThreadCreateEvent,
+    ThreadMembersUpdateEvent,
+    ThreadUpdatEvent,
+} from "@spacebar/util";
+import { AuditLogEvents, ChannelType } from "@spacebar/schemas";
+import { HTTPError } from "lambert-server/HTTPError";
+
+export const THREAD_TYPES = [ChannelType.GUILD_NEWS_THREAD, ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD];
+export const AUTO_ARCHIVE_DURATIONS = [60, 1440, 4320, 10080];
+export const AUTO_ARCHIVE_DURATION_ERROR = {
+    code: "BASE_TYPE_CHOICES",
+    message: "Value must be one of {60, 1440, 4320, 10080}.",
+};
+
+export const threadAuditState = (channel: Channel) => ({
+    name: channel.name,
+    type: channel.type,
+    archived: channel.thread_metadata?.archived,
+    locked: channel.thread_metadata?.locked,
+    auto_archive_duration: channel.thread_metadata?.auto_archive_duration,
+    invitable: channel.thread_metadata?.invitable,
+    rate_limit_per_user: channel.rate_limit_per_user,
+    flags: channel.flags,
+    applied_tags: channel.applied_tags,
+});
+
+export interface CreateThreadOptions {
+    parent: Channel;
+    user_id: string;
+    name: string;
+    type: ChannelType;
+    id?: string;
+    auto_archive_duration?: number;
+    rate_limit_per_user?: number;
+    invitable?: boolean;
+    applied_tags?: string[];
+    reason?: string | string[];
+}
+
+export async function createThread(opts: CreateThreadOptions) {
+    const { parent, user_id, type } = opts;
+    const name = opts.name?.trim();
+    if (!name) throw new HTTPError("Thread name cannot be empty.", 400);
+    if (opts.name.length > 100)
+        throw FieldErrors({
+            name: { code: "BASE_TYPE_BAD_LENGTH", message: "Must be between 1 and 100 in length." },
+        });
+    if (opts.auto_archive_duration != null && !AUTO_ARCHIVE_DURATIONS.includes(Number(opts.auto_archive_duration)))
+        throw FieldErrors({ auto_archive_duration: AUTO_ARCHIVE_DURATION_ERROR });
+    for (const character of InvisibleCharacters) if (name === character) throw new HTTPError("Thread name cannot include invalid characters", 400);
+    await enforceNameAutomod({ user_id, name, field: "name", source: "thread_name", guild_id: parent.guild_id, channel_id: parent.id });
+
+    if (parent.threadOnly()) {
+        if (type !== ChannelType.GUILD_PUBLIC_THREAD) throw DiscordApiErrors.CANNOT_EXECUTE_ON_THIS_CHANNEL_TYPE;
+    } else if (parent.type === ChannelType.GUILD_NEWS) {
+        if (type !== ChannelType.GUILD_NEWS_THREAD) throw DiscordApiErrors.CANNOT_EXECUTE_ON_THIS_CHANNEL_TYPE;
+    } else if (parent.type === ChannelType.GUILD_TEXT) {
+        if (type !== ChannelType.GUILD_PUBLIC_THREAD && type !== ChannelType.GUILD_PRIVATE_THREAD) throw DiscordApiErrors.CANNOT_EXECUTE_ON_THIS_CHANNEL_TYPE;
+    } else throw DiscordApiErrors.CANNOT_EXECUTE_ON_THIS_CHANNEL_TYPE;
+
+    const now = new Date().toISOString();
+    const auto_archive_duration = AUTO_ARCHIVE_DURATIONS.includes(Number(opts.auto_archive_duration))
+        ? Number(opts.auto_archive_duration)
+        : (parent.default_auto_archive_duration ?? (parent.threadOnly() ? 10080 : 4320));
+
+    const thread = Channel.create({
+        id: opts.id ?? Snowflake.generate(),
+        created_at: new Date(),
+        type,
+        name,
+        guild_id: parent.guild_id,
+        parent_id: parent.id,
+        owner_id: user_id,
+        nsfw: parent.nsfw,
+        flags: 0,
+        permission_overwrites: [],
+        rate_limit_per_user: (parent.threadOnly() ? undefined : opts.rate_limit_per_user) ?? parent.default_thread_rate_limit_per_user ?? 0,
+        applied_tags: opts.applied_tags ?? [],
+        member_count: 1,
+        message_count: 0,
+        total_message_sent: 0,
+        thread_metadata: {
+            archived: false,
+            auto_archive_duration,
+            archive_timestamp: now,
+            create_timestamp: now,
+            locked: false,
+            ...(type === ChannelType.GUILD_PRIVATE_THREAD ? { invitable: opts.invitable ?? true } : {}),
+        },
+    });
+    await thread.save();
+
+    const guildMember = await Member.findOneOrFail({
+        where: { id: user_id, guild_id: parent.guild_id! },
+        select: { index: true, id: true },
+    });
+    const member = await ThreadMember.create({
+        id: thread.id,
+        user_id,
+        member_idx: guildMember.index,
+        join_timestamp: new Date(),
+        muted: false,
+        flags: ThreadMemberFlags.HAS_INTERACTED,
+    }).save();
+
+    await AuditLog.log({
+        guild_id: thread.guild_id!,
+        user_id,
+        action_type: AuditLogEvents.THREAD_CREATE,
+        target_id: thread.id,
+        changes: AuditLog.diff({}, threadAuditState(thread), AuditLog.threadKeys),
+        reason: opts.reason,
+    });
+
+    if (parent.threadOnly()) {
+        parent.last_message_id = thread.id;
+        await Channel.update({ id: parent.id }, { last_message_id: thread.id });
+    }
+
+    const data = { ...thread.toJSON(), newly_created: true };
+    const transaction_id = Snowflake.generate();
+    await emitEvent({
+        event: "THREAD_CREATE",
+        data,
+        ...(thread.isPrivateThread() ? { user_id } : { channel_id: parent.id }),
+    } satisfies ThreadCreateEvent);
+    const membersUpdate = {
+        id: thread.id,
+        guild_id: thread.guild_id!,
+        member_count: 1,
+        added_members: [member.toJSON()],
+    };
+    await Promise.all([
+        emitEvent({
+            event: "THREAD_MEMBERS_UPDATE",
+            data: membersUpdate,
+            user_id,
+            transaction_id,
+        } satisfies ThreadMembersUpdateEvent),
+        emitEvent({
+            event: "THREAD_MEMBERS_UPDATE",
+            data: membersUpdate,
+            channel_id: thread.id,
+            transaction_id,
+        } satisfies ThreadMembersUpdateEvent),
+    ]);
+
+    return { thread, member };
+}
+
+export async function emitThreadUpdate(thread: Channel) {
+    await emitEvent({
+        event: "THREAD_UPDATE",
+        data: thread.toJSON(),
+        ...(thread.isPrivateThread() ? { channel_id: thread.id } : { channel_id: thread.parent_id! }),
+    } satisfies ThreadUpdatEvent);
+}
+
+export async function setThreadArchived(thread: Channel, archived: boolean) {
+    if (!thread.thread_metadata) return;
+    thread.thread_metadata = {
+        ...thread.thread_metadata,
+        archived,
+        archive_timestamp: new Date().toISOString(),
+    };
+    if (archived) thread.flags &= ~Number(ChannelFlags.FLAGS.PINNED);
+    await Channel.update({ id: thread.id }, { thread_metadata: thread.thread_metadata, flags: thread.flags });
+}
+
+export async function onThreadMessage(thread: Channel, user_id: string, mentioned_ids: string[] = []) {
+    if (thread.thread_metadata?.archived) {
+        await setThreadArchived(thread, false);
+        await emitThreadUpdate(thread);
+    }
+    await ThreadMember.join(thread, user_id);
+
+    const candidates = [...new Set(mentioned_ids)].filter((id) => id !== user_id);
+    if (!candidates.length || !thread.guild_id || !thread.parent_id) return;
+    if (thread.isPrivateThread() && !thread.thread_metadata?.invitable && thread.owner_id !== user_id) {
+        const permission = await getPermission(user_id, thread.guild_id, thread.parent_id);
+        if (!permission.has("MANAGE_THREADS") || !permission.mfaSatisfied("MANAGE_THREADS")) return;
+    }
+    const members = await Member.find({
+        where: { guild_id: thread.guild_id, id: In(candidates) },
+        select: { id: true },
+    });
+    for (const { id } of members) {
+        const permission = await getPermission(id, thread.guild_id, thread.parent_id).catch(() => undefined);
+        if (!permission?.has("VIEW_CHANNEL")) continue;
+        await ThreadMember.join(thread, id, ThreadMemberFlags.NONE);
+    }
+}
+
+let stopping = false;
+let workerTimer: NodeJS.Timeout | undefined;
+let archiving: Promise<void> | undefined;
+
+export function archiveInactiveThreads(until = Infinity) {
+    if (stopping) return archiving ?? Promise.resolve();
+    if (archiving) return archiving;
+    archiving = archiveInactiveThreadsOnce(until).finally(() => {
+        archiving = undefined;
+    });
+    return archiving;
+}
+
+const ARCHIVE_SCAN_BATCH = 500;
+const activeThreadClause = (alias: string) => (isSqlite() ? `${alias}thread_metadata ->> 'archived' = 0` : `(${alias}thread_metadata ->> 'archived')::boolean = false`);
+
+async function archiveInactiveThreadsOnce(until: number) {
+    const now = Date.now();
+    let after: string | undefined;
+    for (;;) {
+        if (stopping || Date.now() >= until) return;
+        const query = Channel.createQueryBuilder("channel")
+            .select(["channel.id", "channel.flags", "channel.last_message_id", "channel.thread_metadata"])
+            .where("channel.type IN (:...types)", { types: THREAD_TYPES })
+            .andWhere(activeThreadClause("channel."));
+        if (after) query.andWhere("channel.id > :after", { after });
+        const page = await query.orderBy("channel.id", "ASC").limit(ARCHIVE_SCAN_BATCH).getMany();
+        for (const candidate of page) {
+            if (stopping || Date.now() >= until) return;
+            const meta = candidate.thread_metadata!;
+            if (candidate.flags & Number(ChannelFlags.FLAGS.PINNED)) continue;
+            const lastMessage = candidate.last_message_id ? Snowflake.deconstruct(candidate.last_message_id).timestamp : 0;
+            const lastActivity = Math.max(lastMessage, new Date(meta.archive_timestamp).getTime(), new Date(meta.create_timestamp ?? 0).getTime());
+            if (now - lastActivity < (meta.auto_archive_duration || 4320) * 60_000) continue;
+            const thread = await Channel.findOne({ where: { id: candidate.id } });
+            if (!thread?.thread_metadata || thread.thread_metadata.archived) continue;
+            const metadata = { ...thread.thread_metadata, archived: true, archive_timestamp: new Date().toISOString() };
+            const flags = thread.flags & ~Number(ChannelFlags.FLAGS.PINNED);
+            const claimed = await Channel.createQueryBuilder()
+                .update(Channel)
+                .set({ thread_metadata: metadata, flags })
+                .where("id = :id", { id: thread.id })
+                .andWhere(activeThreadClause(""))
+                .execute();
+            if (!claimed.affected) continue;
+            thread.thread_metadata = metadata;
+            thread.flags = flags;
+            await emitThreadUpdate(thread);
+        }
+        if (page.length < ARCHIVE_SCAN_BATCH) return;
+        after = page.at(-1)!.id;
+    }
+}
+
+export function startThreadArchiver() {
+    if (workerTimer || stopping) return workerTimer;
+    const run = () => archiveInactiveThreads().catch((error) => console.error("[Threads] auto-archive failed", error));
+    const initial = setTimeout(run, 10_000);
+    workerTimer = setInterval(run, 60_000);
+    ProcessLifecycle.eventEmitter.once("stopping", async () => {
+        stopping = true;
+        clearTimeout(initial);
+        clearInterval(workerTimer);
+        await Promise.allSettled(archiving ? [archiving] : []);
+    });
+    return workerTimer;
+}
+
+export async function threadSearchExtras(threads: Channel[], user_id: string) {
+    const ids = threads.map((t) => t.id);
+    if (!ids.length)
+        return {
+            members: [],
+            first_messages: [],
+            most_recent_messages: [],
+            owners: new Map<string, unknown>(),
+        };
+    const guild_id = threads[0].guild_id!;
+    const lastIds = threads.map((t) => t.last_message_id).filter((x): x is string => !!x && !ids.includes(x));
+    const messageRelations = {
+        author: true,
+        attachments: true,
+        sticker_items: true,
+        mentions: true,
+        mention_roles: true,
+    } as const;
+    const [members, firstMessages, recentMessages, owners] = await Promise.all([
+        ThreadMember.find({ where: { id: In(ids), user_id } }),
+        Message.find({ where: { id: In(ids) }, relations: messageRelations }),
+        lastIds.length ? Message.find({ where: { id: In(lastIds) }, relations: messageRelations }) : Promise.resolve([] as Message[]),
+        Member.find({
+            where: {
+                guild_id,
+                id: In([...new Set(threads.map((t) => t.owner_id).filter((x): x is string => !!x))]),
+            },
+            relations: { user: true, roles: true },
+        }),
+    ]);
+    return {
+        members: members.map((m) => m.toJSON()),
+        first_messages: firstMessages.map((m) => m.toPublicJSON(user_id)),
+        most_recent_messages: recentMessages.map((m) => m.toPublicJSON(user_id)),
+        owners: new Map(owners.map((o) => [o.id, { ...o.toPublicMember(), roles: o.roles.filter((r) => r.id !== guild_id).map((r) => r.id) }])),
+    };
+}

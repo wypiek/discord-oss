@@ -1,0 +1,38 @@
+export enum PublicStatusOrder {
+    online = 0,
+    idle = 1,
+    dnd = 2,
+    offline = 3,
+}
+
+export enum InternalStatusOrder {
+    online = 0,
+    idle = 1,
+    dnd = 2,
+    invisible = 3,
+    offline = 4,
+    unknown = 5,
+}
+
+export type PublicStatus = keyof typeof PublicStatusOrder;
+export type PrivateStatus = PublicStatus | "invisible";
+export type SetPrivateStatus = PrivateStatus | "unknown";
+
+// @deprecated Use PublicStatus, PrivateStatus or SetPrivateStatus instead
+export type Status =
+    | "idle"
+    | "dnd"
+    | "online"
+    | "offline"
+    // Send only
+    | "invisible"
+    // Identify only
+    | "unknown";
+
+export interface ClientStatus {
+    desktop?: string; // e.g. Windows/Linux/Mac
+    mobile?: string; // e.g. iOS/Android
+    web?: string; // e.g. browser, bot account, unknown
+    embedded?: string; // e.g. embedded
+    vr?: string;
+}

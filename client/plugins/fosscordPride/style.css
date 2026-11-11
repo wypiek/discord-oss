@@ -1,0 +1,352 @@
+.fosscord-pride {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border-subtle, var(--background-modifier-accent));
+    color: var(--text-default, var(--text-normal));
+}
+.fosscord-pride .fosscord-ui-section-heading {
+    display: grid;
+    gap: 8px;
+}
+.fosscord-pride .fosscord-ui-section-heading h3 {
+    margin: 0;
+    text-wrap: balance;
+}
+.fosscord-pride .fosscord-ui-section-heading p {
+    text-wrap: pretty;
+}
+.fosscord-pride-search {
+    display: grid;
+    gap: 8px;
+}
+.fosscord-pride-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 8px;
+    max-height: 312px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thin-thumb) var(--scrollbar-thin-track);
+    padding: 2px 8px 2px 2px;
+}
+.fosscord-pride-option {
+    display: grid;
+    min-width: 0;
+    min-height: 48px;
+    border-radius: 8px;
+    background: var(--background-base-lowest, var(--background-secondary));
+    box-shadow: inset 0 0 0 1px var(--border-subtle, var(--background-modifier-accent));
+}
+.fosscord-pride-option[data-selected="true"] {
+    background: var(--background-mod-subtle, var(--background-base-low));
+    box-shadow: inset 0 0 0 1px var(--control-primary-background-default, var(--brand-500));
+}
+.fosscord-pride-option > label,
+.fosscord-pride-option > div {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    padding: 8px 10px;
+    box-sizing: border-box;
+    cursor: pointer;
+}
+.fosscord-pride-option [class*="label_"] {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    height: auto;
+}
+.fosscord-pride-option img {
+    flex: none;
+    object-fit: contain;
+    border-radius: 2px;
+    outline: 1px solid rgb(255 255 255 / 8%);
+    outline-offset: -1px;
+}
+.fosscord-pride-option p {
+    min-width: 0;
+    text-wrap: pretty;
+}
+.fosscord-pride-option:focus-within {
+    outline: 2px solid var(--focus-primary);
+    outline-offset: 1px;
+}
+.fosscord-pride-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+}
+.fosscord-pride-count {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.fosscord-pride-actions button:not(:disabled):active {
+    scale: 0.97;
+}
+.theme-light .fosscord-pride-option img {
+    outline-color: rgb(0 0 0 / 8%);
+}
+@media (hover: hover) {
+    .fosscord-pride-option:hover {
+        background: var(--background-mod-subtle, var(--background-base-low));
+    }
+}
+@media (max-width: 480px) {
+    .fosscord-pride-grid {
+        grid-template-columns: minmax(0, 1fr);
+        max-height: 288px;
+    }
+    .fosscord-pride-count {
+        margin-left: 0;
+    }
+}
+@media (prefers-reduced-motion: no-preference) {
+    .fosscord-pride-actions button {
+        transition: scale 200ms ease-out;
+    }
+}
+.fosscord-pride-mobile-nav {
+    display: none;
+}
+@media (max-width: 700px) {
+    .fosscord-pride-shell {
+        position: relative;
+        width: 100%;
+        min-width: 0;
+    }
+    .fosscord-pride-shell > aside {
+        display: none;
+    }
+    .fosscord-pride-shell > [class*="content_"] {
+        width: 100%;
+        min-width: 0;
+    }
+    .fosscord-pride-mobile-nav {
+        display: block;
+        flex: none;
+    }
+    .fosscord-pride-shell [class*="contentHeader_"] {
+        gap: 8px;
+        padding-inline: 12px;
+    }
+    .fosscord-pride-shell [class*="contentHeaderLeft_"] {
+        min-width: 0;
+    }
+    .fosscord-pride-shell [class*="panel_"] {
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+    }
+    .fosscord-pride-shell [class*="categories_"] {
+        min-width: 0;
+    }
+    .fosscord-pride-shell [class*="settingsPage_"] {
+        min-width: 0;
+        width: 100%;
+    }
+    .fosscord-pride-shell [class*="baseLayout_"] {
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 24px;
+        min-width: 0;
+    }
+    .fosscord-pride-shell [class*="previewsContainer_"],
+    .fosscord-pride-shell [class*="formContent_"],
+    .fosscord-pride-shell [class*="sectionsContainer_"] {
+        position: static;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+    }
+    .fosscord-pride-shell[data-fosscord-settings-menu="true"] > aside {
+        display: flex;
+        position: absolute;
+        inset: 72px 0 0;
+        width: 100%;
+        z-index: 2;
+    }
+    .fosscord-pride-shell[data-fosscord-settings-menu="true"] [class*="contentBody_"] {
+        visibility: hidden;
+    }
+    .fosscord-pride-shell button {
+        min-height: 40px;
+    }
+}
+.fosscord-pride-credit {
+    text-wrap: pretty;
+}
+.fosscord-pride-credit a {
+    color: var(--text-link);
+    text-decoration: underline;
+    text-underline-position: from-font;
+    text-decoration-skip-ink: auto;
+}
+.fosscord-pride-signup {
+    display: grid;
+    gap: 8px;
+    margin-top: 20px;
+    color: var(--text-default);
+    font-size: 14px;
+    text-align: start;
+}
+.fosscord-pride-signup-label {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-weight: 600;
+}
+.fosscord-pride-signup-label span + span {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.fosscord-pride-signup p {
+    margin: 0;
+    line-height: 1.4;
+    text-wrap: pretty;
+}
+.fosscord-pride-signup-hint,
+.fosscord-pride-signup-caption {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.fosscord-pride-signup-search {
+    box-sizing: border-box;
+    width: 100%;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--input-border-default, var(--background-mod-strong));
+    border-radius: 8px;
+    background: var(--input-background-default, var(--background-base-lowest));
+    color: var(--text-default);
+    font: inherit;
+    font-family: var(--font-primary);
+}
+.fosscord-pride-signup-search::placeholder {
+    color: var(--input-placeholder-text-default, var(--text-muted));
+}
+.fosscord-pride-signup-search:focus {
+    outline: none;
+    border-color: var(--input-border-active, var(--border-focus, var(--focus-primary)));
+}
+.fosscord-pride-signup-grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 6px;
+}
+.fosscord-pride-signup-flag {
+    position: relative;
+    display: grid;
+    place-items: center;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: var(--background-base-lowest, var(--input-background-default));
+    box-shadow: inset 0 0 0 1px var(--border-subtle, var(--background-modifier-accent));
+    cursor: pointer;
+}
+.fosscord-pride-signup-flag img {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    pointer-events: none;
+}
+.fosscord-pride-signup-flag[aria-pressed="true"] {
+    background: var(--background-mod-subtle, var(--background-base-low));
+    box-shadow: inset 0 0 0 2px var(--brand-500, var(--control-brand-foreground));
+}
+.fosscord-pride-signup-flag[aria-pressed="true"]::after {
+    content: "";
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background:
+        var(--brand-500, var(--control-brand-foreground))
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3.5 7.2 6 9.6l4.5-5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+        center / 14px no-repeat;
+    box-shadow: 0 0 0 2px var(--modal-background, var(--background-base-low));
+}
+.fosscord-pride-signup-flag[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.fosscord-pride-signup-flag:focus-visible,
+.fosscord-pride-signup-more:focus-visible,
+.fosscord-pride-signup-clear:focus-visible {
+    outline: 2px solid var(--border-focus, var(--focus-primary));
+    outline-offset: 2px;
+}
+.fosscord-pride-signup-footer {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 20px;
+}
+.fosscord-pride-signup-more {
+    justify-self: start;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-link);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.fosscord-pride-signup-clear {
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-link);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+@media (hover: hover) {
+    .fosscord-pride-signup-flag:hover {
+        background: var(--background-mod-subtle, var(--background-modifier-hover));
+    }
+    .fosscord-pride-signup-more:hover,
+    .fosscord-pride-signup-clear:hover {
+        text-decoration: underline;
+    }
+}
+@media (prefers-reduced-motion: no-preference) {
+    .fosscord-pride-signup-flag {
+        transition:
+            box-shadow 150ms ease-out,
+            scale 150ms ease-out;
+    }
+    .fosscord-pride-signup-flag:active {
+        scale: 0.94;
+    }
+}
+@media (pointer: coarse) {
+    .fosscord-pride-signup-search {
+        font-size: 16px;
+    }
+}
+[class*="characterBackground_"]:has(.fosscord-pride-signup) {
+    overflow-x: hidden;
+}
+[class*="characterBackground_"] > [class*="wrapper_"]:has(.fosscord-pride-signup) {
+    box-sizing: border-box;
+    height: auto;
+    min-height: 100%;
+    padding-block: 32px;
+}

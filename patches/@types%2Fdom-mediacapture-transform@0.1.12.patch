@@ -1,0 +1,11 @@
+diff --git a/index.d.ts b/index.d.ts
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -2,7 +2,6 @@
+ // Chrome 90+.
+ 
+ // This API depends on WebCodecs.
+-/// <reference types="dom-webcodecs" />
+ 
+ // Versioning:
+ // Until the above-mentioned spec is finalized, the major version number is 0. Although not

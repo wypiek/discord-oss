@@ -1,0 +1,198 @@
+import { IsNull, Not } from "typeorm";
+import { Channel, GoLiveStreams, Guild, Member, Recipient, StreamSession, User, VoiceState } from "@spacebar/database";
+import { CLOSECODES } from "@spacebar/gateway";
+import { ChannelType, validateSchema, VoiceIdentifySchema } from "@spacebar/schemas";
+import { FederatedVoice, getPermission, listenEvent } from "@spacebar/util";
+import { generateSsrc, mediaServer, Send, VoiceModeration, VoiceOPCodes, VoicePayload, WebRtcWebSocket } from "@spacebar/webrtc";
+import { SSRCs } from "@spacebarchat/spacebar-webrtc-types";
+import { subscribeToProducers } from "./Video";
+import { relaySpeaking } from "./Speaking";
+import { VoiceSessions } from "../util/VoiceSessions";
+import { daveIdOf } from "../util/DaveIdentity";
+
+export async function onIdentify(this: WebRtcWebSocket, data: VoicePayload) {
+    const { server_id, user_id, session_id, token, streams, max_dave_protocol_version, max_secure_frames_version } = validateSchema(
+        "VoiceIdentifySchema",
+        data.d,
+    ) as VoiceIdentifySchema;
+
+    // server_id can be one of the following: a unique id for a GO Live stream, a channel id for a DM voice call, or a guild id for a guild voice channel
+    // not sure if there's a way to determine whether a snowflake is a channel id or a guild id without checking if it exists in db
+    // luckily we will only have to determine this once
+    let type: "guild-voice" | "dm-voice" | "stream" = "guild-voice";
+    let authenticated = false;
+
+    // first check if its a guild voice connection or DM voice call
+    const voiceState = await VoiceState.findOne({
+        where: [
+            { guild_id: server_id, user_id, token, session_id },
+            { channel_id: server_id, user_id, token, session_id },
+        ],
+    });
+
+    if (this.federation) {
+        const shadow = await User.findOne({ where: { id: user_id }, select: { id: true, federated_instance: true } });
+        const call = voiceState && (voiceState.guild_id ? voiceState.guild_id === server_id : voiceState.channel_id === server_id);
+        if (shadow?.federated_instance !== this.federation.sender || (voiceState && !call)) return this.close(CLOSECODES.Authentication_failed);
+    }
+
+    if (voiceState) {
+        const mirrored = voiceState.guild_id
+            ? await Guild.exists({ where: { id: voiceState.guild_id, federated_instance: Not(IsNull()) } })
+            : await Channel.exists({ where: { id: voiceState.channel_id, federated_instance: Not(IsNull()) } });
+        if (mirrored) return this.close(CLOSECODES.Authentication_failed);
+        type = voiceState.guild_id === server_id ? "guild-voice" : "dm-voice";
+        authenticated = true;
+    } else {
+        // if its not a guild/dm voice connection, check if it is a go live stream
+        const streamSession = await StreamSession.findOne({
+            where: {
+                stream_id: server_id,
+                user_id,
+                token,
+                session_id,
+                used: false,
+            },
+            relations: { stream: true },
+        });
+
+        if (streamSession) {
+            const streamChannel = await Channel.findOne({ where: { id: streamSession.stream.channel_id } });
+            if (!streamChannel) return this.close(CLOSECODES.Authentication_failed);
+            if (streamChannel.guild_id) {
+                if (!(await Member.exists({ where: { id: user_id, guild_id: streamChannel.guild_id } }))) return this.close(CLOSECODES.Authentication_failed);
+                const permission = await getPermission(user_id, streamChannel.guild_id, streamChannel.id);
+                const required = streamSession.stream.owner_id === user_id ? (["VIEW_CHANNEL", "CONNECT", "STREAM"] as const) : (["VIEW_CHANNEL", "CONNECT"] as const);
+                if (!required.every((name) => permission.has(name))) return this.close(CLOSECODES.Authentication_failed);
+            } else if (!(await Recipient.exists({ where: { channel_id: streamChannel.id, user_id } }))) return this.close(CLOSECODES.Authentication_failed);
+            if (this.readyState !== 1) return;
+            const claimed = await StreamSession.update({ id: streamSession.id, used: false }, { used: true });
+            if (claimed.affected !== 1) return this.close(CLOSECODES.Authentication_failed);
+            type = "stream";
+            authenticated = true;
+
+            this.sessionCleanups = [
+                async () => {
+                    await streamSession.remove();
+                    await GoLiveStreams.publishUpdate(server_id);
+                },
+            ];
+        }
+    }
+
+    // if it doesnt match any then not valid token
+    if (!authenticated) return this.close(CLOSECODES.Authentication_failed);
+    const daveId = await daveIdOf(user_id);
+    if (!daveId) return this.close(CLOSECODES.Authentication_failed);
+
+    if (this.readyState !== 1) return;
+    clearTimeout(this.readyTimeout);
+
+    this.user_id = user_id;
+    this.daveId = daveId;
+    this.session_id = session_id;
+
+    this.type = type;
+    this.server_id = server_id;
+    this.token = token;
+    this.maxDaveVersion = max_dave_protocol_version ?? max_secure_frames_version ?? 0;
+
+    const voiceRoomId = type === "stream" ? server_id : voiceState!.channel_id;
+    this.channel_id = type === "stream" ? (BigInt(server_id) - 1n).toString() : voiceState!.channel_id;
+    this.lastActivity = Date.now();
+    await VoiceSessions.register(this);
+    if (this.readyState !== 1) return;
+    try {
+        this.webRtcClient = await mediaServer.join(voiceRoomId, this.user_id, this, type!);
+    } catch (e) {
+        return this.close(4013);
+    }
+
+    if (type !== "stream") {
+        const channel = await Channel.findOne({
+            where: { id: this.channel_id },
+            select: { id: true, type: true },
+        });
+        const stage = channel?.type === ChannelType.GUILD_STAGE_VOICE;
+        const moderate = async (state: Pick<VoiceState, "mute" | "deaf" | "suppress">) => {
+            const session = VoiceSessions.find(server_id, session_id) ?? this;
+            const moderation: VoiceModeration = {
+                mute: !!state.mute || !!state.suppress,
+                deaf: !!state.deaf,
+                video: (stage && !!state.suppress) || !(await getPermission(user_id, voiceState!.guild_id, this.channel_id)).has("STREAM"),
+            };
+            const silenced = moderation.mute && !session.moderation?.mute;
+            session.moderation = moderation;
+            (session.webRtcClient as { moderate?: (moderation: VoiceModeration) => void } | undefined)?.moderate?.(moderation);
+            if (silenced && session.speaking) await relaySpeaking(session, 0);
+        };
+        if (type === "guild-voice") await moderate(voiceState!);
+        const unlisten = await listenEvent(server_id, async (event) => {
+            const update = event.data as VoiceState | undefined;
+            if (event.event !== "VOICE_STATE_UPDATE" || update?.user_id !== user_id) return;
+            if (update.session_id === session_id && update.channel_id === this.channel_id) {
+                if (type === "guild-voice") await moderate(update);
+                return;
+            }
+            let session: WebRtcWebSocket = this;
+            while (session.resumedBy) session = session.resumedBy;
+            if (session.sessionEnded) return;
+            await VoiceSessions.end(session);
+            if (session.readyState === 1) session.close(4014, "Disconnected");
+        });
+        this.sessionCleanups = [...(this.sessionCleanups ?? []), unlisten];
+    }
+
+    if (this.federation && type !== "stream") {
+        const key = `${user_id}:${session_id}`;
+        FederatedVoice.connected.add(key);
+        const leave = async () => {
+            const live = VoiceSessions.find(server_id, session_id);
+            if (live && !live.sessionEnded) return;
+            FederatedVoice.connected.delete(key);
+            await FederatedVoice.apply(user_id, session_id, { guild_id: null, channel_id: null, self_mute: false, self_deaf: false });
+        };
+        this.sessionCleanups = [...(this.sessionCleanups ?? []), leave];
+    }
+
+    // once connected subscribe to tracks from other users
+    this.webRtcClient.emitter.once("connected", async () => {
+        await subscribeToProducers.call(this);
+    });
+
+    // the server generates a unique ssrc for the audio and video stream. Must be unique among users connected to same server
+    // UDP clients will respect this ssrc, but webrtc clients will generate and replace it with their own
+    const generatedSsrc: SSRCs = {
+        audio_ssrc: generateSsrc(),
+        video_ssrc: generateSsrc(),
+        rtx_ssrc: generateSsrc(),
+    };
+    this.webRtcClient.initIncomingSSRCs(generatedSsrc);
+
+    if (type === "stream") await GoLiveStreams.publishUpdate(server_id);
+
+    await Send(this, {
+        op: VoiceOPCodes.READY,
+        d: {
+            ssrc: generatedSsrc.audio_ssrc,
+            port: mediaServer.port,
+            modes: [
+                "aead_aes256_gcm_rtpsize",
+                "aead_aes256_gcm",
+                "aead_xchacha20_poly1305_rtpsize",
+                "xsalsa20_poly1305_lite_rtpsize",
+                "xsalsa20_poly1305_lite",
+                "xsalsa20_poly1305_suffix",
+                "xsalsa20_poly1305",
+            ],
+            ip: mediaServer.ip,
+            experiments: [],
+            streams: streams?.map((x) => ({
+                ...x,
+                ssrc: generatedSsrc.video_ssrc,
+                rtx_ssrc: generatedSsrc.rtx_ssrc,
+                type: "video", // client expects this to be overriden for some reason???
+            })),
+        },
+    });
+}

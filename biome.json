@@ -1,0 +1,78 @@
+{
+    "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+    "vcs": {
+        "enabled": true,
+        "clientKind": "git",
+        "useIgnoreFile": true
+    },
+    "files": {
+        "includes": ["**", "!assets", "!dist", "!extra", "!.vencord", "!**/*.json", "!src/database/migration/postgres-initial.ts"]
+    },
+    "formatter": {
+        "enabled": true,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 180,
+        "lineEnding": "auto"
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "double",
+            "quoteProperties": "asNeeded",
+            "trailingCommas": "all",
+            "semicolons": "always",
+            "arrowParentheses": "always",
+            "bracketSpacing": true,
+            "bracketSameLine": false
+        },
+        "parser": {
+            "unsafeParameterDecoratorsEnabled": true
+        }
+    },
+    "assist": {
+        "enabled": false
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "a11y": {
+                "noStaticElementInteractions": "off",
+                "noSvgWithoutTitle": "off",
+                "useSemanticElements": "off"
+            },
+            "complexity": {
+                "noStaticOnlyClass": "off",
+                "noThisInStatic": "off"
+            },
+            "correctness": {
+                "noUnsafeFinally": "warn",
+                "noUnusedFunctionParameters": "off"
+            },
+            "style": {
+                "noNonNullAssertion": "off",
+                "useImportType": "off"
+            },
+            "suspicious": {
+                "noAssignInExpressions": "off",
+                "noDoubleEquals": "off",
+                "noEmptyInterface": "warn",
+                "noExplicitAny": "off",
+                "noImplicitAnyLet": "off",
+                "noShadowRestrictedNames": "warn",
+                "useIterableCallbackReturn": "off"
+            }
+        }
+    },
+    "overrides": [
+        {
+            "includes": ["client/plugins/**", "client/equicord-patches/**"],
+            "linter": {
+                "rules": {
+                    "complexity": {
+                        "noUselessEscapeInRegex": "off"
+                    }
+                }
+            }
+        }
+    ]
+}

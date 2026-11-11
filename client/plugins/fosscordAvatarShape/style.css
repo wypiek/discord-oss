@@ -1,0 +1,139 @@
+.fosscord-avatar-shape {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border-subtle, var(--background-modifier-accent));
+    color: var(--text-default, var(--text-normal));
+}
+
+.fosscord-avatar-shape .fosscord-ui-section-heading {
+    display: grid;
+    gap: 8px;
+}
+
+.fosscord-avatar-shape .fosscord-ui-section-heading h3 {
+    margin: 0;
+    text-wrap: balance;
+}
+
+.fosscord-avatar-shape .fosscord-ui-section-heading div {
+    text-wrap: pretty;
+}
+
+.fosscord-avatar-shape-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 24px;
+}
+
+.fosscord-avatar-shape-preview {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    padding: 16px;
+    border-radius: 12px;
+    background: var(--background-base-lowest, var(--background-secondary));
+    box-shadow: inset 0 0 0 1px var(--border-subtle, var(--background-modifier-accent));
+}
+
+.fosscord-avatar-shape-message {
+    border-radius: 50%;
+    outline: 1px solid rgb(255 255 255 / 8%);
+    outline-offset: -1px;
+}
+
+.theme-light .fosscord-avatar-shape-message {
+    outline-color: rgb(0 0 0 / 8%);
+}
+
+.fosscord-avatar-shape-controls {
+    display: grid;
+    flex: 1 1 280px;
+    gap: 16px;
+    min-width: 0;
+}
+
+.fosscord-avatar-shape-presets {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+    gap: 8px;
+}
+
+.fosscord-avatar-shape-preset {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-height: 72px;
+    padding: 12px 8px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--background-base-lowest, var(--background-secondary));
+    box-shadow: inset 0 0 0 1px var(--border-subtle, var(--background-modifier-accent));
+    color: var(--text-default, var(--text-normal));
+    cursor: pointer;
+    transition:
+        background-color 120ms ease-out,
+        box-shadow 120ms ease-out,
+        scale 200ms ease-out;
+}
+
+.fosscord-avatar-shape-preset:active:not(:disabled) {
+    scale: 0.97;
+}
+
+.fosscord-avatar-shape-preset[aria-pressed="true"] {
+    background: var(--background-mod-subtle, var(--background-base-low));
+    box-shadow: inset 0 0 0 2px var(--control-primary-background-default, var(--brand-500));
+}
+
+.fosscord-avatar-shape-preset:focus-visible {
+    outline: 2px solid var(--focus-primary, var(--brand-500));
+    outline-offset: 2px;
+}
+
+.fosscord-avatar-shape-preset:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+@media (hover: hover) {
+    .fosscord-avatar-shape-preset:hover:not(:disabled) {
+        background: var(--background-mod-subtle, var(--background-base-low));
+    }
+}
+
+.fosscord-avatar-shape-swatch {
+    width: 28px;
+    height: 28px;
+    background: var(--interactive-normal, var(--text-muted));
+}
+
+.fosscord-avatar-shape-slider {
+    display: grid;
+    gap: 8px;
+}
+
+.fosscord-avatar-shape-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.fosscord-avatar-shape-value {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.fosscord-avatar-shape p {
+    margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fosscord-avatar-shape-preset {
+        transition: none;
+    }
+}

@@ -1,0 +1,22 @@
+diff --git a/src/webpack/patchWebpack.ts b/src/webpack/patchWebpack.ts
+index b6a2c4c..e9cb774 100644
+--- a/src/webpack/patchWebpack.ts
++++ b/src/webpack/patchWebpack.ts
+@@ -107,7 +107,7 @@ define(Function.prototype, "m", {
+             return;
+         }
+ 
+-        const fileName = stack.match(/\/assets\/(.+?\.js)/)?.[1];
++        const fileName = stack.match(/\/assets\/([^/\s]+?\.js)(?=[:?]|$)/)?.[1];
+ 
+         // Currently, sentry and libdiscore Webpack instances are not meant to be patched.
+         // As an extra measure, take advatange of the fact their files include the names and return early if it's one of them.
+@@ -394,7 +394,7 @@ function runFactoryWithWrap(patchedFactory: PatchedModuleFactory, thisArg: unkno
+             // Make sure the require argument is actually the WebpackRequire function
+             if (typeof require === "function" && require.m != null && require.c != null) {
+                 const { stack } = new Error();
+-                const webpackInstanceFileName = stack?.match(/\/assets\/(.+?\.js)/)?.[1];
++                const webpackInstanceFileName = stack?.match(/\/assets\/([^/\s]+?\.js)(?=[:?]|$)/)?.[1];
+ 
+                 logger.warn(
+                     "WebpackRequire was not initialized, falling back to WebpackRequire passed to the first called wrapped module factory (" +

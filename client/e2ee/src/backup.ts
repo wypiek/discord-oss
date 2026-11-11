@@ -1,0 +1,132 @@
+import { argon2id } from "hash-wasm";
+import { Bytes, fromB64u, fromUtf8, randomBytes, toB64u, utf8 } from "./bytes";
+import { hkdf, OkpJwk, openBox, sealBox } from "./crypto";
+
+export type BackupMode = "password" | "recovery";
+
+export interface BackupKdf {
+    name: "argon2id" | "hkdf-sha256";
+    memory?: number;
+    iterations?: number;
+    parallelism?: number;
+}
+
+export interface BackupSecretFields {
+    version: number;
+    mode: BackupMode;
+    kdf: BackupKdf;
+    salt: string;
+    wrapped_secret: string | null;
+}
+
+export interface BackupRecord extends BackupSecretFields {
+    identity_key: string;
+    wrapped_identity: string;
+    backup_public_key: string;
+    backup_key_signature: string;
+    wrapped_backup_key: string;
+    trust?: { version: number; data: string | null };
+}
+
+export interface TrustEntry {
+    key: string;
+    verified: boolean;
+    at: number;
+}
+
+export type TrustMap = Record<string, TrustEntry>;
+
+export const PASSWORD_KDF: BackupKdf = {
+    name: "argon2id",
+    memory: 65536,
+    iterations: 3,
+    parallelism: 1,
+};
+export const RECOVERY_KDF: BackupKdf = { name: "hkdf-sha256" };
+
+const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const CODE_LENGTH = 32;
+
+export const generateRecoveryCode = () =>
+    (
+        [...randomBytes(CODE_LENGTH)]
+            .map((byte) => ALPHABET[byte & 31])
+            .join("")
+            .match(/.{4}/g) ?? []
+    ).join("-");
+
+export const normalizeRecoveryCode = (code: string) =>
+    code
+        .toUpperCase()
+        .replace(/[^0-9A-Z]/g, "")
+        .replace(/O/g, "0")
+        .replace(/[IL]/g, "1");
+
+export const isRecoveryCode = (code: string) => {
+    const normalized = normalizeRecoveryCode(code);
+    return normalized.length === CODE_LENGTH && [...normalized].every((c) => ALPHABET.includes(c));
+};
+
+const derived = new Map<string, Promise<Bytes>>();
+
+export const deriveBackupKey = (kdf: BackupKdf, salt: string, input: string) => {
+    const cacheKey = `${kdf.name}|${kdf.memory}|${kdf.iterations}|${salt}|${input}`;
+    let pending = derived.get(cacheKey);
+    if (!pending) {
+        pending =
+            kdf.name === "argon2id"
+                ? argon2id({
+                      password: utf8(input),
+                      salt: fromB64u(salt),
+                      parallelism: kdf.parallelism ?? 1,
+                      iterations: kdf.iterations ?? 3,
+                      memorySize: kdf.memory ?? 65536,
+                      hashLength: 32,
+                      outputType: "binary",
+                  }).then((bytes) => new Uint8Array(bytes))
+                : hkdf(utf8(normalizeRecoveryCode(input)), fromB64u(salt), "fosscord-e2ee/v1/recovery-code");
+        pending.catch(() => derived.delete(cacheKey));
+        derived.clear();
+        derived.set(cacheKey, pending);
+    }
+    return pending;
+};
+
+const secretAad = (userId: string) => `fosscord-e2ee/v1/backup-secret\n${userId}`;
+
+export const wrapSecret = async (userId: string, mode: BackupMode, input: string, secret: Bytes) => {
+    const kdf = mode === "password" ? PASSWORD_KDF : RECOVERY_KDF;
+    const salt = toB64u(randomBytes(16));
+    const key = await deriveBackupKey(kdf, salt, input);
+    return { mode, kdf, salt, wrapped_secret: await sealBox(key, secret, secretAad(userId)) };
+};
+
+export const unwrapSecret = async (userId: string, record: BackupSecretFields, input: string) => {
+    if (!record.wrapped_secret) throw new Error("backup has no wrapped secret");
+    const key = await deriveBackupKey(record.kdf, record.salt, input);
+    return openBox(key, record.wrapped_secret, secretAad(userId));
+};
+
+const secretKey = (secret: Bytes, label: string) => hkdf(secret, new Uint8Array(32), `fosscord-e2ee/v1/backup/${label}`);
+
+export const sealJwk = async (secret: Bytes, label: string, userId: string, jwk: OkpJwk) =>
+    sealBox(await secretKey(secret, label), utf8(JSON.stringify(jwk)), `${label}\n${userId}`);
+
+export const sealTrust = async (secret: Bytes, userId: string, trust: TrustMap) => sealBox(await secretKey(secret, "trust"), utf8(JSON.stringify(trust)), `trust\n${userId}`);
+
+export const openTrust = async (secret: Bytes, userId: string, box: string) => {
+    const parsed = JSON.parse(fromUtf8(await openBox(await secretKey(secret, "trust"), box, `trust\n${userId}`))) as unknown;
+    if (!parsed || typeof parsed !== "object") throw new Error("bad trust list in backup");
+    const trust: TrustMap = {};
+    for (const [id, entry] of Object.entries(parsed as Record<string, Partial<TrustEntry>>)) {
+        if (typeof entry?.key === "string" && typeof entry.verified === "boolean" && typeof entry.at === "number")
+            trust[id] = { key: entry.key, verified: entry.verified, at: entry.at };
+    }
+    return trust;
+};
+
+export const openJwk = async (secret: Bytes, label: string, userId: string, box: string) => {
+    const jwk = JSON.parse(fromUtf8(await openBox(await secretKey(secret, label), box, `${label}\n${userId}`))) as OkpJwk;
+    if (jwk.kty !== "OKP" || typeof jwk.x !== "string" || typeof jwk.d !== "string") throw new Error("bad key in backup");
+    return jwk;
+};

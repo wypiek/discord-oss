@@ -1,0 +1,433 @@
+import { randomBytes } from "node:crypto";
+import { Request, Response, Router } from "express";
+import { HTTPError } from "lambert-server/HTTPError";
+import {
+    InteractionSchema,
+    InteractionType,
+    ApplicationCommandType,
+    ApplicationCommandHandlerType,
+    ChannelType,
+    InteractionFailureReason,
+    MessageCreateCloudAttachment,
+    PublicAttachment,
+} from "@spacebar/schemas";
+import { route } from "@spacebar/api/middlewares";
+import { Application, ApplicationAuthorization, ApplicationCommand, Channel, Guild, Member, Session } from "@spacebar/database";
+import {
+    Config,
+    DiscordApiErrors,
+    FieldErrors,
+    emitEvent,
+    getPermission,
+    InteractionCreateEvent,
+    InteractionSuccessEvent,
+    findInteraction,
+    Permissions,
+    Snowflake,
+    storeInteraction,
+    trackBackground,
+} from "@spacebar/util";
+import { buildResolved, canReadInteractionMessage, emitInteractionFailure, fetchInteractionMessage, interactionTarget } from "@spacebar/api/util/handlers/Interaction";
+import { launchActivity } from "@spacebar/api/activities";
+import { deliverOverHttp, INTERACTION_RESPONSE_WINDOW_MS } from "@spacebar/api/util/handlers/InteractionDelivery";
+import { convertCloudAttachmentToAttachment } from "@spacebar/api/util";
+import { canUseCommand } from "@spacebar/api/util/handlers/ApplicationCommands";
+
+import { findMessageComponent } from "@spacebar/api/util/handlers/ComponentValidation";
+import { interactionRequestErrors } from "@spacebar/api/util/handlers/FieldCaps";
+
+const router = Router({ mergeParams: true });
+
+router.post("/", route({}), async (req: Request, res: Response) => {
+    const body = req.body as InteractionSchema & { data: Record<string, unknown> };
+    const data = (body.data ?? {}) as Record<string, unknown> & {
+        options?: { type: number; value?: unknown }[];
+    };
+
+    const capErrors = interactionRequestErrors(body);
+    if (Object.keys(capErrors).length) throw FieldErrors(capErrors);
+    if (typeof body.application_id !== "string") throw DiscordApiErrors.UNKNOWN_APPLICATION;
+    if (typeof body.channel_id !== "string") throw DiscordApiErrors.UNKNOWN_CHANNEL;
+
+    if (body.type === InteractionType.ApplicationCommand && typeof data.id === "string") {
+        const entryPoint = await ApplicationCommand.findOne({
+            where: {
+                id: data.id,
+                application_id: body.application_id,
+                type: ApplicationCommandType.PRIMARY_ENTRY_POINT,
+                handler: ApplicationCommandHandlerType.DISCORD_LAUNCH_ACTIVITY,
+            },
+        });
+        if (entryPoint) {
+            const ownSession = body.session_id && (await Session.exists({ where: { session_id: body.session_id, user_id: req.user_id } }));
+            const interaction = {
+                id: Snowflake.generate(),
+                nonce: body.nonce,
+                userId: req.user_id,
+                sessionId: ownSession ? body.session_id : undefined,
+            };
+            const target = interactionTarget(interaction);
+            await emitEvent({
+                event: "INTERACTION_CREATE",
+                ...target,
+                data: { id: interaction.id, nonce: body.nonce },
+            } satisfies InteractionCreateEvent);
+            try {
+                await launchActivity({
+                    userId: req.user_id,
+                    applicationId: entryPoint.application_id,
+                    channelId: body.channel_id,
+                    sessionId: body.session_id,
+                    nonce: body.nonce,
+                });
+            } catch (error) {
+                const code = (error as { code?: number }).code;
+                const reasons: Record<number, InteractionFailureReason> = {
+                    10002: InteractionFailureReason.ACTIVITY_LAUNCH_UNKNOWN_APPLICATION,
+                    10003: InteractionFailureReason.ACTIVITY_LAUNCH_UNKNOWN_CHANNEL,
+                    50013: InteractionFailureReason.ACTIVITY_LAUNCH_INVALID_USER_PERMISSIONS,
+                    50024: InteractionFailureReason.ACTIVITY_LAUNCH_INVALID_CHANNEL_TYPE,
+                };
+                await emitInteractionFailure(interaction, (code && reasons[code]) || InteractionFailureReason.ACTIVITY_LAUNCH_FAILED_TO_LAUNCH);
+                return res.sendStatus(204);
+            }
+            await emitEvent({
+                event: "INTERACTION_SUCCESS",
+                ...target,
+                data: { id: interaction.id, nonce: body.nonce ?? "" },
+            } satisfies InteractionSuccessEvent);
+            return res.sendStatus(204);
+        }
+    }
+
+    const application = await Application.findOne({
+        where: { id: body.application_id },
+        relations: { bot: true },
+    });
+    if (!application?.bot) throw DiscordApiErrors.UNKNOWN_APPLICATION;
+
+    const channel = await Channel.findOne({
+        where: { id: body.channel_id },
+        relations: { recipients: true },
+    });
+    if (!channel) throw DiscordApiErrors.UNKNOWN_CHANNEL;
+    const guildId = channel.guild_id ?? undefined;
+
+    const permission = await getPermission(req.user_id, guildId, channel);
+    permission.hasThrow("VIEW_CHANNEL");
+    if (guildId && !(await Member.exists({ where: { guild_id: guildId, id: req.user_id } }))) throw DiscordApiErrors.MISSING_ACCESS;
+    if (guildId && body.type !== InteractionType.MessageComponent && body.type !== InteractionType.ModalSubmit) permission.hasThrow("USE_APPLICATION_COMMANDS");
+
+    const guildInstalled = guildId ? await Member.exists({ where: { guild_id: guildId, id: application.id } }) : false;
+    const userInstalled = await ApplicationAuthorization.exists({
+        where: { user_id: req.user_id, application_id: application.id, integration_type: 1 },
+    });
+    const botDm = !guildId && channel.type === ChannelType.DM && !!channel.recipients?.some((r) => r.user_id === application.id);
+    const context = guildId ? 0 : botDm ? 1 : 2;
+    const authorizingOwners: Record<string, string> = {
+        ...(guildInstalled && guildId && { "0": guildId }),
+        ...(botDm && { "0": "0" }),
+        ...(userInstalled && { "1": req.user_id }),
+    };
+    if (!Object.keys(authorizingOwners).length) throw DiscordApiErrors.UNKNOWN_APPLICATION;
+    const forceEphemeral = !!guildId && !guildInstalled && !permission.has("USE_EXTERNAL_APPS");
+
+    const interactionId = Snowflake.generate();
+    const token = Buffer.from(`interaction:${interactionId}:${randomBytes(48).toString("hex")}`).toString("base64url");
+
+    const triggering = body.type === InteractionType.ModalSubmit ? await findInteraction(data.id as string) : undefined;
+    if (
+        body.type === InteractionType.ModalSubmit &&
+        (!triggering || triggering.userId !== req.user_id || triggering.applicationId !== application.id || triggering.channelId !== channel.id)
+    )
+        throw DiscordApiErrors.UNKNOWN_INTERACTION;
+
+    let botData: Record<string, unknown> | undefined;
+    let command: ApplicationCommand | null = null;
+    const messageId = body.type === InteractionType.MessageComponent ? body.message_id : triggering?.messageId;
+    const message = messageId ? await fetchInteractionMessage(messageId) : null;
+    const authoredByApp =
+        !!message &&
+        (message.application_id === application.id || (!message.webhook_id && message.author_id === application.bot.id) || message.webhook?.application_id === application.id);
+    if (messageId) permission.hasThrow("READ_MESSAGE_HISTORY");
+    if (messageId && (!message || !canReadInteractionMessage(message, channel.id, req.user_id) || !authoredByApp)) throw DiscordApiErrors.UNKNOWN_MESSAGE;
+
+    switch (body.type) {
+        case InteractionType.ApplicationCommand:
+        case InteractionType.ApplicationCommandAutocomplete: {
+            command = await ApplicationCommand.findOne({
+                where: { id: data.id as string, application_id: application.id },
+            });
+            if (!command || (command.guild_id && command.guild_id !== guildId)) throw DiscordApiErrors.UNKNOWN_APPLICATION_COMMAND;
+            const integrationTypes = command.integration_types?.length ? command.integration_types : [0];
+            const contexts = command.contexts?.length ? command.contexts : command.dm_permission === false ? [0] : [0, 1, 2];
+            const usable = contexts.includes(context) && ((integrationTypes.includes(0) && (guildInstalled || botDm)) || (integrationTypes.includes(1) && userInstalled));
+            if (!usable) throw DiscordApiErrors.UNKNOWN_APPLICATION_COMMAND;
+            const access =
+                guildId && guildInstalled && !permission.has("ADMINISTRATOR")
+                    ? await canUseCommand(command, guildId, req.user_id, permission.cache.roles?.map((r) => r.id) ?? [], channel.id)
+                    : undefined;
+            if (access && !access.allowed) throw DiscordApiErrors.MISSING_PERMISSIONS.withParams("application command permissions");
+            if (guildId && guildInstalled && !access?.explicit && command.default_member_permissions != null && !permission.has("ADMINISTRATOR")) {
+                const required = BigInt(command.default_member_permissions);
+                if (required === 0n || (permission.bitfield & required) !== required) throw DiscordApiErrors.MISSING_PERMISSIONS.withParams("default_member_permissions");
+            }
+            const targetId = data.target_id as string | undefined;
+            const uploads = (data.attachments ?? []) as MessageCreateCloudAttachment[];
+            const attachments: Record<string, PublicAttachment & { id: string }> = {};
+            for (const upload of uploads) {
+                const id = Snowflake.generate();
+                const attachment = await convertCloudAttachmentToAttachment(upload, channel.id, id, req.user_id);
+                attachment.id = id;
+                attachments[upload.id as string] = { ...attachment.toJSON(), id };
+            }
+            const remap = (options?: { type: number; value?: unknown; options?: unknown[] }[]) =>
+                options?.forEach((o) => {
+                    if (o.type === 11 && attachments[o.value as string]) o.value = attachments[o.value as string].id;
+                    remap(o.options as never);
+                });
+            remap(data.options);
+            botData = {
+                id: command.id,
+                name: command.name,
+                type: command.type ?? ApplicationCommandType.CHAT_INPUT,
+                guild_id: command.guild_id ?? undefined,
+                options: data.options,
+                target_id: targetId,
+                resolved: await buildResolved(
+                    data.options,
+                    guildId,
+                    channel.id,
+                    {
+                        users: command.type === ApplicationCommandType.USER && targetId ? [targetId] : [],
+                        messages: command.type === ApplicationCommandType.MESSAGE && targetId ? [targetId] : [],
+                    },
+                    req.user_id,
+                ).then((resolved) =>
+                    Object.keys(attachments).length
+                        ? {
+                              ...resolved,
+                              attachments: Object.fromEntries(Object.values(attachments).map((a) => [a.id, a])),
+                          }
+                        : resolved,
+                ),
+            };
+            break;
+        }
+        case InteractionType.MessageComponent: {
+            const values = data.values as string[] | undefined;
+            const componentType = (data.component_type ?? data.type) as number;
+            const definition = findMessageComponent(message?.components, data.custom_id, componentType);
+            if (!definition)
+                throw FieldErrors({
+                    data: {
+                        code: "COMPONENT_NOT_FOUND",
+                        message: "The component is missing, disabled or has a different type.",
+                    },
+                });
+            if (componentType !== 2) {
+                const submitted = values ?? [];
+                if (new Set(submitted).size !== submitted.length || submitted.length < (definition.min_values ?? 1) || submitted.length > (definition.max_values ?? 1))
+                    throw FieldErrors({
+                        data: {
+                            code: "COMPONENT_INVALID_VALUES",
+                            message: "Select values do not match the component bounds.",
+                        },
+                    });
+                if (componentType === 3 && submitted.some((value) => !definition.options?.some((option: { value: string }) => option.value === value)))
+                    throw FieldErrors({
+                        data: {
+                            code: "COMPONENT_INVALID_VALUES",
+                            message: "String select values must match the offered options.",
+                        },
+                    });
+            }
+            botData = {
+                id: definition.id,
+                custom_id: data.custom_id,
+                component_type: componentType,
+                values,
+                resolved:
+                    values && componentType >= 5 && componentType <= 8
+                        ? await buildResolved(
+                              values.map((value) => ({
+                                  type: componentType === 5 ? 6 : componentType === 6 ? 8 : componentType === 8 ? 7 : 9,
+                                  value,
+                              })),
+                              guildId,
+                              channel.id,
+                              {},
+                              req.user_id,
+                          )
+                        : undefined,
+            };
+            break;
+        }
+        case InteractionType.ModalSubmit: {
+            type Submitted = {
+                type: number;
+                id?: number;
+                value?: unknown;
+                values?: unknown[] | null;
+                components?: Submitted[];
+                component?: Submitted;
+            };
+            const uploads = (data.attachments ?? []) as MessageCreateCloudAttachment[];
+            const attachments = await Promise.all(
+                uploads.map(async (upload) => {
+                    const id = Snowflake.generate();
+                    const attachment = await convertCloudAttachmentToAttachment(upload, channel.id, id, req.user_id);
+                    attachment.id = id;
+                    return { ...attachment.toJSON(), id };
+                }),
+            );
+            const entityOptionTypes: Record<number, number> = { 5: 6, 6: 8, 7: 9, 8: 7 };
+            const entities: { type: number; value: string }[] = [];
+            const normalise = (submitted: Submitted[] = [], defined: Submitted[] = []): Submitted[] =>
+                submitted.map((component, index) => {
+                    const definition = defined[index]?.type === component.type ? defined[index] : undefined;
+                    const out: Submitted = {
+                        ...component,
+                        ...(typeof definition?.id === "number" && { id: definition.id }),
+                    };
+                    if (component.components) out.components = normalise(component.components, definition?.components);
+                    if (component.component) [out.component] = normalise([component.component], definition?.component && [definition.component]);
+                    if ([3, 5, 6, 7, 8, 19, 22].includes(component.type)) out.values = component.values ?? [];
+                    if (component.type === 4) out.value = component.value ?? "";
+                    if (component.type === 19) out.values = (out.values as number[]).map((index) => attachments[index]?.id).filter(Boolean);
+                    if (entityOptionTypes[component.type])
+                        entities.push(
+                            ...(out.values as string[]).map((value) => ({
+                                type: entityOptionTypes[component.type],
+                                value,
+                            })),
+                        );
+                    return out;
+                });
+            const components = normalise(data.components as Submitted[], triggering?.modalComponents as Submitted[]);
+            const resolved = {
+                ...(entities.length ? await buildResolved(entities, guildId, channel.id, {}, req.user_id) : {}),
+                ...(attachments.length ? { attachments: Object.fromEntries(attachments.map((a) => [a.id, a])) } : {}),
+            };
+            botData = {
+                custom_id: data.custom_id,
+                components,
+                ...(Object.keys(resolved).length ? { resolved } : {}),
+            };
+            break;
+        }
+        default:
+            throw new HTTPError("Invalid interaction type", 400);
+    }
+
+    const session = body.session_id ? await Session.findOne({ where: { session_id: body.session_id, user_id: req.user_id } }) : null;
+
+    const interaction = await storeInteraction({
+        id: interactionId,
+        token,
+        applicationId: application.id,
+        userId: req.user_id,
+        sessionId: session?.session_id,
+        channelId: channel.id,
+        guildId,
+        nonce: body.nonce,
+        messageId: messageId,
+        type: body.type,
+        commandType: command?.type ?? (command ? ApplicationCommandType.CHAT_INPUT : undefined),
+        commandName: command
+            ? [
+                  command.name,
+                  ...(function path(options?: { type: number; name?: string; options?: unknown[] }[]): string[] {
+                      const sub = options?.find((o) => o.type === 1 || o.type === 2);
+                      return sub ? [sub.name ?? "", ...path(sub.options as never)] : [];
+                  })(data.options as never),
+              ].join(" ")
+            : undefined,
+        commandId: command?.id,
+        commandOptions: data.options,
+        targetId: data.target_id as string | undefined,
+        customId: data.custom_id as string | undefined,
+        componentType: data.component_type as number | undefined,
+        authorizingOwners,
+        forceEphemeral,
+        triggeringInteraction: triggering
+            ? (({ triggeringInteraction, ...rest }) => {
+                  void triggeringInteraction;
+                  return rest;
+              })(triggering)
+            : undefined,
+    });
+
+    if (body.type !== InteractionType.ApplicationCommandAutocomplete) {
+        await emitEvent({
+            event: "INTERACTION_CREATE",
+            ...(session ? { session_id: session.session_id } : { user_id: req.user_id }),
+            data: { id: interactionId, nonce: body.nonce },
+        } satisfies InteractionCreateEvent);
+    }
+
+    const guild = guildId ? await Guild.findOne({ where: { id: guildId } }) : null;
+    const member = guildId
+        ? await Member.findOne({
+              where: { guild_id: guildId, id: req.user_id },
+              relations: { user: true, roles: true },
+          })
+        : null;
+    const appPermissions = await getPermission(application.id, guildId, channel).catch(() => null);
+
+    const payload = {
+        id: interactionId,
+        application_id: application.id,
+        type: body.type,
+        data: botData,
+        token,
+        version: 1,
+        channel_id: channel.id,
+        channel: {
+            id: channel.id,
+            type: channel.type,
+            name: channel.name ?? undefined,
+            guild_id: guildId,
+            parent_id: channel.parent_id ?? undefined,
+            nsfw: channel.nsfw,
+            flags: channel.flags,
+            permissions: permission.bitfield.toString(),
+            recipients: guildId ? undefined : channel.recipients?.map((r) => ({ id: r.user_id })),
+        },
+        app_permissions: (appPermissions?.bitfield ?? new Permissions(["SEND_MESSAGES", "EMBED_LINKS", "ATTACH_FILES", "USE_EXTERNAL_EMOJIS"]).bitfield).toString(),
+        locale: req.user?.settings?.locale ?? "en-US",
+        entitlements: [],
+        entitlement_sku_ids: [],
+        authorizing_integration_owners: authorizingOwners,
+        context,
+        attachment_size_limit: Config.get().cdn.maxAttachmentSize,
+        ...(guild && {
+            guild_id: guild.id,
+            guild: { id: guild.id, features: guild.features, locale: guild.preferred_locale ?? "en-US" },
+            guild_locale: guild.preferred_locale ?? "en-US",
+        }),
+        ...(member ? { member: { ...member.toPublicMember(), permissions: permission.bitfield.toString() } } : { user: req.user.toPublicUser() }),
+        ...(message && { message: message.toJSON() }),
+    };
+
+    const deadline = Date.now() + INTERACTION_RESPONSE_WINDOW_MS;
+    if (application.interactions_endpoint_url) trackBackground(deliverOverHttp(application.id, application.interactions_endpoint_url, interaction, payload, deadline));
+    else
+        await emitEvent({
+            event: "INTERACTION_CREATE",
+            user_id: application.id,
+            data: payload as never,
+        } satisfies InteractionCreateEvent);
+
+    if (body.type !== InteractionType.ApplicationCommandAutocomplete)
+        trackBackground(
+            new Promise((resolve) => setTimeout(resolve, Math.max(0, deadline - Date.now())))
+                .then(() => findInteraction(interaction.id))
+                .then((current) => (current && !current.acknowledged && !current.failureSent ? emitInteractionFailure(current) : undefined))
+                .catch((error: Error) => console.error("[Interactions] could not check the response window:", error.message)),
+        );
+
+    res.sendStatus(204);
+});
+
+export default router;

@@ -1,0 +1,474 @@
+import {
+    assertCanSendDirectMessage,
+    assertGuildVerification,
+    assertNoHarmfulLinks,
+    checkAutomod,
+    checkSpam,
+    enforceQuarantine,
+    messageAttachmentFacts,
+    publishUserMessage,
+    recordGuildMemberDm,
+    spamAttachmentHashes,
+} from "@spacebar/api/util";
+import { route, parsePayloadJson } from "@spacebar/api/middlewares";
+import { relayedAuthorship } from "@spacebar/api/util/utility/federationAuthorship";
+import { Application, Attachment, Channel, GuildInsights, Member, Message, ReadState, Recipient, User, Webhook } from "@spacebar/database";
+import {
+    Config,
+    DiscordApiErrors,
+    emitEvent,
+    FieldErrors,
+    getPermission,
+    getUrlSignature,
+    MessageCreateEvent,
+    NewUrlSignatureData,
+    NewUrlUserSignatureData,
+    Rights,
+    Snowflake,
+    uploadMessageFiles,
+} from "@spacebar/util";
+import { MessageOptionAttachment } from "@spacebar/util/dtos/MessageOptions";
+import { Request, Response, Router } from "express";
+import { HTTPError } from "lambert-server/HTTPError";
+import multer from "multer";
+import { boundedMemoryStorage, MAX_UPLOAD_REQUEST_BYTES } from "@spacebar/api/util/utility/boundedUpload";
+import { FindManyOptions, FindOperator, In, LessThan, MoreThan, MoreThanOrEqual } from "typeorm";
+import {
+    AcknowledgeDeleteSchema,
+    ChannelType,
+    isTextChannel,
+    MessageCreateSchema,
+    PartialUser,
+    PollAnswerCount,
+    PublicMessage,
+    PublicUser,
+    PublicUserProjection,
+    ReadStateType,
+} from "@spacebar/schemas";
+
+const router: Router = Router({ mergeParams: true });
+
+// https://discord.com/developers/docs/resources/channel#create-message
+// get messages
+router.get(
+    "/",
+    route({
+        query: {
+            around: {
+                type: "string",
+            },
+            before: {
+                type: "string",
+            },
+            after: {
+                type: "string",
+            },
+            limit: {
+                type: "number",
+                description: "max number of messages to return (1-100). defaults to 50",
+            },
+        },
+        responses: {
+            200: {
+                body: "PublicMessageListResponse",
+            },
+            400: {
+                body: "APIErrorResponse",
+            },
+            403: {},
+            404: {},
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { channel_id } = req.params as { [key: string]: string };
+        const channel = await Channel.findOneOrFail({
+            where: { id: channel_id },
+        });
+        if (!channel) throw new HTTPError("Channel not found", 404);
+        if (!channel.guild_id) channel.recipients = await Recipient.find({ where: { channel_id } });
+
+        if (channel.threadOnly()) return res.json([]);
+        isTextChannel(channel.type);
+        const around = req.query.around ? `${req.query.around}` : undefined;
+        const before = req.query.before ? `${req.query.before}` : undefined;
+        const after = req.query.after ? `${req.query.after}` : undefined;
+        const limit = Number(req.query.limit ?? 50);
+        if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new HTTPError("limit must be between 1 and 100", 422);
+
+        const permissions = await getPermission(req.user_id, channel.guild_id, channel, {
+            user: req.user?.id === req.user_id ? req.user : undefined,
+        });
+        permissions.hasThrow("VIEW_CHANNEL");
+        if (channel.guild_id) GuildInsights.visit(channel_id, req.user_id);
+        if (!permissions.has("READ_MESSAGE_HISTORY")) return res.json([]);
+
+        const query: FindManyOptions<Message> & {
+            where: { id?: FindOperator<string> | FindOperator<string>[] };
+        } = {
+            order: { id: "DESC" },
+            take: limit,
+            where: { channel_id },
+        };
+
+        let messages: Message[];
+
+        if (around) {
+            query.take = Math.floor(limit / 2);
+            if (query.take != 0) {
+                const [right, left] = await Promise.all([
+                    Message.find({
+                        ...query,
+                        where: { channel_id, id: LessThan(around) },
+                    }),
+                    Message.find({
+                        ...query,
+                        where: { channel_id, id: MoreThanOrEqual(around) },
+                        order: { id: "ASC" },
+                    }),
+                ]);
+                left.push(...right);
+                messages = left.sort((a, b) => (BigInt(b.id) > BigInt(a.id) ? 1 : -1));
+            } else {
+                query.take = 1;
+                const message = await Message.findOne({
+                    ...query,
+                    where: { channel_id, id: around },
+                });
+                messages = message ? [message] : [];
+            }
+        } else {
+            if (after) {
+                if (BigInt(after) > BigInt(Snowflake.generate())) throw new HTTPError("after parameter must not be greater than current time", 422);
+
+                query.where.id = MoreThan(after);
+                query.order = { id: "ASC" };
+            } else if (before) {
+                if (BigInt(before) > BigInt(Snowflake.generate())) throw new HTTPError("before parameter must not be greater than current time", 422);
+
+                query.where.id = LessThan(before);
+            }
+
+            messages = await Message.find(query);
+            if (after) messages.reverse();
+        }
+
+        await Message.loadRelations(messages);
+        const attach = async <K extends "webhook" | "application" | "thread">(
+            key: K,
+            ids: (message: Message) => string | null | undefined,
+            load: (ids: string[]) => Promise<NonNullable<Message[K]>[]>,
+        ) => {
+            const wanted = [...new Set(messages.map(ids).filter((id): id is string => !!id))];
+            const found = new Map((wanted.length ? await load(wanted) : []).map((entity) => [entity.id, entity]));
+            for (const message of messages) message[key] = (found.get(ids(message) ?? "") ?? null) as Message[K];
+        };
+        await Promise.all([
+            attach(
+                "webhook",
+                (m) => m.webhook_id,
+                (ids) => Webhook.find({ where: { id: In(ids) } }),
+            ),
+            attach(
+                "application",
+                (m) => m.application_id,
+                (ids) => Application.find({ where: { id: In(ids) } }),
+            ),
+            attach(
+                "thread",
+                (m) => m.thread_id,
+                (ids) =>
+                    Channel.find({
+                        where: { id: In(ids) },
+                        relations: { recipients: { user: true } },
+                        relationLoadStrategy: "query",
+                    }),
+            ),
+        ]);
+        await Message.fillReplies(messages);
+        const ret = messages.map((msg) => {
+            const x = msg.toPublicJSON(req.user_id);
+            if (!x.author)
+                x.author = {
+                    id: "4",
+                    discriminator: "0000",
+                    username: "Deleted User",
+                    public_flags: 0,
+                    avatar: null,
+                } as PartialUser;
+            x.attachments =
+                msg.attachments?.map((y: Attachment) => {
+                    const att = y.toJSON();
+
+                    att.proxy_url = getUrlSignature(
+                        new NewUrlSignatureData({
+                            url: att.proxy_url,
+                            userAgent: req.headers["user-agent"],
+                            ip: req.ip,
+                        }),
+                    )
+                        .applyToUrl(att.proxy_url)
+                        .toString();
+
+                    att.url = getUrlSignature(
+                        new NewUrlSignatureData({
+                            url: att.url,
+                            userAgent: req.headers["user-agent"],
+                            ip: req.ip,
+                        }),
+                    )
+                        .applyToUrl(att.url)
+                        .toString();
+
+                    return att;
+                }) ?? [];
+
+            /**
+			Some clients ( discord.js ) only check if a property exists within the response,
+			which causes errors when, say, the `application` property is `null`.
+			**/
+
+            // for (var curr in x) {
+            // 	if (x[curr] === null)
+            // 		delete x[curr];
+            // }
+
+            return x;
+        });
+        //console.log(ret);
+
+        await fillInteractionUsers(ret);
+
+        return res.json(ret);
+    },
+);
+
+/** Resolve each interaction author once per page and expose public fields only. */
+export async function fillInteractionUsers(messages: PublicMessage[]) {
+    type WithInteraction = PublicMessage & {
+        interaction_metadata?: { user?: PublicUser; user_id: string };
+        interaction?: { user?: PublicUser };
+    };
+    const pending = (messages as WithInteraction[]).filter((message) => message.interaction_metadata?.user_id && !message.interaction_metadata.user);
+    const ids = [...new Set(pending.map((message) => message.interaction_metadata!.user_id))];
+    if (!ids.length) return;
+    const users = await User.find({
+        where: { id: In(ids) },
+        select: Object.fromEntries(PublicUserProjection.map((key) => [key, true])),
+    });
+    const publicUsers = new Map(users.map((user) => [user.id, user.toPublicUser()]));
+    for (const message of pending) {
+        const user = publicUsers.get(message.interaction_metadata!.user_id);
+        if (!user) continue; // Deleted users must not fail an entire history page.
+        message.interaction_metadata!.user = user;
+        if (message.interaction) message.interaction.user = user;
+    }
+}
+
+export const messageUpload = multer({
+    limits: {
+        fileSize: Math.min(Config.get().limits.message.maxAttachmentSize, MAX_UPLOAD_REQUEST_BYTES),
+        fields: 10,
+        files: Config.get().limits.message.maxAttachments,
+    },
+    storage: boundedMemoryStorage(),
+});
+/**
+ TODO: dynamically change limit of MessageCreateSchema with config
+
+ https://discord.com/developers/docs/resources/channel#create-message
+ TODO: text channel slowdown (per-user and across-users)
+ Q: trim and replace message content and every embed field A: NO, given this cannot be implemented in E2EE channels
+ TODO: only dispatch notifications for mentions denoted in allowed_mentions
+**/
+// Send message
+router.post(
+    "/",
+    messageUpload.any(),
+    parsePayloadJson,
+    route({
+        requestBody: "MessageCreateSchema",
+        stripNulls: {
+            components: true,
+            embeds: true,
+        },
+        permission: "VIEW_CHANNEL",
+        channelRelations: { recipients: { user: true } },
+        right: "SEND_MESSAGES",
+        responses: {
+            200: {
+                body: "PublicMessage",
+            },
+            400: {
+                body: "APIErrorResponse",
+            },
+            403: {},
+            404: {},
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { channel_id } = req.params as { [key: string]: string };
+        const { mobile_network_type, signal_strength, ...body } = req.body as MessageCreateSchema;
+        if (body.components?.length && !req.user_bot)
+            throw FieldErrors({
+                components: {
+                    code: "COMPONENT_VALIDATION_FAILED",
+                    message: "Only applications can send message components",
+                },
+            });
+        const messageId = Snowflake.generate();
+
+        const channel = req.channel!;
+        if (channel.isThread()) {
+            req.permission!.hasThrow("SEND_MESSAGES_IN_THREADS");
+            if (channel.thread_metadata?.locked && !req.permission!.hasWithMfa("MANAGE_THREADS")) throw DiscordApiErrors.THREAD_IS_LOCKED;
+        } else {
+            req.permission!.hasThrow("SEND_MESSAGES");
+        }
+        if (!channel.isWritable()) {
+            throw new HTTPError(`Cannot send messages to channel of type ${channel.type}`, 400);
+        }
+
+        if (body.poll && !isTextChannel(channel.type)) {
+            throw DiscordApiErrors.POLL_INVALID_CHANNEL_TYPE;
+        }
+
+        const dmViaGuilds = await assertCanSendDirectMessage(channel, req.user_id);
+        if (channel.guild_id) await assertGuildVerification(channel.guild_id, req.user_id, req.permission!.cache);
+
+        if (body.nonce) {
+            const existing = await Message.findOne({
+                where: {
+                    nonce: body.nonce,
+                    channel_id: channel.id,
+                    author_id: req.user_id,
+                    timestamp: MoreThan(new Date(Date.now() - 5 * 60 * 1000)),
+                },
+                relations: {
+                    author: true,
+                    attachments: true,
+                    mentions: true,
+                    mention_roles: true,
+                    sticker_items: true,
+                },
+            });
+            if (existing) {
+                return res.json({ ...existing.toPublicJSON(req.user_id), nonce: existing.nonce });
+            }
+        }
+
+        if (!req.rights.has(Rights.FLAGS.BYPASS_RATE_LIMITS)) {
+            const limits = Config.get().limits;
+            if (limits.absoluteRate.sendMessage.enabled) {
+                const count = await Message.count({
+                    where: {
+                        channel_id,
+                        author_id: req.user_id,
+                        id: MoreThan((BigInt(Date.now() - limits.absoluteRate.sendMessage.window - Snowflake.EPOCH) << 22n).toString()),
+                    },
+                });
+
+                if (count >= limits.absoluteRate.sendMessage.limit)
+                    throw FieldErrors({
+                        channel_id: {
+                            code: "TOO_MANY_MESSAGES",
+                            message: req.t("common:toomany.MESSAGE"),
+                        },
+                    });
+            }
+        }
+
+        assertNoHarmfulLinks(body.content);
+        const files = (req.files as Express.Multer.File[]) ?? [];
+        await enforceQuarantine(
+            { user_id: req.user_id, federated: !!req.user?.federated_instance, bot: req.user_bot, system: req.user?.system, rights: req.rights },
+            {
+                content: body.content,
+                attachments: files.length + (body.attachments?.length ?? 0),
+                embeds: (body.embeds?.length ?? 0) + (body.embed ? 1 : 0),
+                guild_id: channel.guild_id,
+                channel_id: channel.id,
+            },
+        );
+        const attachmentFacts = files.length || body.attachments?.length ? await messageAttachmentFacts(files, body.attachments ?? [], req.user_id, channel.id) : [];
+        await checkSpam({
+            user_id: req.user_id,
+            channel,
+            content: body.content,
+            message_id: messageId,
+            permission: req.permission,
+            rights: req.rights,
+            bot: req.user_bot,
+            system: req.user?.system,
+            account: req.user,
+            knownRecipient: channel.type === ChannelType.DM && !dmViaGuilds.length,
+            encrypted: !!body.encrypted,
+            attachments: spamAttachmentHashes(attachmentFacts),
+        });
+        if (channel.guild_id)
+            await checkAutomod({
+                guild_id: channel.guild_id,
+                channel,
+                user_id: req.user_id,
+                content: body.content,
+                permission: req.permission,
+                message_id: messageId,
+            });
+
+        let attachments: MessageOptionAttachment[];
+        try {
+            attachments = await uploadMessageFiles(`/attachments/${channel.id}/${messageId}`, files, body.attachments ?? []);
+        } catch (error) {
+            return res.status(400).json({ message: error?.toString() });
+        }
+
+        const message = await publishUserMessage({
+            channel,
+            user_id: req.user_id,
+            body,
+            message_id: messageId,
+            attachments,
+            permission: req.permission,
+            attachmentHashes: attachmentFacts.map((fact) => fact.hash),
+            authorship: relayedAuthorship(req),
+        });
+        if (dmViaGuilds.length) {
+            const recipient = channel.recipients?.find((r) => r.user_id !== req.user_id)?.user_id;
+            if (recipient) recordGuildMemberDm(dmViaGuilds, req.user_id, recipient).catch((e) => console.error("[Safety] dm raid check failed", e));
+        }
+        return res.json({
+            ...message.withSignedAttachments(
+                new NewUrlUserSignatureData({
+                    ip: req.ip,
+                    userAgent: req.headers["user-agent"] as string,
+                }),
+            ),
+            nonce: message.nonce ?? undefined,
+        });
+    },
+);
+
+router.delete(
+    "/ack",
+    route({
+        requestBody: "AcknowledgeDeleteSchema",
+        responses: {
+            204: {},
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { channel_id } = req.params as { [key: string]: string }; // not really a channel id if read_state_type != CHANNEL
+        const body = req.body as AcknowledgeDeleteSchema;
+        if (body.version != 2) return res.status(204).send();
+        // TODO: handle other read state types
+        if (body.read_state_type != ReadStateType.CHANNEL) return res.status(204).send();
+
+        const readState = await ReadState.findOne({ where: { channel_id, user_id: req.user_id } });
+        if (readState) {
+            await readState.remove();
+        }
+
+        res.status(204).send();
+    },
+);
+
+export default router;

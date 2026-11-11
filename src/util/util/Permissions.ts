@@ -1,0 +1,449 @@
+// https://github.com/discordjs/discord.js/blob/master/src/util/Permissions.js
+// Apache License Version 2.0 Copyright 2015 - 2021 Amish Shah
+// @fc-license-skip
+
+import { Application, Channel, Guild, Member, Role, ThreadMember, User } from "../../database/entities";
+import { BitField, BitFieldResolvable, BitFlag } from "./BitField";
+import { HTTPError } from "lambert-server/HTTPError";
+import { DiscordApiErrors } from "./Constants";
+import { ChannelPermissionOverwrite, ChannelPermissionOverwriteType, ChannelType, UserFlags } from "@spacebar/schemas";
+import { ArrayContains, EntityNotFoundError, FindOneOptions, In } from "typeorm";
+import { OrmUtils } from "@spacebar/util";
+
+export type PermissionResolvable = bigint | number | Permissions | PermissionResolvable[] | PermissionString;
+
+type PermissionString = keyof typeof Permissions.FLAGS;
+
+// BigInt doesn't have a bit limit (https://stackoverflow.com/questions/53335545/whats-the-biggest-bigint-value-in-js-as-per-spec)
+// const CUSTOM_PERMISSION_OFFSET = BigInt(1) << BigInt(64); // 27 permission bits left for discord to add new ones
+
+export class Permissions extends BitField {
+    cache: PermissionCache = {};
+
+    constructor(bits: BitFieldResolvable = 0) {
+        super(bits);
+        if (this.bitfield & Permissions.FLAGS.ADMINISTRATOR) {
+            this.bitfield = Permissions.ALL_PERMISSIONS;
+        }
+    }
+
+    static FLAGS = {
+        CREATE_INSTANT_INVITE: BitFlag(0),
+        KICK_MEMBERS: BitFlag(1),
+        BAN_MEMBERS: BitFlag(2),
+        ADMINISTRATOR: BitFlag(3),
+        MANAGE_CHANNELS: BitFlag(4),
+        MANAGE_GUILD: BitFlag(5),
+        ADD_REACTIONS: BitFlag(6),
+        VIEW_AUDIT_LOG: BitFlag(7),
+        PRIORITY_SPEAKER: BitFlag(8),
+        STREAM: BitFlag(9),
+        VIEW_CHANNEL: BitFlag(10),
+        SEND_MESSAGES: BitFlag(11),
+        SEND_TTS_MESSAGES: BitFlag(12),
+        MANAGE_MESSAGES: BitFlag(13),
+        EMBED_LINKS: BitFlag(14),
+        ATTACH_FILES: BitFlag(15),
+        READ_MESSAGE_HISTORY: BitFlag(16),
+        MENTION_EVERYONE: BitFlag(17),
+        USE_EXTERNAL_EMOJIS: BitFlag(18),
+        VIEW_GUILD_INSIGHTS: BitFlag(19),
+        CONNECT: BitFlag(20),
+        SPEAK: BitFlag(21),
+        MUTE_MEMBERS: BitFlag(22),
+        DEAFEN_MEMBERS: BitFlag(23),
+        MOVE_MEMBERS: BitFlag(24),
+        USE_VAD: BitFlag(25),
+        CHANGE_NICKNAME: BitFlag(26),
+        MANAGE_NICKNAMES: BitFlag(27),
+        MANAGE_ROLES: BitFlag(28),
+        MANAGE_WEBHOOKS: BitFlag(29),
+        MANAGE_EMOJIS_AND_STICKERS: BitFlag(30),
+        USE_APPLICATION_COMMANDS: BitFlag(31),
+        REQUEST_TO_SPEAK: BitFlag(32),
+        MANAGE_EVENTS: BitFlag(33),
+        MANAGE_THREADS: BitFlag(34),
+        CREATE_PUBLIC_THREADS: BitFlag(35),
+        CREATE_PRIVATE_THREADS: BitFlag(36),
+        USE_EXTERNAL_STICKERS: BitFlag(37),
+        SEND_MESSAGES_IN_THREADS: BitFlag(38),
+        USE_EMBEDDED_ACTIVITIES: BitFlag(39),
+        MODERATE_MEMBERS: BitFlag(40),
+        VIEW_CREATOR_MONETIZATION_ANALYTICS: BitFlag(41),
+        USE_SOUNDBOARD: BitFlag(42),
+        CREATE_GUILD_EXPRESSIONS: BitFlag(43),
+        CREATE_EVENTS: BitFlag(44),
+        USE_EXTERNAL_SOUNDS: BitFlag(45),
+        SEND_VOICE_MESSAGES: BitFlag(46),
+        DEPRECATED_USE_CLYDE_AI: BitFlag(47), // DEPRECATED
+        SET_VOICE_CHANNEL_STATUS: BitFlag(48),
+        SEND_POLLS: BitFlag(49),
+        USE_EXTERNAL_APPS: BitFlag(50),
+        UNUSED_13: BitFlag(51),
+        BYPASS_SLOWMODE: BitFlag(52),
+
+        /**
+         * CUSTOM PERMISSIONS ideas:
+         * - allow user to dm members
+         * - allow user to pin messages (without MANAGE_MESSAGES)
+         * - allow user to publish messages (without MANAGE_MESSAGES)
+         */
+        // CUSTOM_PERMISSION: BigInt(1) << BigInt(0) + CUSTOM_PERMISSION_OFFSET
+    };
+
+    static ALL_PERMISSIONS = Object.values(Permissions.FLAGS).reduce((total, val) => total | val, BigInt(0));
+
+    static ELEVATED_PERMISSIONS: bigint =
+        Permissions.FLAGS.ADMINISTRATOR |
+        Permissions.FLAGS.KICK_MEMBERS |
+        Permissions.FLAGS.BAN_MEMBERS |
+        Permissions.FLAGS.MANAGE_CHANNELS |
+        Permissions.FLAGS.MANAGE_GUILD |
+        Permissions.FLAGS.MANAGE_MESSAGES |
+        Permissions.FLAGS.MANAGE_ROLES |
+        Permissions.FLAGS.MANAGE_WEBHOOKS |
+        Permissions.FLAGS.MANAGE_EMOJIS_AND_STICKERS |
+        Permissions.FLAGS.MANAGE_THREADS |
+        Permissions.FLAGS.MODERATE_MEMBERS;
+
+    any(permission: PermissionResolvable, checkAdmin = true) {
+        return (checkAdmin && super.any(Permissions.FLAGS.ADMINISTRATOR)) || super.any(permission);
+    }
+
+    /**
+     * Checks whether the bitfield has a permission, or multiple permissions.
+     */
+    has(permission: PermissionResolvable, checkAdmin = true) {
+        return (checkAdmin && super.has(Permissions.FLAGS.ADMINISTRATOR)) || super.has(permission);
+    }
+
+    /**
+     * Checks whether the bitfield has a permission, or multiple permissions, but throws an Error if user fails to match auth criteria.
+     */
+    hasThrow(permission: PermissionResolvable) {
+        if (!this.has("VIEW_CHANNEL")) throw DiscordApiErrors.MISSING_ACCESS;
+        if (!this.has(permission)) throw DiscordApiErrors.MISSING_PERMISSIONS;
+        this.assertMfa(permission);
+        return true;
+    }
+
+    hasWithMfa(permission: PermissionResolvable) {
+        if (!this.has(permission)) return false;
+        this.assertMfa(permission);
+        return true;
+    }
+
+    mfaSatisfied(permission?: PermissionResolvable) {
+        if (!this.cache?.guild?.mfa_level) return true;
+        if (permission && (new Permissions(permission).bitfield & Permissions.ELEVATED_PERMISSIONS) === 0n) return true;
+        return !!(this.cache.mfa_enabled ?? this.cache.user?.mfa_enabled);
+    }
+
+    assertMfa(permission?: PermissionResolvable) {
+        if (!this.mfaSatisfied(permission)) throw DiscordApiErrors.TWO_FACTOR_REQUIRED;
+    }
+
+    overwriteChannel(overwrites: ChannelPermissionOverwrite[]) {
+        if (!overwrites) return this;
+        if (!this.cache) throw new Error("permission cache not available");
+        overwrites = overwrites.filter((x) => {
+            if (x.type === ChannelPermissionOverwriteType.role && this.cache.roles?.some((r) => r.id === x.id)) return true;
+            if (x.type === ChannelPermissionOverwriteType.member && x.id == this.cache.user_id) return true;
+            return false;
+        });
+        const everyoneId = this.cache.guild_id ?? this.cache.guild?.id;
+        const bitfield = Permissions.channelPermission(overwrites, this.bitfield, everyoneId);
+        return new Permissions(this.cache.mask === undefined ? bitfield : bitfield & this.cache.mask);
+    }
+
+    static channelPermission(overwrites: ChannelPermissionOverwrite[], init?: bigint, everyoneId?: string) {
+        const apply = (permission: bigint, deny: bigint, allow: bigint) => (permission & ~deny) | allow;
+        const everyone = overwrites.find((x) => x.type === ChannelPermissionOverwriteType.role && x.id === everyoneId);
+        const roles = overwrites.filter((x) => x.type === ChannelPermissionOverwriteType.role && x !== everyone);
+        const members = overwrites.filter((x) => x.type === ChannelPermissionOverwriteType.member);
+        let permission = init || BigInt(0);
+        if (everyone) permission = apply(permission, BigInt(everyone.deny), BigInt(everyone.allow));
+        permission = apply(
+            permission,
+            roles.reduce((deny, x) => deny | BigInt(x.deny), BigInt(0)),
+            roles.reduce((allow, x) => allow | BigInt(x.allow), BigInt(0)),
+        );
+        return members.reduce((total, x) => apply(total, BigInt(x.deny), BigInt(x.allow)), permission);
+    }
+
+    static rolePermission(roles: Role[]) {
+        // adds all permissions of all roles together (Bit OR)
+        return roles.reduce((permission, role) => permission | BigInt(role.permissions || "0"), BigInt(0));
+    }
+
+    static finalPermission({
+        user,
+        guild,
+        channel,
+    }: {
+        user: { id: string; roles: string[]; communication_disabled_until: Date | null; flags: number };
+        guild: { id: string; owner_id: string; roles: Role[] };
+        channel?: {
+            overwrites?: ChannelPermissionOverwrite[];
+            recipient_ids?: string[] | null;
+            owner_id?: string;
+        };
+    }) {
+        if (user.id === "0") return new Permissions("ADMINISTRATOR"); // system user id
+        if (guild?.owner_id === user.id) return new Permissions(Permissions.ALL);
+
+        const roles = guild.roles.filter((x) => user.roles.includes(x.id));
+        let permission = Permissions.rolePermission(roles);
+
+        if (channel?.overwrites) {
+            const overwrites = channel.overwrites.filter((x) => {
+                if (x.type === ChannelPermissionOverwriteType.role && user.roles.includes(x.id)) return true;
+                if (x.type === ChannelPermissionOverwriteType.member && x.id == user.id) return true;
+                return false;
+            });
+            permission = Permissions.channelPermission(overwrites, permission, guild.id);
+        }
+
+        if (channel?.recipient_ids) {
+            if (channel?.owner_id === user.id) return new Permissions("ADMINISTRATOR");
+            if (channel.recipient_ids.includes(user.id)) {
+                // Default dm permissions
+                return new Permissions([
+                    "VIEW_CHANNEL",
+                    "SEND_MESSAGES",
+                    "STREAM",
+                    "ADD_REACTIONS",
+                    "EMBED_LINKS",
+                    "ATTACH_FILES",
+                    "READ_MESSAGE_HISTORY",
+                    "MENTION_EVERYONE",
+                    "USE_EXTERNAL_EMOJIS",
+                    "CONNECT",
+                    "SPEAK",
+                    "MANAGE_CHANNELS",
+                ]);
+            }
+
+            return new Permissions();
+        }
+
+        if (user.communication_disabled_until) {
+            if (user.communication_disabled_until > new Date()) return new Permissions(permission & Permissions.TIMED_OUT_MASK.bitfield);
+            else {
+                user.communication_disabled_until = null;
+                Member.update({ id: user.id, guild_id: guild.id }, { communication_disabled_until: null }).catch((_) => {
+                    // ignored
+                });
+            }
+        }
+        if ((BigInt(user.flags) & UserFlags.FLAGS.QUARANTINED) === UserFlags.FLAGS.QUARANTINED) {
+            permission = permission & Permissions.QUARANTINED_MASK.bitfield;
+        }
+
+        return new Permissions(permission);
+    }
+
+    static NONE: Permissions = new Permissions(0);
+    static TIMED_OUT_MASK: Permissions = new Permissions(Permissions.FLAGS.VIEW_CHANNEL | Permissions.FLAGS.READ_MESSAGE_HISTORY);
+    static AUTOMOD_QUARANTINE_MEMBER_FLAGS = 128 | 256 | 1024;
+    static QUARANTINED_MASK: Permissions = new Permissions(Permissions.FLAGS.VIEW_CHANNEL | Permissions.FLAGS.READ_MESSAGE_HISTORY | Permissions.FLAGS.CHANGE_NICKNAME);
+    static DEFAULT_DM_PERMISSIONS: Permissions = new Permissions(
+        Permissions.FLAGS.VIEW_CHANNEL |
+            Permissions.FLAGS.SEND_MESSAGES |
+            Permissions.FLAGS.STREAM |
+            Permissions.FLAGS.ADD_REACTIONS |
+            Permissions.FLAGS.EMBED_LINKS |
+            Permissions.FLAGS.ATTACH_FILES |
+            Permissions.FLAGS.READ_MESSAGE_HISTORY |
+            Permissions.FLAGS.MENTION_EVERYONE |
+            Permissions.FLAGS.USE_EXTERNAL_EMOJIS |
+            Permissions.FLAGS.CONNECT |
+            Permissions.FLAGS.SPEAK |
+            Permissions.FLAGS.MANAGE_CHANNELS |
+            Permissions.FLAGS.CREATE_INSTANT_INVITE,
+    );
+    static ALL: Permissions = new Permissions(Object.values(Permissions.FLAGS).reduce((total, val) => total | val, BigInt(0)));
+}
+
+export type PermissionCache = {
+    channel?: Channel | undefined;
+    member?: Member | undefined;
+    guild?: Guild | undefined;
+    guild_id?: string;
+    roles?: Role[] | undefined;
+    user_id?: string;
+    user?: Pick<User, "id" | "flags" | "mfa_enabled" | "bot"> | undefined;
+    mfa_enabled?: boolean;
+    mask?: bigint;
+};
+
+export async function getPermission(
+    user_id?: string,
+    guild_id?: string | Guild,
+    channel_id?: string | Channel,
+    opts: {
+        guild_select?: (keyof Guild)[];
+        guild_relations?: string[];
+        channel_select?: (keyof Channel)[];
+        channel_relations?: string[];
+        member_select?: (keyof Member)[];
+        member_relations?: string[];
+        user?: Pick<User, "id" | "flags" | "mfa_enabled" | "bot">;
+        member?: Member;
+    } = {},
+) {
+    if (!user_id) throw new HTTPError("User not found");
+    let channel: Channel | undefined;
+    let member: Member | undefined;
+    let guild: Guild | undefined;
+    let lurkerRoles: Role[] | undefined;
+    const user =
+        opts.user?.id === user_id && opts.user.flags !== undefined && opts.user.mfa_enabled !== undefined
+            ? opts.user
+            : await User.findOneOrFail({
+                  where: { id: user_id },
+                  select: { id: true, flags: true, mfa_enabled: true, bot: true },
+              });
+    const query = {
+        relations: OrmUtils.keysToObject(["recipients", "thread_members", "thread_members.member", ...(opts.channel_relations || [])]), // TODO: cleanup
+        select: OrmUtils.keysToObject(["type", "parent_id", "id", "recipients", "permission_overwrites", "owner_id", "guild_id", ...(<string[]>opts.channel_select || [])]), // TODO: cleanup
+    } as FindOneOptions<Channel>;
+    if (typeof channel_id === "string") {
+        channel = await Channel.createQueryBuilder("permission_channel")
+            .setFindOptions({ where: { id: channel_id }, ...query })
+            .getOneOrFail();
+        if (channel.guild_id) guild_id = channel.guild_id; // derive guild_id from the channel
+    } else if (channel_id) {
+        channel = channel_id;
+        if (!guild_id && channel.guild_id) guild_id = channel.guild_id;
+    }
+    while (channel?.isThread() && channel.parent_id) {
+        const parent = await Channel.createQueryBuilder("permission_parent")
+            .setFindOptions({ where: { id: channel.parent_id }, ...query })
+            .getOneOrFail();
+        if (channel.type === ChannelType.GUILD_PRIVATE_THREAD) {
+            channel.thread_members ??= await ThreadMember.find({
+                where: { id: channel.id },
+                relations: { member: true },
+            });
+            if (!channel.thread_members.find((m) => (m.user_id ?? m.member?.id) === user_id)) {
+                const perms: Permissions = await getPermission(user_id, guild_id, parent, opts);
+                if (!perms.has("MANAGE_THREADS")) {
+                    return new Permissions(0);
+                } else {
+                    return perms;
+                }
+            }
+        }
+        channel = parent;
+    }
+
+    let mfa_enabled = user.mfa_enabled;
+
+    if (guild_id) {
+        if (typeof guild_id === "string") {
+            guild = await Guild.findOneOrFail({
+                where: { id: guild_id },
+                select: !opts.guild_select
+                    ? { id: true, owner_id: true, verification_level: true, mfa_level: true }
+                    : OrmUtils.keysToObject(["id", "owner_id", "verification_level", "mfa_level", ...(<string[]>opts.guild_select || [])]), // TODO: clean up
+                relations: !opts.guild_relations ? undefined : OrmUtils.keysToObject(opts.guild_relations), // TODO: clean up
+            });
+        } else {
+            guild = guild_id;
+        }
+
+        if (user.bot && guild?.mfa_level) {
+            const app = await Application.findOne({
+                where: { bot: { id: user.id } },
+                relations: { owner: true },
+            });
+            if (app?.owner) {
+                mfa_enabled = app.owner.mfa_enabled;
+            }
+        }
+
+        if (guild!.owner_id === user_id) {
+            const ownerPermissions = new Permissions(Permissions.FLAGS.ADMINISTRATOR);
+            ownerPermissions.cache = { guild, channel, user_id, user, mfa_enabled };
+            return ownerPermissions;
+        }
+
+        const preloaded = opts.member;
+        const hydrated =
+            preloaded instanceof Member &&
+            preloaded.id === user_id &&
+            preloaded.guild_id === guild!.id &&
+            preloaded.index !== undefined &&
+            typeof preloaded.flags === "number" &&
+            (preloaded.communication_disabled_until === null || preloaded.communication_disabled_until instanceof Date) &&
+            Array.isArray(preloaded.roles) &&
+            preloaded.roles.every((role) => role.guild_id === guild!.id && typeof role.permissions === "string") &&
+            !opts.member_relations?.length;
+        member = hydrated
+            ? preloaded
+            : ((await Member.createQueryBuilder("permission_member")
+                  .setFindOptions({
+                      where: { guild_id: guild!.id, id: user_id },
+                      relations: OrmUtils.keysToObject(["roles", ...(opts.member_relations || [])]),
+                  })
+                  .getOne()) ?? undefined);
+        if (!member) {
+            if (!(await Guild.existsBy({ id: guild!.id, features: ArrayContains(["DISCOVERABLE"]) }))) throw new EntityNotFoundError(Member, { guild_id: guild!.id, id: user_id });
+            lurkerRoles = await Role.find({ where: { id: guild!.id, guild_id: guild!.id } });
+        }
+    }
+
+    let recipient_ids = channel?.recipients?.map((x) => x.user_id);
+    if (!recipient_ids?.length) recipient_ids = undefined;
+
+    // TODO: remove guild.roles and convert recipient_ids to recipients
+    const permission = Permissions.finalPermission({
+        user: {
+            id: user_id,
+            roles: (member?.roles ?? lurkerRoles ?? []).map((x) => x.id),
+            communication_disabled_until: member?.communication_disabled_until ?? null,
+            flags: user.flags,
+        },
+        guild: {
+            id: guild?.id || "",
+            owner_id: guild?.owner_id || "",
+            roles: member?.roles ?? lurkerRoles ?? [],
+        },
+        channel: {
+            overwrites: channel?.permission_overwrites,
+            owner_id: channel?.owner_id,
+            recipient_ids,
+        },
+    });
+
+    const quarantined = guild?.owner_id !== user_id && ((member?.flags ?? 0) & Permissions.AUTOMOD_QUARANTINE_MEMBER_FLAGS) !== 0;
+    const mask = lurkerRoles ? Permissions.FLAGS.VIEW_CHANNEL | Permissions.FLAGS.READ_MESSAGE_HISTORY : quarantined ? Permissions.QUARANTINED_MASK.bitfield : undefined;
+    const obj = new Permissions(mask === undefined ? permission : permission.bitfield & mask);
+
+    // pass cache to permission for possible future getPermission calls
+    obj.cache = { guild, member, channel, roles: member?.roles ?? lurkerRoles, user_id, user, mfa_enabled, mask };
+
+    return obj;
+}
+
+export async function getGuildPermissions(guild_id: string, user_ids: string[]) {
+    const result = new Map<string, Permissions>();
+    const guild = user_ids.length ? await Guild.findOne({ where: { id: guild_id }, select: { id: true, owner_id: true, verification_level: true, mfa_level: true } }) : null;
+    if (!guild) return result;
+    for (let i = 0; i < user_ids.length; i += 1000) {
+        const ids = user_ids.slice(i, i + 1000);
+        const [users, members] = await Promise.all([
+            User.find({ where: { id: In(ids) }, select: { id: true, flags: true, mfa_enabled: true, bot: true } }),
+            Member.find({ where: { guild_id, id: In(ids) }, relations: { roles: true } }),
+        ]);
+        const membersById = new Map(members.map((member) => [member.id, member]));
+        await Promise.all(
+            users.map(async (user) => {
+                const permission = await getPermission(user.id, guild, undefined, { user, member: membersById.get(user.id) }).catch(() => undefined);
+                if (permission) result.set(user.id, permission);
+            }),
+        );
+    }
+    return result;
+}

@@ -1,0 +1,233 @@
+import { Request, Response, Router } from "express";
+import { IsNull, Not } from "typeorm";
+import { route } from "@spacebar/api/middlewares";
+import { AuditLogEvents } from "@spacebar/schemas";
+import { ChannelPinsUpdateEvent, Config, DiscordApiErrors, emitEvent, MessageCreateEvent, MessageUpdateEvent } from "@spacebar/util";
+import { AuditLog, Message, ReadState, User } from "@spacebar/database";
+
+const router: Router = Router({ mergeParams: true });
+
+router.post(
+    "/ack",
+    route({
+        permission: "VIEW_CHANNEL",
+        responses: {
+            204: {},
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { channel_id } = req.params as { [key: string]: string };
+        const latest = await Message.findOne({
+            where: { channel_id, pinned_at: Not(IsNull()) },
+            order: { pinned_at: "DESC" },
+            select: { id: true, pinned_at: true },
+        });
+        const readState = (await ReadState.findOne({ where: { user_id: req.user_id, channel_id } })) ?? ReadState.create({ user_id: req.user_id, channel_id });
+        readState.last_pin_timestamp = latest?.pinned_at ?? new Date();
+        await readState.save();
+        res.sendStatus(204);
+    },
+);
+
+// This is the old endpoint
+router.put(
+    "/:message_id",
+    route({
+        permission: "VIEW_CHANNEL",
+        responses: {
+            204: {},
+            403: {},
+            404: {},
+            400: {
+                body: "APIErrorResponse",
+            },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { channel_id, message_id } = req.params as { [key: string]: string };
+
+        const message = await Message.findOneOrFail({
+            where: { id: message_id, channel_id },
+            relations: { author: true },
+        });
+
+        // * in dm channels anyone can pin messages -> only check for guilds
+        if (message.guild_id) req.permission?.hasThrow("MANAGE_MESSAGES");
+
+        const pinned_count = await Message.count({
+            where: { channel: { id: channel_id }, pinned_at: Not(IsNull()) },
+        });
+
+        const { maxPins } = Config.get().limits.channel;
+        if (pinned_count >= maxPins) throw DiscordApiErrors.MAXIMUM_PINS.withParams(maxPins);
+
+        message.pinned_at = new Date();
+
+        const author = await User.getPublicUser(req.user_id);
+
+        const systemPinMessage = Message.create({
+            timestamp: new Date(),
+            type: 6,
+            guild_id: message.guild_id,
+            channel_id: message.channel_id,
+            author,
+            message_reference: {
+                message_id: message.id,
+                channel_id: message.channel_id,
+                guild_id: message.guild_id,
+            },
+            reactions: [],
+            attachments: [],
+            embeds: [],
+            sticker_items: [],
+            edited_timestamp: undefined,
+            mentions: [],
+            mention_channels: [],
+            mention_roles: [],
+            mention_everyone: false,
+        });
+
+        await message.save();
+        const publicMsg = message.toJSON();
+        const publicSystem = systemPinMessage.toJSON();
+        await Promise.all([
+            emitEvent({
+                event: "MESSAGE_UPDATE",
+                channel_id,
+                data: publicMsg,
+            } satisfies MessageUpdateEvent),
+            emitEvent({
+                event: "CHANNEL_PINS_UPDATE",
+                channel_id,
+                data: {
+                    channel_id,
+                    guild_id: message.guild_id,
+                    last_pin_timestamp: undefined,
+                },
+            } satisfies ChannelPinsUpdateEvent),
+            systemPinMessage.save(),
+            ...(message.guild_id
+                ? [
+                      AuditLog.log({
+                          guild_id: message.guild_id,
+                          user_id: req.user_id,
+                          action_type: AuditLogEvents.MESSAGE_PIN,
+                          target_id: message.author_id,
+                          options: { channel_id, message_id },
+                          reason: req.headers["x-audit-log-reason"],
+                      }),
+                  ]
+                : []),
+            emitEvent({
+                event: "MESSAGE_CREATE",
+                channel_id: message.channel_id,
+                data: publicSystem,
+            } satisfies MessageCreateEvent),
+        ]);
+
+        res.sendStatus(204);
+    },
+);
+
+router.delete(
+    "/:message_id",
+    route({
+        permission: "VIEW_CHANNEL",
+        responses: {
+            204: {},
+            403: {},
+            404: {},
+            400: {
+                body: "APIErrorResponse",
+            },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { channel_id, message_id } = req.params as { [key: string]: string };
+
+        const message = await Message.findOneOrFail({
+            where: { id: message_id, channel_id },
+            relations: { author: true },
+        });
+
+        if (message.guild_id) req.permission?.hasThrow("MANAGE_MESSAGES");
+
+        message.pinned_at = null;
+
+        await message.save();
+        const publicMsg2 = message.toJSON();
+        await Promise.all([
+            emitEvent({
+                event: "MESSAGE_UPDATE",
+                channel_id,
+                data: publicMsg2,
+            } satisfies MessageUpdateEvent),
+            emitEvent({
+                event: "CHANNEL_PINS_UPDATE",
+                channel_id,
+                data: {
+                    channel_id,
+                    guild_id: message.guild_id,
+                    last_pin_timestamp: undefined,
+                },
+            } satisfies ChannelPinsUpdateEvent),
+            ...(message.guild_id
+                ? [
+                      AuditLog.log({
+                          guild_id: message.guild_id,
+                          user_id: req.user_id,
+                          action_type: AuditLogEvents.MESSAGE_UNPIN,
+                          target_id: message.author_id,
+                          options: { channel_id, message_id },
+                          reason: req.headers["x-audit-log-reason"],
+                      }),
+                  ]
+                : []),
+        ]);
+
+        res.sendStatus(204);
+    },
+);
+
+router.get(
+    "/",
+    route({
+        permission: ["READ_MESSAGE_HISTORY"],
+        responses: {
+            200: {
+                body: "PublicMessageListResponse",
+            },
+            400: {
+                body: "APIErrorResponse",
+            },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { channel_id } = req.params as { [key: string]: string };
+
+        const pins = await Message.find({
+            where: { channel_id: channel_id, pinned_at: Not(IsNull()) },
+            relations: {
+                author: true,
+                webhook: true,
+                application: true,
+                mentions: true,
+                mention_roles: true,
+                mention_channels: true,
+                sticker_items: true,
+                attachments: true,
+                thread: {
+                    recipients: {
+                        user: true,
+                    },
+                },
+            },
+            order: { pinned_at: "DESC" },
+        });
+        await Message.fillReplies(pins);
+
+        res.send(pins.map((message) => message.toPublicJSON(req.user_id)));
+    },
+);
+
+export default router;

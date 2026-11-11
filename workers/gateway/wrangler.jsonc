@@ -1,0 +1,33 @@
+{
+    "$schema": "../../node_modules/wrangler/config-schema.json",
+    "name": "meowcord-gateway",
+    "main": "src/index.ts",
+    "workers_dev": false,
+    "preview_urls": false,
+    "compatibility_date": "2026-03-20",
+    "compatibility_flags": ["nodejs_compat"],
+    "durable_objects": {
+        "bindings": [{ "name": "GATEWAY_HUB", "class_name": "GatewayHub" }]
+    },
+    "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GatewayHub"] }],
+    "hyperdrive": [
+        {
+            "binding": "HYPERDRIVE",
+            "id": "00000000000000000000000000000000",
+            "localConnectionString": "postgres://postgres:postgres@localhost:5432/meowcord"
+        }
+    ],
+    "alias": {
+        "ws": "../../node_modules/ws/index.js",
+        "@hpke/core": "../../node_modules/@hpke/core/esm/mod.js",
+        "@aws-sdk/client-s3": "./src/unavailable.ts",
+        "bun:sqlite": "./src/unavailable.ts",
+        "bcrypt": "./src/unavailable.ts",
+        "node-unix-socket": "./src/unavailable.ts"
+    },
+    "define": {
+        "__dirname": "\"/bundle\"",
+        "__filename": "\"/bundle/index.js\""
+    },
+    "observability": { "enabled": true }
+}

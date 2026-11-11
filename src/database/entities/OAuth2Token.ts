@@ -1,0 +1,59 @@
+import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
+import { BaseClass } from "./BaseClass";
+import { User } from "./User";
+import { Application } from "./Application";
+import { ApplicationAuthorization } from "./ApplicationAuthorization";
+
+@Entity({
+    name: "oauth2_tokens",
+})
+@Index("IDX_oauth2_token_user_application", ["user_id", "application_id"])
+export class OAuth2Token extends BaseClass {
+    @Column()
+    user_id: string;
+
+    @JoinColumn({ name: "user_id", foreignKeyConstraintName: "FK_oauth2_token_user_id" })
+    @ManyToOne(() => User, { onDelete: "CASCADE" })
+    user: User;
+
+    @Column()
+    application_id: string;
+
+    @JoinColumn({
+        name: "application_id",
+        foreignKeyConstraintName: "FK_oauth2_token_application_id",
+    })
+    @ManyToOne(() => Application, { onDelete: "CASCADE" })
+    application: Application;
+
+    @Column({ nullable: true })
+    authorization_id?: string;
+
+    @JoinColumn({
+        name: "authorization_id",
+        foreignKeyConstraintName: "FK_oauth2_token_authorization_id",
+    })
+    @ManyToOne(() => ApplicationAuthorization, { onDelete: "CASCADE", nullable: true })
+    authorization?: ApplicationAuthorization;
+
+    @Column({ type: "jsonb", default: [] })
+    scopes: string[];
+
+    @Index("IDX_oauth2_token_access_token_hash", { unique: true })
+    @Column()
+    access_token_hash: string;
+
+    @Index("IDX_oauth2_token_refresh_token_hash", { unique: true })
+    @Column({ type: "varchar", nullable: true })
+    refresh_token_hash: string | null;
+
+    @Index("IDX_oauth2_token_code_hash", { unique: true })
+    @Column({ type: "varchar", nullable: true })
+    code_hash: string | null;
+
+    @Column({ type: "timestamp with time zone" })
+    expires_at: Date;
+
+    @Column({ type: "timestamp with time zone", default: () => "now()" })
+    created_at: Date;
+}

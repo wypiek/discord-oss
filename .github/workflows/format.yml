@@ -1,0 +1,35 @@
+name: Format
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: format-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+      - uses: biomejs/setup-biome@v2
+        with:
+          version: 2.5.15
+      - if: github.event.pull_request.head.repo.full_name != github.repository
+        run: biome format . || { echo "::error::This pull request isn't formatted. Run 'bun run format' and push again."; exit 1; }
+      - if: github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          biome format --write .
+          git diff --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "style: format with biome"
+          git push

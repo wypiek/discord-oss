@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>{{TITLE}}</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/developers/portal.css" />
+    <script id="portal-config" type="application/json">
+      {{CONFIG}}
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#view">Skip to content</a>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="/developers/applications" data-link>
+          <img
+            id="brand-icon"
+            class="brand-icon"
+            src="/static/logo.png"
+            alt=""
+            width="32"
+            height="32"
+          />
+          <span>
+            <strong id="brand-name"></strong>
+            <span class="muted">Developer Portal</span>
+          </span>
+        </a>
+        <nav id="nav" aria-label="Developer Portal"></nav>
+        <a class="sidebar-foot" href="/channels/@me">Back to the app</a>
+      </aside>
+      <main id="view" class="view" tabindex="-1"></main>
+    </div>
+    <script src="/developers/portal.js"></script>
+  </body>
+</html>

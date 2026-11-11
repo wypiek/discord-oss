@@ -1,0 +1,15 @@
+diff --git a/src/plugins/noDevtoolsWarning/index.ts b/src/plugins/noDevtoolsWarning/index.ts
+index d5dcad53c..14f2fa63e 100644
+--- a/src/plugins/noDevtoolsWarning/index.ts
++++ b/src/plugins/noDevtoolsWarning/index.ts
+@@ -27,8 +27,8 @@ export default definePlugin({
+     patches: [{
+         find: "setDevtoolsCallbacks",
+         replacement: {
+-            match: /if\(null!=\i&&"0.0.0"===\i\.app\.getVersion\(\)\)/,
+-            replace: "if(true)"
++            match: /if\(null==\i\|\|"0\.0\.0"!==\i\.app\.getVersion\(\)\)/,
++            replace: "if(false)"
+         }
+     }]
+ });

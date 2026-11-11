@@ -1,0 +1,14 @@
+diff --git a/dist/typescript-json-schema.js b/dist/typescript-json-schema.js
+index b311ab8b6d3eee4b57ebbb71010b1384ff8a8677..2b0bad54291be66df833c98248d1c4559f2d8c68 100644
+--- a/dist/typescript-json-schema.js
++++ b/dist/typescript-json-schema.js
+@@ -452,6 +452,9 @@ class JsonSchemaGenerator {
+             else if (flags & ts.TypeFlags.Boolean) {
+                 definition.type = "boolean";
+             }
++            else if (flags & ts.TypeFlags.BigInt) {
++                definition.type = "bigint";
++            }
+             else if (flags & ts.TypeFlags.ESSymbol) {
+                 definition.type = "object";
+             }

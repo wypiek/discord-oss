@@ -1,0 +1,249 @@
+diff --git a/dist/compile/jtd/parse.js b/dist/compile/jtd/parse.js
+index 8fc94fd0eae5349e3513ce79e3f2ba1a3ffbdc6a..abeeda9476594fd1735b7f6ac9d1a175c1309d82 100644
+--- a/dist/compile/jtd/parse.js
++++ b/dist/compile/jtd/parse.js
+@@ -239,6 +239,9 @@ function parseType(cxt) {
+             gen.if(fail, () => parsingError(cxt, (0, codegen_1.str) `invalid timestamp`));
+             break;
+         }
++		case "bigint":
++			parseBigInt(cxt);
++			break
+         case "float32":
+         case "float64":
+             parseNumber(cxt);
+@@ -284,6 +287,15 @@ function parseNumber(cxt, maxDigits) {
+     skipWhitespace(cxt);
+     gen.if((0, codegen_1._) `"-0123456789".indexOf(${jsonSlice(1)}) < 0`, () => jsonSyntaxError(cxt), () => parseWith(cxt, parseJson_1.parseJsonNumber, maxDigits));
+ }
++function parseBigInt(cxt, maxDigits) {
++  const {gen} = cxt
++  skipWhitespace(cxt)
++  gen.if(
++    _`"-0123456789".indexOf(${jsonSlice(1)}) < 0`,
++    () => jsonSyntaxError(cxt),
++    () => parseWith(cxt, parseJson_1.parseJsonBigInt, maxDigits)
++  )
++}
+ function parseBooleanToken(bool, fail) {
+     return (cxt) => {
+         const { gen, data } = cxt;
+diff --git a/dist/compile/rules.js b/dist/compile/rules.js
+index 82a591ff4dbdd8cec80b533c6df9854403162f29..1ebd8fe071bdd8a776424f4c00e2f78e7ea8f83d 100644
+--- a/dist/compile/rules.js
++++ b/dist/compile/rules.js
+@@ -1,7 +1,7 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.getRules = exports.isJSONType = void 0;
+-const _jsonTypes = ["string", "number", "integer", "boolean", "null", "object", "array"];
++const _jsonTypes = ["string", "number", "integer", "boolean", "null", "object", "array","bigint"];
+ const jsonTypes = new Set(_jsonTypes);
+ function isJSONType(x) {
+     return typeof x == "string" && jsonTypes.has(x);
+@@ -13,10 +13,11 @@ function getRules() {
+         string: { type: "string", rules: [] },
+         array: { type: "array", rules: [] },
+         object: { type: "object", rules: [] },
++		bigint: {type: "bigint", rules: []}
+     };
+     return {
+-        types: { ...groups, integer: true, boolean: true, null: true },
+-        rules: [{ rules: [] }, groups.number, groups.string, groups.array, groups.object],
++        types: { ...groups, integer: true, boolean: true, null: true, bigint: true },
++        rules: [{ rules: [] }, groups.number, groups.string, groups.array, groups.object, groups.bigint],
+         post: { rules: [] },
+         all: {},
+         keywords: {},
+diff --git a/dist/compile/validate/dataType.js b/dist/compile/validate/dataType.js
+index 6d03e0dc0ee4b009c075f037940dbe7b41004c90..a35a428b9ad736557c86cdfe5d7d1854a8e36d22 100644
+--- a/dist/compile/validate/dataType.js
++++ b/dist/compile/validate/dataType.js
+@@ -53,7 +53,7 @@ function coerceAndCheckDataType(it, types) {
+     return checkTypes;
+ }
+ exports.coerceAndCheckDataType = coerceAndCheckDataType;
+-const COERCIBLE = new Set(["string", "number", "integer", "boolean", "null"]);
++const COERCIBLE = new Set(["string", "number", "integer", "boolean", "null","bigint"]);
+ function coerceToTypes(types, coerceTypes) {
+     return coerceTypes
+         ? types.filter((t) => COERCIBLE.has(t) || (coerceTypes === "array" && t === "array"))
+@@ -84,6 +84,14 @@ function coerceData(it, types, coerceTo) {
+     });
+     function coerceSpecificType(t) {
+         switch (t) {
++			case "bigint":
++				gen
++				.elseIf(
++					codegen_1._`${dataType} == "boolean" || ${data} === null
++					|| (${dataType} == "string" && ${data} && ${data} == BigInt(${data}))`
++				)
++				.assign(coerced, codegen_1._`BigInt(${data})`)
++				return
+             case "string":
+                 gen
+                     .elseIf((0, codegen_1._) `${dataType} == "number" || ${dataType} == "boolean"`)
+@@ -144,6 +152,9 @@ function checkDataType(dataType, data, strictNums, correct = DataType.Correct) {
+         case "number":
+             cond = numCond();
+             break;
++		 case "bigint":
++			cond = codegen_1._`typeof ${data} == "bigint" && isFinite(${data})`
++			break
+         default:
+             return (0, codegen_1._) `typeof ${data} ${EQ} ${dataType}`;
+     }
+diff --git a/dist/refs/json-schema-2019-09/meta/validation.json b/dist/refs/json-schema-2019-09/meta/validation.json
+index 7027a1279a014a74c170a2558100d2ca37eecac0..25679c87a02dcdf661c571f9b0806c7860568da8 100644
+--- a/dist/refs/json-schema-2019-09/meta/validation.json
++++ b/dist/refs/json-schema-2019-09/meta/validation.json
+@@ -78,7 +78,7 @@
+       "default": 0
+     },
+     "simpleTypes": {
+-      "enum": ["array", "boolean", "integer", "null", "number", "object", "string"]
++      "enum": ["array", "boolean", "integer", "null", "number", "object", "string","bigint"]
+     },
+     "stringArray": {
+       "type": "array",
+diff --git a/dist/refs/json-schema-2020-12/meta/validation.json b/dist/refs/json-schema-2020-12/meta/validation.json
+index e0ae13d9d2063403c60e88282701b4b8f6ccd5f5..57c90360fabff574b4f9d47bc425714224d6ab37 100644
+--- a/dist/refs/json-schema-2020-12/meta/validation.json
++++ b/dist/refs/json-schema-2020-12/meta/validation.json
+@@ -78,7 +78,7 @@
+       "default": 0
+     },
+     "simpleTypes": {
+-      "enum": ["array", "boolean", "integer", "null", "number", "object", "string"]
++      "enum": ["array", "boolean", "integer", "null", "number", "object", "string","bigint"]
+     },
+     "stringArray": {
+       "type": "array",
+diff --git a/dist/refs/json-schema-draft-06.json b/dist/refs/json-schema-draft-06.json
+index 5410064ba8df9315d61a34a66245311f1d18db8e..774435b2222eba37e71f62a5a5f8f894693db998 100644
+--- a/dist/refs/json-schema-draft-06.json
++++ b/dist/refs/json-schema-draft-06.json
+@@ -16,7 +16,7 @@
+       "allOf": [{"$ref": "#/definitions/nonNegativeInteger"}, {"default": 0}]
+     },
+     "simpleTypes": {
+-      "enum": ["array", "boolean", "integer", "null", "number", "object", "string"]
++      "enum": ["array", "boolean", "integer", "null", "number", "object", "string","bigint"]
+     },
+     "stringArray": {
+       "type": "array",
+diff --git a/dist/refs/json-schema-draft-07.json b/dist/refs/json-schema-draft-07.json
+index 6a74851043623c67cbe2e1cd206da447aff752c3..fc6dd7db99576b8a212c595abca67e1fb8a87136 100644
+--- a/dist/refs/json-schema-draft-07.json
++++ b/dist/refs/json-schema-draft-07.json
+@@ -16,7 +16,7 @@
+       "allOf": [{"$ref": "#/definitions/nonNegativeInteger"}, {"default": 0}]
+     },
+     "simpleTypes": {
+-      "enum": ["array", "boolean", "integer", "null", "number", "object", "string"]
++      "enum": ["array", "boolean", "integer", "null", "number", "object", "string","bigint"]
+     },
+     "stringArray": {
+       "type": "array",
+diff --git a/dist/refs/jtd-schema.js b/dist/refs/jtd-schema.js
+index 1ee940afb219a10c546c549416d0fee429e38b35..11488874cae58b336e8e90c7772466eacf9226e0 100644
+--- a/dist/refs/jtd-schema.js
++++ b/dist/refs/jtd-schema.js
+@@ -38,6 +38,7 @@ const typeForm = (root) => ({
+                 "uint16",
+                 "int32",
+                 "uint32",
++                "bigint",
+             ],
+         },
+     },
+diff --git a/dist/runtime/parseJson.js b/dist/runtime/parseJson.js
+index eaa28381821023729c2517babf0d84cb75685470..02ad7080ebae39604d098d1ed6dafe7d18d63b8e 100644
+--- a/dist/runtime/parseJson.js
++++ b/dist/runtime/parseJson.js
+@@ -97,6 +97,71 @@ exports.parseJsonNumber = parseJsonNumber;
+ parseJsonNumber.message = undefined;
+ parseJsonNumber.position = 0;
+ parseJsonNumber.code = 'require("ajv/dist/runtime/parseJson").parseJsonNumber';
++
++function parseJsonBigInt(s, pos, maxDigits) {
++    let numStr = "";
++    let c;
++    parseJsonBigInt.message = undefined;
++    if (s[pos] === "-") {
++        numStr += "-";
++        pos++;
++    }
++    if (s[pos] === "0") {
++        numStr += "0";
++        pos++;
++    }
++    else {
++        if (!parseDigits(maxDigits)) {
++            errorMessage();
++            return undefined;
++        }
++    }
++    if (maxDigits) {
++        parseJsonBigInt.position = pos;
++        return BigInt(numStr);
++    }
++    if (s[pos] === ".") {
++        numStr += ".";
++        pos++;
++        if (!parseDigits()) {
++            errorMessage();
++            return undefined;
++        }
++    }
++    if (((c = s[pos]), c === "e" || c === "E")) {
++        numStr += "e";
++        pos++;
++        if (((c = s[pos]), c === "+" || c === "-")) {
++            numStr += c;
++            pos++;
++        }
++        if (!parseDigits()) {
++            errorMessage();
++            return undefined;
++        }
++    }
++    parseJsonBigInt.position = pos;
++    return BigInt(numStr);
++    function parseDigits(maxLen) {
++        let digit = false;
++        while (((c = s[pos]), c >= "0" && c <= "9" && (maxLen === undefined || maxLen-- > 0))) {
++            digit = true;
++            numStr += c;
++            pos++;
++        }
++        return digit;
++    }
++    function errorMessage() {
++        parseJsonBigInt.position = pos;
++        parseJsonBigInt.message = pos < s.length ? `unexpected token ${s[pos]}` : "unexpected end";
++    }
++}
++exports.parseJsonBigInt = parseJsonBigInt;
++parseJsonBigInt.message = undefined;
++parseJsonBigInt.position = 0;
++parseJsonBigInt.code = 'require("ajv/dist/runtime/parseJson").parseJsonBigInt';
++
++
+ const escapedChars = {
+     b: "\b",
+     f: "\f",
+diff --git a/dist/vocabularies/jtd/type.js b/dist/vocabularies/jtd/type.js
+index 17a0b510792f9429beb3a2bca7d9c77835e1baa1..bc54aadf8261c131324c9fee27571c1b0e1c9e96 100644
+--- a/dist/vocabularies/jtd/type.js
++++ b/dist/vocabularies/jtd/type.js
+@@ -45,6 +45,9 @@ const def = {
+                 cond = timestampCode(cxt);
+                 break;
+             }
++			case "bigint":
++				cond = codegen_1._`typeof ${data} == "bigint" || typeof ${data} == "string"`
++				break
+             case "float32":
+             case "float64":
+                 cond = (0, codegen_1._) `typeof ${data} == "number"`;

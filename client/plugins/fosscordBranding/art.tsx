@@ -1,0 +1,46 @@
+import { React } from "@webpack/common";
+
+export const MEOWCORD_HEAD =
+    "M2.5 9.5C2.5 7.5 3 4.5 4.2 3.2C4.8 2.6 5.6 2.7 6.1 3.2L8.6 5.8C10.8 5.3 13.2 5.3 15.4 5.8L17.9 3.2C18.4 2.7 19.2 2.6 19.8 3.2C21 4.5 21.5 7.5 21.5 9.5L21.5 13.5C21.5 18.2 17.5 20.8 12 20.8C6.5 20.8 2.5 18.2 2.5 13.5ZM6.5 13a1.9 2.5 0 1 0 3.8 0a1.9 2.5 0 1 0 -3.8 0ZM13.7 13a1.9 2.5 0 1 0 3.8 0a1.9 2.5 0 1 0 -3.8 0Z";
+export const MEOWCORD_LEFT =
+    "M3.779 14.08L0.879 13.08A0.55 0.55 0 0 0 0.521 14.12L3.421 15.12A0.55 0.55 0 0 0 3.779 14.08ZM3.444 16.073L0.744 16.873A0.55 0.55 0 0 0 1.056 17.927L3.756 17.127A0.55 0.55 0 0 0 3.444 16.073Z";
+export const MEOWCORD_RIGHT =
+    "M20.579 15.12L23.479 14.12A0.55 0.55 0 0 0 23.121 13.08L20.221 14.08A0.55 0.55 0 0 0 20.579 15.12ZM20.244 17.127L22.944 17.927A0.55 0.55 0 0 0 23.256 16.873L20.556 16.073A0.55 0.55 0 0 0 20.244 17.127Z";
+export const MEOWCORD_SPINNER_CSS =
+    "@keyframes meowcord-spinner-flip{0%{transform:perspective(500px) translateY(0) rotateY(0) scale(1)}18%{transform:perspective(500px) translateY(2px) rotateY(0) scale(1.12,.86)}50%{transform:perspective(500px) translateY(-18px) rotateY(180deg) scale(.96,1.06)}78%{transform:perspective(500px) translateY(0) rotateY(360deg) scale(1.1,.9)}90%,100%{transform:perspective(500px) translateY(0) rotateY(360deg) scale(1)}}@keyframes meowcord-spinner-flare-l{0%,22%,80%,100%{transform:rotate(0)}50%{transform:rotate(-28deg)}}@keyframes meowcord-spinner-flare-r{0%,22%,80%,100%{transform:rotate(0)}50%{transform:rotate(28deg)}}.meowcord-spinner>svg{overflow:visible;animation:meowcord-spinner-flip 1.1s cubic-bezier(.5,0,.3,1) infinite;transform-origin:50% 75%}.meowcord-spinner .wl,.meowcord-spinner .wr{transform-box:fill-box}.meowcord-spinner .wl{transform-origin:100% 50%;animation:meowcord-spinner-flare-l 1.1s ease-in-out infinite}.meowcord-spinner .wr{transform-origin:0% 50%;animation:meowcord-spinner-flare-r 1.1s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.meowcord-spinner>svg,.meowcord-spinner .wl,.meowcord-spinner .wr{animation:none}}";
+
+export const MeowcordPaths = ({ fill = "currentColor", className }: { fill?: string; className?: string }) => (
+    <g className={className} fill={fill}>
+        <path fillRule="evenodd" d={MEOWCORD_HEAD} />
+        <path d={MEOWCORD_LEFT + MEOWCORD_RIGHT} />
+    </g>
+);
+
+export function MeowcordSpinner({ className, onReady, setRef }: { className?: string; onReady?: () => void; setRef?: (element: HTMLElement | null) => void }) {
+    React.useEffect(() => void onReady?.(), []);
+    return (
+        <div
+            ref={setRef}
+            className={`meowcord-spinner ${className ?? ""}`}
+            role="progressbar"
+            aria-label="Loading"
+            data-testid="app-spinner"
+            style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 200,
+                height: 200,
+                margin: "0 auto",
+                color: "var(--text-strong,var(--header-primary,black))",
+            }}
+        >
+            <style>{MEOWCORD_SPINNER_CSS}</style>
+            <svg width="80" height="80" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" fillRule="evenodd" d={MEOWCORD_HEAD} />
+                <path className="wl" fill="currentColor" d={MEOWCORD_LEFT} />
+                <path className="wr" fill="currentColor" d={MEOWCORD_RIGHT} />
+            </svg>
+        </div>
+    );
+}

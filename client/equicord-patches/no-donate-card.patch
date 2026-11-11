@@ -1,0 +1,60 @@
+diff --git a/src/components/settings/tabs/vencord/index.tsx b/src/components/settings/tabs/vencord/index.tsx
+index f834856..55180f1 100644
+--- a/src/components/settings/tabs/vencord/index.tsx
++++ b/src/components/settings/tabs/vencord/index.tsx
+@@ -165,55 +165,6 @@ function EquicordSettings() {
+ 
+     return (
+         <SettingsTab>
+-            {(isEquicordDonor(user?.id) || isVencordDonor(user?.id)) ? (
+-                <SpecialCard
+-                    title="Donations"
+-                    subtitle="Thank you for donating!"
+-                    description={
+-                        isEquicordDonor(user?.id) && isVencordDonor(user?.id)
+-                            ? "All Vencord users can see your Vencord donor badge, and Equicord users can see your Equicord donor badge. To change your Vencord donor badge, contact @vending.machine. For your Equicord donor badge, make a ticket in Equicord's server."
+-                            : isVencordDonor(user?.id)
+-                                ? "All Vencord users can see your badge! You can manage your perks by messaging @vending.machine."
+-                                : "All Equicord users can see your badge! You can manage your perks by making a ticket in Equicord's server."
+-                    }
+-                    cardImage={VENNIE_DONATOR_IMAGE}
+-                    backgroundImage={DONOR_BACKGROUND_IMAGE}
+-                    backgroundColor="#ED87A9"
+-                >
+-                    <DonateButtonComponent donated={true} />
+-                </SpecialCard>
+-            ) : (
+-                <SpecialCard
+-                    title="Support the Project"
+-                    description="Please consider supporting the development of Equicord by donating!"
+-                    cardImage={donateImage}
+-                    backgroundImage={DONOR_BACKGROUND_IMAGE}
+-                    backgroundColor="#c3a3ce"
+-                >
+-                    <DonateButtonComponent />
+-                </SpecialCard>
+-            )}
+-            {isAnyPluginDev(user?.id) && (
+-                <SpecialCard
+-                    title="Contributions"
+-                    subtitle="Thank you for contributing!"
+-                    description="Since you've contributed to Equicord you now have a cool new badge!"
+-                    cardImage={COZY_CONTRIB_IMAGE}
+-                    backgroundImage={CONTRIB_BACKGROUND_IMAGE}
+-                    backgroundColor="#EDCC87"
+-                >
+-                    <Button
+-                        variant="none"
+-                        size="medium"
+-                        type="button"
+-                        onClick={() => openContributorModal(user)}
+-                        className="vc-contrib-button"
+-                    >
+-                        <GithubIcon aria-hidden fill={"#000000"} className={"vc-contrib-github"} />
+-                        See what you've contributed to
+-                    </Button>
+-                </SpecialCard>
+-            )}
+ 
+             <Heading className={Margins.top16}>Quick Actions</Heading>
+             <Paragraph className={Margins.bottom16}>

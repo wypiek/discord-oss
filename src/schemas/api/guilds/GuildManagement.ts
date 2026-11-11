@@ -1,0 +1,262 @@
+import { GuildIdList } from "../../uncategorised/GuildCappedLists";
+
+export interface GuildProfileTrait {
+    /**
+     * @maxLength 40
+     */
+    label: string;
+    position: number;
+    /**
+     * @maxLength 20
+     */
+    emoji_id?: string | null;
+    /**
+     * @maxLength 32
+     */
+    emoji_name?: string | null;
+    emoji_animated?: boolean | null;
+}
+
+export interface GuildProfileSettings {
+    tag?: string | null;
+    badge?: number | null;
+    badge_color_primary?: string | null;
+    badge_color_secondary?: string | null;
+    badge_hash?: string | null;
+    traits?: GuildProfileTrait[];
+    brand_color_primary?: string | null;
+    visibility?: number;
+    custom_banner_hash?: string | null;
+    game_application_ids?: string[];
+}
+
+export interface GuildThemeCustomSettings {
+    /**
+     * @maxItems 10
+     * @items.type string
+     * @items.pattern ^#[0-9a-fA-F]{6}$
+     */
+    colors: string[];
+    /**
+     * @maxItems 10
+     * @items.type number
+     * @items.minimum 0
+     * @items.maximum 100
+     */
+    gradient_color_stops: number[];
+    /**
+     * @minimum 0
+     * @maximum 360
+     */
+    gradient_angle?: number;
+    /**
+     * @minimum 0
+     * @maximum 100
+     */
+    base_mix?: number;
+}
+
+export interface GuildTheme {
+    preset_id: number | null;
+    custom_user_theme_settings: GuildThemeCustomSettings | null;
+    enabled: boolean;
+}
+
+export interface GuildThemeModifySchema {
+    /**
+     * @minimum 0
+     * @maximum 2147483647
+     */
+    preset_id?: number | null;
+    custom_user_theme_settings?: GuildThemeCustomSettings | null;
+    enabled?: boolean;
+}
+
+export interface GuildProfileModifySchema {
+    /**
+     * @minLength 2
+     * @maxLength 100
+     */
+    name?: string;
+    /**
+     * @maxLength 300
+     */
+    description?: string | null;
+    icon?: string | null;
+    custom_banner?: string | null;
+    visibility?: number;
+    /**
+     * @maxLength 16
+     */
+    brand_color_primary?: string | null;
+    /**
+     * @maxItems 5
+     */
+    traits?: (GuildProfileTrait | null)[];
+    /**
+     * @maxItems 20
+     */
+    game_application_ids?: GuildIdList;
+    /**
+     * @maxLength 32
+     */
+    tag?: string | null;
+    badge?: number | null;
+    /**
+     * @maxLength 16
+     */
+    badge_color_primary?: string | null;
+    /**
+     * @maxLength 16
+     */
+    badge_color_secondary?: string | null;
+}
+
+export interface GuildEmojiReference {
+    id?: string | null;
+    name?: string | null;
+    animated?: boolean | null;
+}
+
+export interface GuildHomeSettings {
+    guild_id?: string;
+    enabled: boolean;
+    welcome_message: { author_ids: string[]; message: string };
+    new_member_actions: {
+        channel_id: string;
+        action_type: number;
+        title: string;
+        description: string;
+        emoji?: GuildEmojiReference | null;
+        icon?: string | null;
+    }[];
+    resource_channels: {
+        channel_id: string;
+        title: string;
+        description?: string;
+        emoji?: GuildEmojiReference | null;
+        icon?: string | null;
+    }[];
+}
+
+export interface GuildOnboardingPromptOption {
+    id: string;
+    channel_ids: string[];
+    role_ids: string[];
+    emoji?: GuildEmojiReference | null;
+    emoji_id?: string | null;
+    emoji_name?: string | null;
+    emoji_animated?: boolean | null;
+    title: string;
+    description?: string | null;
+}
+
+export interface GuildOnboardingPrompt {
+    id: string;
+    type: number;
+    options: GuildOnboardingPromptOption[];
+    title: string;
+    single_select: boolean;
+    required: boolean;
+    in_onboarding: boolean;
+    disabled?: boolean;
+}
+
+export interface GuildOnboarding {
+    guild_id?: string;
+    prompts: GuildOnboardingPrompt[];
+    default_channel_ids: string[];
+    enabled: boolean;
+    mode: number;
+    below_requirements?: boolean;
+    responses?: string[];
+    onboarding_prompts_seen?: Record<string, number>;
+    onboarding_responses_seen?: Record<string, number>;
+}
+
+/**
+ * @maxItems 10
+ */
+export type GuildMemberVerificationAutomations = unknown[];
+
+/**
+ * @maxItems 16
+ * @items.type string
+ * @items.maxLength 300
+ */
+export type GuildMemberVerificationRules = string[];
+
+/**
+ * @maxItems 8
+ * @items.type string
+ * @items.maxLength 150
+ */
+export type GuildMemberVerificationChoices = string[];
+
+export interface GuildMemberVerificationFormField {
+    /**
+     * @maxLength 32
+     */
+    field_type: string;
+    /**
+     * @maxLength 300
+     */
+    label: string;
+    /**
+     * @maxLength 300
+     */
+    description?: string | null;
+    automations?: GuildMemberVerificationAutomations | null;
+    required: boolean;
+    values?: GuildMemberVerificationRules | null;
+    choices?: GuildMemberVerificationChoices | null;
+    response?: unknown;
+    /**
+     * @maxLength 300
+     */
+    placeholder?: string | null;
+}
+
+export interface GuildMemberVerification {
+    version: string;
+    form_fields: GuildMemberVerificationFormField[];
+    description: string | null;
+}
+
+export interface GuildMemberVerificationModifySchema {
+    enabled?: boolean;
+    /**
+     * @maxItems 5
+     */
+    form_fields?: GuildMemberVerificationFormField[];
+    /**
+     * @maxLength 300
+     */
+    description?: string | null;
+    bulk_action?: "APPROVED" | "REJECTED";
+}
+
+export interface GuildJoinRequestActionSchema {
+    action: "APPROVED" | "REJECTED";
+    /**
+     * @maxLength 160
+     */
+    rejection_reason?: string | null;
+}
+
+export interface GuildJoinRequestBulkActionSchema {
+    action: "APPROVED" | "REJECTED";
+}
+
+export interface GuildDiscoveryMetadata {
+    primary_category_id: number;
+    keywords: string[] | null;
+    emoji_discoverability_enabled: boolean;
+    partner_actioned_timestamp: string | null;
+    partner_application_timestamp: string | null;
+    is_published: boolean;
+    reasons_to_join: { reason: string; emoji_id?: string | null; emoji_name?: string | null }[];
+    social_links: string[] | null;
+    about: string | null;
+    category_ids?: number[];
+}

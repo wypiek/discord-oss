@@ -1,0 +1,172 @@
+import { Request, Response, Router } from "express";
+import { DiscordApiErrors } from "@spacebar/util";
+import { route } from "@spacebar/api/middlewares";
+import { Guild, Template } from "@spacebar/database";
+import { TemplateCreateSchema, TemplateModifySchema } from "@spacebar/schemas";
+
+const router: Router = Router({ mergeParams: true });
+
+const loadGuild = (guild_id: string) =>
+    Guild.findOneOrFail({
+        where: { id: guild_id },
+        select: {
+            id: true,
+            name: true,
+            description: true,
+            region: true,
+            verification_level: true,
+            default_message_notifications: true,
+            explicit_content_filter: true,
+            preferred_locale: true,
+            afk_timeout: true,
+            afk_channel_id: true,
+            system_channel_id: true,
+            system_channel_flags: true,
+            channel_ordering: true,
+        },
+        relations: { roles: true, channels: { available_tags: true } },
+    });
+
+const withDirty = async (template: Template) => {
+    const serialized = Template.serializeGuild(await loadGuild(template.source_guild_id));
+    const canonical = (value: unknown) => JSON.stringify(value, (_, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort()) : x));
+    return {
+        ...template.toJSON(),
+        is_dirty: canonical(serialized) !== canonical(template.serialized_source_guild),
+    };
+};
+
+const findTemplate = (code: string, guild_id: string) =>
+    Template.findOneOrFail({
+        where: { code, source_guild_id: guild_id },
+        relations: { creator: true },
+    });
+
+router.get(
+    "/",
+    route({
+        permission: "MANAGE_GUILD",
+        responses: {
+            200: {
+                body: "APITemplateArray",
+            },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { guild_id } = req.params as { [key: string]: string };
+
+        const templates = await Template.find({
+            where: { source_guild_id: guild_id },
+            relations: { creator: true },
+        });
+
+        return res.json(await Promise.all(templates.map(withDirty)));
+    },
+);
+
+router.post(
+    "/",
+    route({
+        requestBody: "TemplateCreateSchema",
+        permission: "MANAGE_GUILD",
+        responses: {
+            200: {
+                body: "Template",
+            },
+            400: {
+                body: "APIErrorResponse",
+            },
+            403: {
+                body: "APIErrorResponse",
+            },
+            404: {
+                body: "APIErrorResponse",
+            },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { guild_id } = req.params as { [key: string]: string };
+        const { name, description } = req.body as TemplateCreateSchema;
+
+        if (await Template.exists({ where: { source_guild_id: guild_id } })) throw DiscordApiErrors.GUILD_ALREADY_HAS_TEMPLATE;
+
+        const template = await Template.create({
+            name,
+            description,
+            code: Template.generateCode(),
+            usage_count: 0,
+            creator_id: req.user_id,
+            created_at: new Date(),
+            updated_at: new Date(),
+            source_guild_id: guild_id,
+            serialized_source_guild: Template.serializeGuild(await loadGuild(guild_id)),
+        }).save();
+
+        res.json({ ...(await findTemplate(template.code, guild_id)).toJSON(), is_dirty: false });
+    },
+);
+
+router.delete(
+    "/:code",
+    route({
+        permission: "MANAGE_GUILD",
+        responses: {
+            200: { body: "Template" },
+            403: { body: "APIErrorResponse" },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { code, guild_id } = req.params as { [key: string]: string };
+        const template = await findTemplate(code, guild_id);
+        await Template.delete({ code, source_guild_id: guild_id });
+
+        res.json(template.toJSON());
+    },
+);
+
+router.put(
+    "/:code",
+    route({
+        permission: "MANAGE_GUILD",
+        responses: {
+            200: { body: "Template" },
+            403: { body: "APIErrorResponse" },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { code, guild_id } = req.params as { [key: string]: string };
+        const template = await findTemplate(code, guild_id);
+
+        template.serialized_source_guild = Template.serializeGuild(await loadGuild(guild_id));
+        template.updated_at = new Date();
+        await template.save();
+
+        res.json({ ...template.toJSON(), is_dirty: false });
+    },
+);
+
+router.patch(
+    "/:code",
+    route({
+        requestBody: "TemplateModifySchema",
+        permission: "MANAGE_GUILD",
+        responses: {
+            200: { body: "Template" },
+            403: { body: "APIErrorResponse" },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { code, guild_id } = req.params as { [key: string]: string };
+        const { name, description } = req.body as TemplateModifySchema;
+        const template = await findTemplate(code, guild_id);
+
+        if (name !== undefined) template.name = name;
+        if (description !== undefined) template.description = description;
+        template.updated_at = new Date();
+        await template.save();
+
+        res.json(await withDirty(template));
+    },
+);
+
+export default router;

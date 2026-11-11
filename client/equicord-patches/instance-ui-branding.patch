@@ -1,0 +1,181 @@
+diff --git a/src/components/settings/tabs/plugins/index.tsx b/src/components/settings/tabs/plugins/index.tsx
+--- a/src/components/settings/tabs/plugins/index.tsx
++++ b/src/components/settings/tabs/plugins/index.tsx
+@@ -16,6 +16,7 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+ 
++import { brand } from "@utils/types";
+ import "./styles.css";
+ 
+ import * as DataStore from "@api/DataStore";
+@@ -107,11 +108,11 @@
+ }
+ 
+ export const ExcludedReasons: Record<PluginTarget, string> = {
+-    desktop: "Discord Desktop app or Vesktop/Equibop",
+-    discordDesktop: "Discord Desktop app",
++    desktop: brand("Discord Desktop app or Vesktop/Equibop"),
++    discordDesktop: brand("Discord Desktop app"),
+     vesktop: "Vesktop/Equibop apps",
+     equibop: "Vesktop/Equibop apps",
+-    web: "Vesktop/Equibop apps & Discord web",
++    web: brand("Vesktop/Equibop apps & Discord web"),
+     dev: "Developer version of Equicord",
+     browser: "Web Browser version of Equicord"
+ };
+diff --git a/src/components/settings/tabs/vencord/NotificationSettings.tsx b/src/components/settings/tabs/vencord/NotificationSettings.tsx
+--- a/src/components/settings/tabs/vencord/NotificationSettings.tsx
++++ b/src/components/settings/tabs/vencord/NotificationSettings.tsx
+@@ -4,6 +4,7 @@
+  * SPDX-License-Identifier: GPL-3.0-or-later
+  */
+ 
++import { brand } from "@utils/types";
+ import { openNotificationLogModal } from "@api/Notifications/notificationLog";
+ import { useSettings } from "@api/Settings";
+ import { Button } from "@components/Button";
+@@ -21,9 +22,7 @@
+         <section className={Margins.top16}>
+             <Heading>Notifications</Heading>
+             <Paragraph className={Margins.bottom8}>
+-                Settings for Notifications sent by Vencord.
+-                This does NOT include Discord notifications (messages, etc)
+-            </Paragraph>
++                {brand("Settings for Notifications sent by Vencord. This does NOT include Discord notifications (messages, etc)")}</Paragraph>
+             <Flex>
+                 <Button onClick={openNotificationSettingsModal}>
+                     Notification Settings
+@@ -70,7 +69,7 @@
+             <Select
+                 placeholder="Notification Style"
+                 options={[
+-                    { label: "Only use Desktop notifications when Discord is not focused", value: "not-focused", default: true },
++                    { label: brand("Only use Desktop notifications when Discord is not focused"), value: "not-focused", default: true },
+                     { label: "Always use Desktop notifications", value: "always" },
+                     { label: "Always use Equicord notifications", value: "never" },
+                 ] satisfies Array<{ value: typeof settings["useNative"]; } & Record<string, any>>}
+diff --git a/src/components/settings/tabs/vencord/index.tsx b/src/components/settings/tabs/vencord/index.tsx
+--- a/src/components/settings/tabs/vencord/index.tsx
++++ b/src/components/settings/tabs/vencord/index.tsx
+@@ -4,6 +4,7 @@
+  * SPDX-License-Identifier: GPL-3.0-or-later
+  */
+ 
++import { brand } from "@utils/types";
+ import "./VencordTab.css";
+ 
+ import { openNotificationLogModal } from "@api/Notifications/notificationLog";
+@@ -72,15 +73,15 @@
+             }
+             : {
+                 key: "nativeTitleBar",
+-                title: "Use Windows' native title bar instead of Discord's custom one",
+-                description: "Replace Discord's custom title bar with the standard Windows title bar. This may improve compatibility with some window management tools.",
++                title: brand("Use Windows' native title bar instead of Discord's custom one"),
++                description: brand("Replace Discord's custom title bar with the standard Windows title bar. This may improve compatibility with some window management tools."),
+                 restartRequired: true,
+             }
+         ),
+         !IS_WEB && {
+             key: "transparent",
+             title: "Enable Window Transparency",
+-            description: "Make the Discord window transparent. A theme that supports transparency is required or this will do nothing.",
++            description: brand("Make the Discord window transparent. A theme that supports transparency is required or this will do nothing."),
+             restartRequired: true,
+             warning: IS_WINDOWS
+                 ? "This will stop the window from being resizable and prevents you from snapping the window to screen edges."
+@@ -89,13 +90,13 @@
+         IS_DISCORD_DESKTOP && {
+             key: "disableMinSize",
+             title: "Disable Minimum Window Size",
+-            description: "Allows you to resize the window to any size, even smaller than Discord's minimum size",
++            description: brand("Allows you to resize the window to any size, even smaller than Discord's minimum size"),
+             restartRequired: true
+         },
+         !IS_WEB && IS_WINDOWS && {
+             key: "winCtrlQ",
+-            title: "Register Ctrl+Q as shortcut to close Discord",
+-            description: "Add Ctrl+Q as a keyboard shortcut to close Discord. This provides an alternative to Alt+F4 for quickly closing the application.",
++            title: brand("Register Ctrl+Q as shortcut to close Discord"),
++            description: brand("Add Ctrl+Q as a keyboard shortcut to close Discord. This provides an alternative to Alt+F4 for quickly closing the application."),
+             restartRequired: true,
+         },
+         !IS_WEB && {
+@@ -234,7 +235,7 @@
+                 {!IS_WEB && (
+                     <QuickAction
+                         Icon={RestartIcon}
+-                        text="Relaunch Discord"
++                        text={brand("Relaunch Discord")}
+                         action={relaunch}
+                     />
+                 )}
+@@ -260,10 +261,9 @@
+ 
+             <Heading className={Margins.top20}>Client Settings</Heading>
+             <Paragraph className={Margins.bottom16}>
+-                Configure how Equicord behaves and integrates with Discord. These settings affect the Discord client's appearance and behavior.
+-            </Paragraph>
++                {brand("Configure how Equicord behaves and integrates with Discord. These settings affect the Discord client's appearance and behavior.")}</Paragraph>
+             <Notice.Info className={Margins.bottom20} style={{ width: "100%" }}>
+-                You can customize where this settings section appears in Discord's settings menu by configuring the{" "}
++                {brand("You can customize where this settings section appears in Discord's settings menu by configuring the")}{" "}
+                 <a
+                     role="button"
+                     onClick={() => openPluginModal(SettingsPlugin)}
+diff --git a/src/plugins/crashHandler/index.ts b/src/plugins/crashHandler/index.ts
+--- a/src/plugins/crashHandler/index.ts
++++ b/src/plugins/crashHandler/index.ts
+@@ -16,6 +16,7 @@
+  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+ 
++import { brand } from "@utils/types";
+ import { DataStore } from "@api/index";
+ import { showNotification } from "@api/Notifications";
+ import { definePluginSettings } from "@api/Settings";
+@@ -43,12 +44,12 @@
+ const settings = definePluginSettings({
+     attemptToPreventCrashes: {
+         type: OptionType.BOOLEAN,
+-        description: "Whether to attempt to prevent Discord crashes.",
++        description: brand("Whether to attempt to prevent Discord crashes."),
+         default: true
+     },
+     attemptToNavigateToHome: {
+         type: OptionType.BOOLEAN,
+-        description: "Whether to attempt to navigate to the home when preventing Discord crashes.",
++        description: brand("Whether to attempt to navigate to the home when preventing Discord crashes."),
+         default: false
+     }
+ });
+@@ -99,8 +100,8 @@
+                     try {
+                         showNotification({
+                             color: "#eed202",
+-                            title: "Discord has crashed!",
+-                            body: "Awn :( Discord has crashed two times rapidly, not attempting to recover.",
++                            title: brand("Discord has crashed!"),
++                            body: brand("Awn :( Discord has crashed two times rapidly, not attempting to recover."),
+                             noPersist: true,
+                         });
+                     } catch { }
+@@ -116,7 +117,7 @@
+             try {
+                 if (!hasCrashedOnce) {
+                     hasCrashedOnce = true;
+-                    maybePromptToUpdate("Uh oh, Discord has just crashed... but good news, there is a Equicord update available that might fix this issue! Would you like to update now?", true);
++                    maybePromptToUpdate(brand("Uh oh, Discord has just crashed... but good news, there is a Equicord update available that might fix this issue! Would you like to update now?"), true);
+                 }
+             } catch { }
+ 
+@@ -134,7 +135,7 @@
+         try {
+             showNotification({
+                 color: "#eed202",
+-                title: "Discord has crashed!",
++                title: brand("Discord has crashed!"),
+                 body: "Attempting to recover...",
+                 noPersist: true,
+             });

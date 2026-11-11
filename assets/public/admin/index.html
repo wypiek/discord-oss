@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>__INSTANCE_NAME__ Admin</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/admin/admin.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#view">Skip to content</a>
+    <div id="login" class="login" hidden>
+      <form class="card login-card" id="login-form" autocomplete="on">
+        <div class="brand login-brand">
+          __INSTANCE_ICON__
+          <div>
+            <strong>__INSTANCE_NAME__</strong>
+            <span class="muted">Admin</span>
+          </div>
+        </div>
+        <h1>Sign in</h1>
+        <p class="muted">Use an account that has admin rights on this instance.</p>
+        <label
+          >Email or username<input
+            name="login"
+            type="text"
+            autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
+            required
+        /></label>
+        <label
+          >Password<input name="password" type="password" autocomplete="current-password" required
+        /></label>
+        <label id="mfa-field" hidden
+          >Two-factor code<input name="code" inputmode="numeric" autocomplete="one-time-code"
+        /></label>
+        <p class="form-error" id="login-error" hidden></p>
+        <button class="btn primary" type="submit">Sign in</button>
+      </form>
+    </div>
+
+    <div id="app" class="app" hidden>
+      <aside class="sidebar">
+        <div class="brand">
+          __INSTANCE_ICON__
+          <div>
+            <strong id="brand-name">__INSTANCE_NAME__</strong>
+            <span class="muted">Admin</span>
+          </div>
+        </div>
+        <div class="nav-search">
+          <label for="nav-search">Search</label>
+          <input
+            id="nav-search"
+            type="search"
+            role="combobox"
+            aria-expanded="false"
+            aria-controls="jump-results"
+            aria-autocomplete="list"
+            aria-describedby="nav-search-hint"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="People, servers, IPs, pages"
+          />
+          <span class="hint" id="nav-search-hint">⌘ / Ctrl K</span>
+          <div id="jump-results" class="jump-results" role="listbox" aria-label="Search results" hidden></div>
+        </div>
+        <nav id="nav" aria-label="Admin sections">
+          <div class="nav-group">
+            <span class="nav-label">Instance</span>
+            <a href="#/overview" data-tab="overview">Overview</a>
+            <a href="#/settings" data-tab="settings" data-access="settings">Site settings</a>
+            <a href="#/official" data-tab="official" data-access="operator">Official inbox</a>
+            <a href="#/announcements" data-tab="announcements" data-access="settings"
+              >Announcements</a
+            >
+            <a href="#/federation" data-tab="federation" data-access="operator">Federation</a>
+          </div>
+          <div class="nav-group">
+            <span class="nav-label">People & servers</span>
+            <a href="#/users" data-tab="users" data-access="users">Users & profiles</a>
+            <a href="#/invites" data-tab="invites" data-access="users">Instance invites</a>
+            <a href="#/guilds" data-tab="guilds" data-access="guilds">Servers</a>
+            <a href="#/reports" data-tab="reports" data-access="reports">Reports</a>
+            <a href="#/automod" data-tab="automod" data-access="reports">Automod</a>
+          </div>
+          <div class="nav-group">
+            <span class="nav-label">Staff</span>
+            <a href="#/staff" data-tab="staff" data-access="staff">Staff roles</a>
+            <a href="#/audit" data-tab="audit" data-access="audit">Audit log</a>
+          </div>
+          <div class="nav-group">
+            <span class="nav-label">Customization</span>
+            <a href="#/store" data-tab="store" data-access="settings">Shop & collectibles</a>
+            <a href="#/stickers" data-tab="stickers" data-access="settings">Sticker packs</a>
+            <a href="#/badges" data-tab="badges" data-access="settings">Profile badges</a>
+            <a href="#/experiments" data-tab="experiments" data-access="settings">Experiments</a>
+            <a href="#/games" data-tab="games" data-access="settings">Games</a>
+          </div>
+          <div class="nav-group">
+            <span class="nav-label">Operations</span>
+            <a href="#/performance" data-tab="performance" data-access="system">Performance</a>
+            <a href="#/status" data-tab="status" data-access="status">Status page</a>
+            <a href="#/system" data-tab="system" data-access="system">System & compatibility</a>
+          </div>
+          <p id="nav-empty" class="muted" hidden>No pages match this search.</p>
+        </nav>
+        <div class="sidebar-foot">
+          <div class="me" id="me"></div>
+          <a class="btn ghost small" href="/status" target="_blank" rel="noopener"
+            >View status page ↗</a
+          >
+          <a class="btn ghost small" href="/app">Back to app</a>
+          <button class="btn ghost small" id="logout" type="button">Sign out</button>
+        </div>
+      </aside>
+      <main id="view" class="view"></main>
+    </div>
+
+    <div id="drawer" class="drawer" hidden>
+      <div class="drawer-backdrop" data-close></div>
+      <section class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+        <header class="drawer-head">
+          <h2 id="drawer-title"></h2>
+          <button class="btn ghost small" type="button" data-close aria-label="Close">✕</button>
+        </header>
+        <div id="drawer-body" class="drawer-body"></div>
+      </section>
+    </div>
+
+    <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+    <script src="/admin/admin.js"></script>
+    <script src="/admin/guild-admin.js"></script>
+    <script src="/admin/overview.js"></script>
+    <script src="/admin/automod.js"></script>
+    <script src="/admin/federation.js"></script>
+    <script src="/admin/staff.js"></script>
+  </body>
+</html>

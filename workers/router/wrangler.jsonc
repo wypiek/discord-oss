@@ -1,0 +1,16 @@
+{
+    "name": "meowcord",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-03-28",
+    "assets": {
+        "directory": ".deploy/public",
+        "binding": "ASSETS",
+        "html_handling": "none",
+        "not_found_handling": "none",
+        "run_worker_first": ["/_meowcord/*"]
+    },
+    "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "meowcord-media" }],
+    "images": { "binding": "IMAGES" },
+    "services": [{ "binding": "API", "service": "meowcord-api" }, { "binding": "GATEWAY", "service": "meowcord-gateway" }],
+    "observability": { "enabled": true }
+}

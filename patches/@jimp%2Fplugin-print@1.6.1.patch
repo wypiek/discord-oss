@@ -1,0 +1,26 @@
+diff --git a/dist/commonjs/load-bitmap-font.js b/dist/commonjs/load-bitmap-font.js
+index e2e2ecd1ebc143ab89473a9a8f5956d7ad00c0be..7712c67927ab58106244f045bcb532bc25821a47 100644
+--- a/dist/commonjs/load-bitmap-font.js
++++ b/dist/commonjs/load-bitmap-font.js
+@@ -14,7 +14,7 @@ const core_1 = require("@jimp/core");
+ const path_1 = __importDefault(require("path"));
+ const simple_xml_to_json_1 = __importDefault(require("simple-xml-to-json"));
+ const { convertXML } = simple_xml_to_json_1.default;
+-exports.isWebWorker = typeof self !== "undefined" && self.document === undefined;
++exports.isWebWorker = typeof self !== "undefined" && self.document === undefined && typeof Bun === "undefined";
+ const CharacterJimp = (0, core_1.createJimp)({ formats: [js_png_1.default] });
+ const HEADER = Buffer.from([66, 77, 70, 3]);
+ function isBinary(buf) {
+diff --git a/dist/esm/load-bitmap-font.js b/dist/esm/load-bitmap-font.js
+index 508fb92ca6b3a1eabab3d06a103bd422635ba796..97ea215c2aa5eec5a424d406f531236203a9337e 100644
+--- a/dist/esm/load-bitmap-font.js
++++ b/dist/esm/load-bitmap-font.js
+@@ -6,7 +6,7 @@ import { createJimp } from "@jimp/core";
+ import path from "path";
+ import xmlPackage from "simple-xml-to-json";
+ const { convertXML } = xmlPackage;
+-export const isWebWorker = typeof self !== "undefined" && self.document === undefined;
++export const isWebWorker = typeof self !== "undefined" && self.document === undefined && typeof Bun === "undefined";
+ const CharacterJimp = createJimp({ formats: [png] });
+ const HEADER = Buffer.from([66, 77, 70, 3]);
+ function isBinary(buf) {

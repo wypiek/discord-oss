@@ -1,0 +1,31 @@
+diff --git a/src/Vencord.ts b/src/Vencord.ts
+index ac20ab8..28f24a9 100644
+--- a/src/Vencord.ts
++++ b/src/Vencord.ts
+@@ -53,6 +53,8 @@ if (IS_REPORTER) {
+ }
+ 
+ async function syncSettings() {
++    if (IS_WEB) return;
++
+     const hasCloudAuth = await dsGet("Vencord_cloudSecret");
+     if (!hasCloudAuth) {
+         if (Settings.cloud.authenticated) {
+diff --git a/src/plugins/_core/settings.tsx b/src/plugins/_core/settings.tsx
+index 37a46cb..073bdff 100644
+--- a/src/plugins/_core/settings.tsx
++++ b/src/plugins/_core/settings.tsx
+@@ -222,13 +222,6 @@ export default definePlugin({
+                 Component: ChangelogTab,
+                 Icon: LogIcon,
+             }),
+-            buildEntry({
+-                key: "equicord_cloud",
+-                title: "Cloud",
+-                panelTitle: "Equicord Cloud",
+-                Component: CloudTab,
+-                Icon: CloudIcon
+-            }),
+             buildEntry({
+                 key: "equicord_backup_restore",
+                 title: "Backup & Restore",

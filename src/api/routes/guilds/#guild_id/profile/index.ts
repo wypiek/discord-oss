@@ -1,0 +1,97 @@
+import { assertIdentityNameAllowed } from "@spacebar/util/util/IdentityModeration";
+import { Request, Response, Router } from "express";
+import { route } from "@spacebar/api/middlewares";
+import { assertOutranks, noteRightsBypass, profileMetadata, resolveProfileCollectibles } from "@spacebar/api/util";
+import { Member } from "@spacebar/database";
+import { Config, emitEvent, FieldErrors, getPermission, getRights, GuildMemberUpdateEvent, handleFile, Permissions } from "@spacebar/util";
+import { MemberChangeProfileSchema } from "@spacebar/schemas";
+
+const router = Router({ mergeParams: true });
+
+router.patch(
+    "/:member_id",
+    route({
+        requestBody: "MemberChangeProfileSchema",
+        responses: {
+            200: {},
+            400: {
+                body: "APIErrorResponse",
+            },
+            404: {
+                body: "APIErrorResponse",
+            },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { guild_id } = req.params as { [key: string]: string };
+        let { member_id } = req.params as { [key: string]: string };
+        const body = req.body as MemberChangeProfileSchema;
+        if (member_id === "@me") member_id = req.user_id;
+
+        const permission = await getPermission(req.user_id, guild_id);
+
+        if (req.user_id === member_id) {
+            if (body.nick) {
+                permission.hasThrow(Permissions.FLAGS.CHANGE_NICKNAME);
+            }
+        } else {
+            if (Object.keys(body).length !== 1 || !body.nick) {
+                const rights = await getRights(req.user_id);
+                rights.hasThrow("MANAGE_USERS");
+                await noteRightsBypass(req, "MANAGE_USERS", member_id);
+            } else {
+                permission.hasThrow(Permissions.FLAGS.MANAGE_NICKNAMES);
+                await assertOutranks(guild_id, req.user_id, member_id);
+            }
+        }
+
+        const member = await Member.findOneOrFail({
+            where: { id: member_id, guild_id },
+            relations: { roles: true, user: true },
+        });
+
+        const { maxBio, maxPronouns } = Config.get().limits.user;
+        if (body.bio && body.bio.length > maxBio)
+            throw FieldErrors({
+                bio: { code: "BIO_INVALID", message: `Bio must be less than ${maxBio} in length` },
+            });
+        if (body.pronouns && body.pronouns.length > maxPronouns)
+            throw FieldErrors({
+                pronouns: {
+                    code: "PRONOUNS_INVALID",
+                    message: `Pronouns must be less than ${maxPronouns} in length`,
+                },
+            });
+
+        if (body.nick !== undefined) {
+            assertIdentityNameAllowed(body.nick, "nick", { user_id: req.user_id, guild_id: req.params.guild_id as string });
+            Object.assign(member, { nick: body.nick || null });
+        }
+        if (body.bio !== undefined) member.bio = body.bio ?? "";
+        if (body.pronouns !== undefined) Object.assign(member, { pronouns: body.pronouns || null });
+        if (body.theme_colors !== undefined) Object.assign(member, { theme_colors: body.theme_colors });
+        if (body.banner !== undefined)
+            Object.assign(member, {
+                banner: body.banner ? await handleFile(`/guilds/${guild_id}/users/${member_id}/banners`, body.banner) : null,
+            });
+
+        if (body.collectibles_sku_ids !== undefined || body.profile_effect_id !== undefined)
+            member.profile_collectibles = await resolveProfileCollectibles(member.profile_collectibles, body.collectibles_sku_ids, body.profile_effect_id);
+
+        await member.save();
+
+        await emitEvent({
+            event: "GUILD_MEMBER_UPDATE",
+            guild_id,
+            data: {
+                ...member.toPublicMember(),
+                user: member.user.toPublicUser(),
+                roles: member.roles.map((x) => x.id),
+            },
+        } satisfies GuildMemberUpdateEvent);
+
+        res.json(profileMetadata(member));
+    },
+);
+
+export default router;

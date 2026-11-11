@@ -1,0 +1,11 @@
+{
+  "name": "meowcord-api-worker",
+  "private": true,
+  "scripts": {
+    "build": "bun build.ts",
+    "dev": "wrangler dev"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2"
+  }
+}

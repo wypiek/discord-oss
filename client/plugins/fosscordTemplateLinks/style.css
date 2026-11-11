@@ -1,0 +1,31 @@
+.fosscord-template-link {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    margin-top: 16px;
+    text-align: left;
+}
+
+.fosscord-template-link > :first-child {
+    text-align: center;
+}
+
+.fosscord-template-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.fosscord-template-actions > :first-child {
+    flex: 1;
+}
+
+.fosscord-template-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--background-mod-subtle, rgb(0 0 0 / 0.08));
+}

@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@spacebar/*": ["./*"],
+      "lambert-server": ["./util/util/lambert-server"],
+      "lambert-server/*": ["./util/util/lambert-server/*"]
+    }
+  }
+}

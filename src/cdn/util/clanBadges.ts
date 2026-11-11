@@ -1,0 +1,156 @@
+import fs from "node:fs";
+import path from "node:path";
+import { ASSETS_FOLDER, clanBadgePack, CUSTOM_CLAN_BADGES, customClanBadge, discordClanBadgePack } from "@spacebar/util";
+
+// Server tag badges, rendered from templates scripts/clan-badges.js extracts from the downloaded web client.
+// A shaded colour is stored as { ch, c0, c1, def }: the guild's primary (P) or secondary (S) colour moved to
+// luminance c0 + c1 * luminance(colour), the way the client tints them, or `def` when that colour isn't set.
+
+type Shade = { ch: "P" | "S"; c0: number; c1: number; def: string };
+type BadgeNode = string | { t: string; a: Record<string, string | number | Shade>; c: BadgeNode[] };
+type Templates = Record<string, { name: string; svg: BadgeNode }>;
+
+const TEMPLATE_PATH = path.join(ASSETS_FOLDER, "cache", "clan-badges.json");
+let templates: Templates | null = null;
+let loadedFrom = 0;
+
+// reread when `bun run generate:client` regenerates the file, without needing a restart
+function loadTemplates(): Templates | null {
+    const mtime = fs.statSync(TEMPLATE_PATH, { throwIfNoEntry: false })?.mtimeMs;
+    if (!mtime) return null;
+    if (mtime !== loadedFrom) {
+        try {
+            templates = JSON.parse(fs.readFileSync(TEMPLATE_PATH, "utf8")).badges;
+            loadedFrom = mtime;
+        } catch (e) {
+            console.error("[CDN] couldn't read clan badge templates", e);
+            return null;
+        }
+    }
+    return templates;
+}
+
+type Rgb = [number, number, number];
+
+const parseHex = (value: string): Rgb | null => {
+    const hex = value.replace(/^#/, "");
+    const full = hex.length === 3 || hex.length === 4 ? [...hex.slice(0, 3)].map((c) => c + c).join("") : hex.slice(0, 6);
+    return /^[0-9a-f]{6}$/i.test(full) ? ([0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16)) as Rgb) : null;
+};
+
+// same maths as chroma-js, which the client uses: relative luminance, and luminance(x) bisecting in rgb
+// towards black or white until it's within 1e-7 (or 20 steps)
+const channel = (x: number) => {
+    const c = x / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+};
+const luminance = ([r, g, b]: Rgb) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+
+function withLuminance(rgb: Rgb, target: number): Rgb {
+    if (target <= 0) return [0, 0, 0];
+    if (target >= 1) return [255, 255, 255];
+    let iterations = 20;
+    const test = (low: Rgb, high: Rgb): Rgb => {
+        const mid = low.map((v, i) => v + (high[i] - v) * 0.5) as Rgb;
+        const lum = luminance(mid);
+        if (Math.abs(target - lum) < 1e-7 || !iterations--) return mid;
+        return lum > target ? test(low, mid) : test(mid, high);
+    };
+    return luminance(rgb) > target ? test([0, 0, 0], rgb) : test(rgb, [255, 255, 255]);
+}
+
+const toHex = (rgb: Rgb) =>
+    `#${rgb
+        .map((v) =>
+            Math.round(Math.min(255, Math.max(0, v)))
+                .toString(16)
+                .padStart(2, "0"),
+        )
+        .join("")}`;
+
+const ATTRIBUTE_NAMES: Record<string, string> = {
+    clipPath: "clip-path",
+    clipRule: "clip-rule",
+    fillRule: "fill-rule",
+    stopColor: "stop-color",
+};
+const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+
+// [{ id, name, pack, staff_only }] for the client's badges with a template (none until the client cache is generated) and the instance's own
+export function listClanBadges() {
+    return [
+        ...Object.entries(loadTemplates() ?? {}).map(([id, { name }]) => ({
+            id: Number(id),
+            name,
+            pack: discordClanBadgePack(Number(id)),
+            staff_only: false,
+        })),
+        ...CUSTOM_CLAN_BADGES.map((badge) => ({
+            id: badge.id,
+            name: badge.name,
+            pack: clanBadgePack(badge),
+            staff_only: badge.staff_only,
+        })),
+    ].sort((a, b) => a.id - b.id);
+}
+
+// the instance's own badges, turned from their pixel grids into the same shape the extracted templates have: a path per run
+// of same-coloured pixels in a row
+const customTemplates = new Map<number, { name: string; svg: BadgeNode }>();
+
+function customTemplate(id: number) {
+    const badge = customClanBadge(id);
+    if (!badge) return undefined;
+    if (!customTemplates.has(id)) {
+        const paths: BadgeNode[] = [];
+        badge.grid.forEach((row, y) => {
+            for (let x = 0; x < row.length; ) {
+                const key = row[x];
+                let end = x + 1;
+                while (end < row.length && row[end] === key) end++;
+                const fill = badge.palette[key];
+                if (fill) paths.push({ t: "path", a: { d: `M${x} ${y}H${end}V${y + 1}H${x}Z`, fill }, c: [] });
+                x = end;
+            }
+        });
+        const svgAttributes = {
+            width: 24,
+            height: 24,
+            viewBox: "0 0 16 16",
+            fill: "none",
+            xmlns: "http://www.w3.org/2000/svg",
+            "shape-rendering": "crispEdges",
+        };
+        customTemplates.set(id, { name: badge.name, svg: { t: "svg", a: svgAttributes, c: paths } });
+    }
+    return customTemplates.get(id);
+}
+
+/**
+ * Draws a server tag badge as standalone SVG, or returns null when the templates aren't there (the client
+ * cache hasn't been generated) or the badge type is unknown.
+ */
+export function renderClanBadge(badge: number | string | null | undefined, primary: string | null | undefined, secondary: string | null | undefined, size = 64): string | null {
+    const template = customTemplate(Number(badge)) ?? loadTemplates()?.[String(badge ?? 0)];
+    if (!template) return null;
+
+    const tints = {
+        P: primary ? parseHex(primary) : null,
+        S: secondary ? parseHex(secondary) : null,
+    };
+    const shade = (value: Shade) => {
+        const tint = tints[value.ch];
+        return tint ? toHex(withLuminance(tint, value.c0 + value.c1 * luminance(tint))) : value.def;
+    };
+
+    const draw = (node: BadgeNode, root = false): string => {
+        if (typeof node === "string") return escape(node);
+        const attrs = { ...node.a, ...(root ? { width: size, height: size } : {}) };
+        const rendered = Object.entries(attrs)
+            .filter(([, v]) => v !== undefined && v !== null)
+            .map(([k, v]) => `${ATTRIBUTE_NAMES[k] ?? k}="${escape(typeof v === "object" ? shade(v) : String(v))}"`)
+            .join(" ");
+        return `<${node.t}${rendered ? ` ${rendered}` : ""}>${node.c.map((c) => draw(c)).join("")}</${node.t}>`;
+    };
+    return draw(template.svg, true);
+}

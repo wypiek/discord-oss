@@ -1,0 +1,32 @@
+@media (max-width: 485px) {
+    .container__1e128 .content__1e128 {
+        flex-direction: column;
+    }
+
+    .container__1e128 .column__1e128 {
+        padding-inline: 16px;
+    }
+}
+
+.is-mobile [class*="standardSidebarView__"] {
+    --custom-sidebar-scroller-margin-start: 0px;
+    --custom-sidebar-scroller-margin-end: 0px;
+    --custom-sidebar-scroller-min-width: 0px;
+}
+
+.is-mobile [class*="contentRegion__"]:has(> [class*="mobileContentHeader__"]) {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.is-mobile [class*="contentRegion__"] > [class*="contentRegionScroller__"] {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+}
+
+.is-mobile [class*="mobileContent__"],
+.is-mobile [class*="contentRegion__"] [class*="customContainer__"] {
+    padding-inline: 16px;
+    box-sizing: border-box;
+}

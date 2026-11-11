@@ -1,0 +1,10 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "paths": {
+            "@spacebar/*": ["./build/dist/*"],
+            "lambert-server": ["./build/dist/util/util/lambert-server"],
+            "lambert-server/*": ["./build/dist/util/util/lambert-server/*"]
+        }
+    }
+}

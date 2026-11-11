@@ -1,0 +1,114 @@
+import crypto from "node:crypto";
+import { Request, Response, Router } from "express";
+import { HTTPError } from "lambert-server/HTTPError";
+import { route } from "@spacebar/api/middlewares";
+import { Application, AuditLog, Channel, User, Webhook } from "@spacebar/database";
+import { Config, DiscordApiErrors, emitEvent, handleFile, Snowflake, ValidateName, WebhooksUpdateEvent } from "@spacebar/util";
+import { webhookToJSON } from "@spacebar/api/util/handlers/Webhook";
+import { AuditLogEvents, isTextChannel, WebhookCreateSchema, WebhookType } from "@spacebar/schemas";
+import { trimSpecial } from "@spacebar/extensions";
+
+const router: Router = Router({ mergeParams: true });
+
+router.get(
+    "/",
+    route({
+        description: "Returns a list of channel webhook objects. Requires the MANAGE_WEBHOOKS permission.",
+        permission: "MANAGE_WEBHOOKS",
+        responses: {
+            200: {
+                body: "WebhookListResponse",
+            },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { channel_id } = req.params as { [key: string]: string };
+        const webhooks = await Webhook.find({
+            where: { channel_id },
+            relations: {
+                user: true,
+                channel: true,
+                source_channel: true,
+                guild: true,
+                source_guild: true,
+                application: true,
+            },
+        });
+
+        return res.json(webhooks.map((webhook) => webhookToJSON(webhook)));
+    },
+);
+
+// TODO: use Image Data Type for avatar instead of String
+router.post(
+    "/",
+    route({
+        requestBody: "WebhookCreateSchema",
+        permission: "MANAGE_WEBHOOKS",
+        responses: {
+            200: {
+                body: "WebhookCreateResponse",
+            },
+            400: {
+                body: "APIErrorResponse",
+            },
+            403: {},
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const { channel_id } = req.params as { [key: string]: string };
+        const channel = await Channel.findOneOrFail({
+            where: { id: channel_id },
+        });
+
+        isTextChannel(channel.type);
+        if (!channel.guild_id) throw new HTTPError("Not a guild channel", 400);
+
+        const webhook_count = await Webhook.count({ where: { channel_id } });
+        const { maxWebhooks } = Config.get().limits.channel;
+        if (maxWebhooks && webhook_count > maxWebhooks) throw DiscordApiErrors.MAXIMUM_WEBHOOKS.withParams(maxWebhooks);
+
+        let { avatar, name } = req.body as WebhookCreateSchema;
+        name = trimSpecial(name);
+
+        // TODO: move this
+        if (name) {
+            ValidateName(name);
+        }
+
+        const id = Snowflake.generate();
+        if (avatar) avatar = await handleFile(`/avatars/${id}`, avatar);
+
+        const hook = await Webhook.create({
+            id,
+            type: WebhookType.Incoming,
+            name,
+            avatar,
+            guild_id: channel.guild_id,
+            channel_id: channel.id,
+            user_id: req.user_id,
+            application: (await Application.findOneBy({ id: req.user_id })) ?? undefined,
+            token: crypto.randomBytes(24).toString("base64url"),
+        }).save();
+
+        hook.user = await User.findOneOrFail({ where: { id: req.user_id } });
+        await AuditLog.log({
+            guild_id: channel.guild_id,
+            user_id: req.user_id,
+            action_type: AuditLogEvents.WEBHOOK_CREATE,
+            target_id: hook.id,
+            changes: AuditLog.diff({}, { type: hook.type, name: hook.name, channel_id: hook.channel_id, avatar_hash: hook.avatar }, ["type", "name", "channel_id", "avatar_hash"]),
+            reason: req.headers["x-audit-log-reason"],
+        });
+
+        await emitEvent({
+            event: "WEBHOOKS_UPDATE",
+            channel_id: channel.id,
+            data: { channel_id: channel.id, guild_id: channel.guild_id },
+        } satisfies WebhooksUpdateEvent);
+
+        return res.json(webhookToJSON(hook));
+    },
+);
+
+export default router;

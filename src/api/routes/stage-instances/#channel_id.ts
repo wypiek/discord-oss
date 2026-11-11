@@ -1,0 +1,41 @@
+import { Request, Response, Router } from "express";
+import { route } from "@spacebar/api/middlewares";
+import { StageInstances, VoiceChannels } from "@spacebar/database";
+import { DiscordApiErrors } from "@spacebar/util";
+import { HTTPError } from "lambert-server";
+import { stageModerator } from "./index";
+
+const router: Router = Router({ mergeParams: true });
+
+const instanceFor = async (req: Request) => {
+    const instance = await StageInstances.get(req.params.channel_id as string);
+    if (!instance) throw DiscordApiErrors.UNKNOWN_STAGE_INSTANCE;
+    return instance.toJSON();
+};
+
+router.get("/", route({ responses: { 200: {}, 404: {} } }), async (req: Request, res: Response) => {
+    await stageModerator(req.user_id, req.params.channel_id as string);
+    res.json(await instanceFor(req));
+});
+
+router.patch("/", route({ responses: { 200: {}, 400: {}, 403: {}, 404: {} } }), async (req: Request, res: Response) => {
+    const { moderator } = await stageModerator(req.user_id, req.params.channel_id as string);
+    if (!moderator) throw DiscordApiErrors.MISSING_PERMISSIONS.withParams("MANAGE_CHANNELS");
+    await instanceFor(req);
+    const changes: { topic?: string; privacy_level?: number } = {};
+    if (typeof req.body?.topic === "string" && req.body.topic.length > 120) throw new HTTPError("topic must be 1-120 characters", 400);
+    if (typeof req.body?.topic === "string" && req.body.topic.trim()) changes.topic = req.body.topic.trim();
+    if (req.body?.privacy_level != null) changes.privacy_level = Number(req.body.privacy_level);
+    res.json(await StageInstances.update(req.params.channel_id as string, changes));
+});
+
+router.delete("/", route({ responses: { 204: {}, 403: {}, 404: {} } }), async (req: Request, res: Response) => {
+    const { moderator } = await stageModerator(req.user_id, req.params.channel_id as string);
+    if (!moderator) throw DiscordApiErrors.MISSING_PERMISSIONS.withParams("MANAGE_CHANNELS");
+    const { guild_id } = await instanceFor(req);
+    await StageInstances.delete(req.params.channel_id as string);
+    await VoiceChannels.evict(guild_id, req.params.channel_id as string);
+    res.sendStatus(204);
+});
+
+export default router;

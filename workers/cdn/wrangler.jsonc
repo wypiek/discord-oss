@@ -1,0 +1,9 @@
+{
+    "name": "meowcord-cdn",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-03-28",
+    "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "meowcord-media" }],
+    "images": { "binding": "IMAGES" },
+    "services": [{ "binding": "API", "service": "meowcord-api" }],
+    "observability": { "enabled": true }
+}

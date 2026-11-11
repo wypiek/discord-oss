@@ -1,0 +1,29 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+        "allowJs": true,
+        "types": [
+            "node"
+        ],
+        "paths": {
+            "@spacebar/*": [
+                "../../dist/*"
+            ],
+            "lambert-server": [
+                "../../dist/util/util/lambert-server"
+            ],
+            "lambert-server/*": [
+                "../../dist/util/util/lambert-server/*"
+            ]
+        }
+    },
+    "include": [
+        "src",
+        "worker-configuration.d.ts"
+    ]
+}

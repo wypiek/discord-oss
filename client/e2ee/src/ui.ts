@@ -1,0 +1,1438 @@
+import { generateRecoveryCode } from "./backup";
+import { ChannelMember, deviceAdded, deviceTitle, deviceTwins, E2eeError, Engine, errorText, ServerDevice, unreadableMembers } from "./engine";
+import { MessageState } from "./hooks";
+import { Incoming, Outgoing } from "./link";
+import { browserStorage } from "./store";
+import { conjunction, locale, t } from "./i18n";
+import { createChannelLoader } from "./channelLoader";
+
+const LOCK_PATH = "M7 10V7a5 5 0 0 1 10 0v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1Zm2 0h6V7a3 3 0 0 0-6 0v3Z";
+const OPEN_LOCK_PATH = "M9 10h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 9.58-2 1 1 0 1 1-1.83.8A3 3 0 0 0 9 7v3Z";
+const VERIFIED_PATH = `${LOCK_PATH}M8.1 15.6l1.4-1.4 1.9 1.9 4.5-4.5 1.4 1.4-5.9 5.9Z`;
+const CLOSE_PATH = "M17.3 18.7a1 1 0 0 0 1.4-1.4L13.42 12l5.3-5.3a1 1 0 0 0-1.42-1.4L12 10.58l-5.3-5.3a1 1 0 0 0-1.4 1.42L10.58 12l-5.3 5.3a1 1 0 1 0 1.42 1.4L12 13.42l5.3 5.3Z";
+const SCREEN_PATH =
+    "M4 3a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h7v2H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-2h7a3 3 0 0 0 3-3V6a3 3 0 0 0-3-3H4Zm0 2h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z";
+
+const css = `
+.fe2ee-safety-option{display:flex;align-items:center;gap:8px;min-height:40px;cursor:pointer}
+.fe2ee-safety-option input{width:18px;height:18px;accent-color:var(--button-filled-brand-background,var(--focus-primary))}
+.fe2ee-lock{display:inline-flex;vertical-align:-2px;margin-inline-start:4px;color:var(--text-muted,#949ba4)}
+.fe2ee-lock svg{width:14px;height:14px}
+.fe2ee-lock[data-state="failed"]{color:var(--status-danger,#f23f43)}
+.fe2ee-toggle{background:none;border:0;padding:0;margin:0 8px;width:24px;height:24px;flex:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--interactive-icon-default,var(--interactive-normal,#b5bac1));transition:color 120ms ease-out,scale 200ms ease-out}
+.fe2ee-toggle svg{width:24px;height:24px}
+.fe2ee-toggle[aria-pressed="true"]{color:var(--text-muted,#949ba4)}
+.fe2ee-toggle:active{scale:.94}
+.fe2ee-toggle:focus-visible{outline:2px solid var(--focus-primary,#00a8fc);outline-offset:2px;border-radius:4px}
+@media (hover:hover){.fe2ee-toggle:hover{color:var(--interactive-icon-hover,var(--interactive-hover,#dbdee1))}.fe2ee-toggle[aria-pressed="true"]:hover{color:var(--text-muted,#949ba4)}}
+.fe2ee-tooltip{position:fixed;z-index:10002;pointer-events:none;max-width:220px;padding:8px 12px;border-radius:8px;font-size:14px;line-height:18px;font-weight:500;text-align:center;text-wrap:balance;color:var(--text-strong,#f2f3f5);background:var(--background-surface-highest,#111214);box-shadow:0 0 0 1px var(--border-subtle,rgb(255 255 255 / .06)),0 2px 4px rgb(0 0 0 / .16),0 8px 16px rgb(0 0 0 / .24)}
+.fe2ee-tooltip::before{content:"";position:absolute;left:calc(50% - 5px);width:10px;height:10px;rotate:45deg;background:inherit}
+.fe2ee-tooltip[data-side="bottom"]::before{top:-4px}
+.fe2ee-tooltip[data-side="top"]::before{bottom:-4px}
+.fe2ee-notice{display:flex;align-items:center;gap:12px;margin:0 0 8px;padding:8px 8px 8px 12px;min-height:40px;box-sizing:border-box;border-radius:8px;font-size:14px;line-height:18px;color:var(--text-default,#dbdee1);background:var(--background-base-lower,#2b2d31);box-shadow:inset 0 0 0 1px var(--border-subtle,rgb(255 255 255 / .06))}
+.fe2ee-notice svg{flex:none;width:16px;height:16px;color:var(--icon-default,#b5bac1)}
+.fe2ee-notice[data-tone="danger"] svg{color:var(--status-danger,#f23f43)}
+.fe2ee-notice[data-tone="warning"] svg{color:var(--status-warning,#f0b232)}
+.fe2ee-notice p{margin:0;flex:1;min-width:0;text-wrap:pretty}
+.fe2ee-notice .fe2ee-button{padding:4px 12px;min-height:28px}
+.fe2ee-button{font:inherit;font-size:14px;font-weight:500;line-height:18px;border:0;border-radius:8px;padding:8px 16px;min-height:38px;cursor:pointer;color:#fff;background:var(--control-primary-background-default,var(--button-filled-brand-background,#5865f2));transition:background-color 120ms ease-out,scale 200ms ease-out;white-space:nowrap}
+.fe2ee-button[data-variant="secondary"]{color:var(--text-default,#dbdee1);background:var(--control-secondary-background-default,var(--button-secondary-background,#4e5058))}
+.fe2ee-button[data-variant="danger"]{color:#fff;background:var(--control-critical-primary-background-default,#da373c)}
+.fe2ee-button[data-variant="link"]{padding:0;min-height:0;background:none;color:var(--text-link,#00a8fc);font-weight:400}
+.fe2ee-button:disabled{opacity:.5;cursor:not-allowed}
+.fe2ee-button:active:not(:disabled){scale:.97}
+.fe2ee-button:focus-visible{outline:2px solid var(--focus-primary,#00a8fc);outline-offset:2px}
+@media (hover:hover){.fe2ee-button:hover:not(:disabled){background:var(--control-primary-background-hover,#4752c4)}.fe2ee-button[data-variant="secondary"]:hover:not(:disabled){background:var(--control-secondary-background-hover,#6d6f78)}.fe2ee-button[data-variant="danger"]:hover:not(:disabled){background:var(--control-critical-primary-background-hover,#a12829)}.fe2ee-button[data-variant="link"]:hover:not(:disabled){background:none;text-decoration:underline}}
+.fe2ee-dialog{border:0;padding:0;border-radius:12px;width:min(480px,calc(100vw - 32px));max-height:min(720px,calc(100dvh - 64px));overflow:hidden;color:var(--text-default,#dbdee1);background:var(--modal-background,var(--background-base-low,#313338));box-shadow:0 0 0 1px var(--border-subtle,rgb(255 255 255 / .06)),0 4px 8px rgb(0 0 0 / .16),0 16px 48px rgb(0 0 0 / .32)}
+.fe2ee-dialog[open]{display:flex;flex-direction:column}
+.fe2ee-dialog:focus{outline:none}
+.fe2ee-dialog::backdrop{background:rgb(0 0 0 / .7)}
+.fe2ee-dialog-head{flex:none;display:flex;align-items:flex-start;gap:16px;padding:20px 16px 4px 20px}
+.fe2ee-dialog h2{flex:1;margin:0;font-size:20px;line-height:24px;font-weight:600;text-wrap:balance;color:var(--text-strong,#f2f3f5)}
+.fe2ee-close{flex:none;width:32px;height:32px;margin:-4px 0 0;padding:0;display:grid;place-items:center;border:0;border-radius:8px;background:none;color:var(--interactive-icon-default,#b5bac1);cursor:pointer;transition:color 120ms ease-out,background-color 120ms ease-out}
+.fe2ee-close svg{width:24px;height:24px}
+.fe2ee-close[hidden]{display:none}
+.fe2ee-close:focus-visible{outline:2px solid var(--focus-primary,#00a8fc)}
+@media (hover:hover){.fe2ee-close:hover{color:var(--interactive-icon-hover,#dbdee1);background:var(--background-mod-subtle,rgb(255 255 255 / .06))}}
+.fe2ee-dialog-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:8px 20px 20px;display:flex;flex-direction:column;gap:12px;font-size:15px;line-height:22px}
+.fe2ee-dialog p,.fe2ee-page p{margin:0;text-wrap:pretty;color:var(--text-muted,#b5bac1)}
+.fe2ee-dialog-actions{flex:none;display:flex;justify-content:flex-end;gap:8px;padding:16px 20px;background:var(--modal-footer-background,var(--background-base-lower,#2b2d31));box-shadow:0 -1px 0 var(--border-subtle,rgb(255 255 255 / .06))}
+@media (prefers-reduced-motion:no-preference){.fe2ee-dialog[open]{animation:fe2ee-modal-in 260ms cubic-bezier(.2,.9,.3,1.05)}.fe2ee-dialog[open]::backdrop{animation:fe2ee-fade 200ms ease-out}.fe2ee-dialog[data-closing]{animation:fe2ee-modal-out 150ms ease-in forwards}.fe2ee-dialog[data-closing]::backdrop{animation:fe2ee-fade 150ms ease-in reverse forwards}.fe2ee-tooltip{animation:fe2ee-fade 120ms ease-out}}
+@keyframes fe2ee-modal-in{from{opacity:0;scale:.9}}
+@keyframes fe2ee-modal-out{to{opacity:0;scale:.9}}
+@keyframes fe2ee-fade{from{opacity:0}}
+.fe2ee-member{display:flex;flex-direction:column;gap:8px;padding-top:8px}
+.fe2ee-member + .fe2ee-member{border-top:1px solid var(--border-subtle,rgb(255 255 255 / .06));padding-top:16px}
+.fe2ee-member-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.fe2ee-member-name{font-weight:600;color:var(--text-strong,#f2f3f5);overflow-wrap:anywhere}
+.fe2ee-status{display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;color:var(--text-muted,#b5bac1)}
+.fe2ee-status[data-verified="true"]{color:var(--status-positive,#23a55a)}
+.fe2ee-status[data-changed="true"]{color:var(--text-feedback-warning,var(--status-warning,#f0b232))}
+.fe2ee-status svg{width:14px;height:14px}
+.fe2ee-safety{display:flex;gap:16px;align-items:center}
+.fe2ee-digits{flex:1;display:grid;grid-template-columns:repeat(4,auto);justify-content:start;gap:4px 16px;font-size:17px;line-height:24px;font-variant-numeric:tabular-nums;letter-spacing:.04em;color:var(--text-strong,#f2f3f5)}
+.fe2ee-member-actions{display:flex;gap:8px;flex-wrap:wrap}
+[data-fe2ee-state="pending"],[data-fe2ee-state="locked"],[data-fe2ee-state="missing"],[data-fe2ee-state="reset"],[data-fe2ee-state="failed"]{color:var(--text-muted,#949ba4);font-style:italic}
+[id^="message-content-"] > [class*="timestamp_"]:has(> .fe2ee-lock){white-space:nowrap}
+.fe2ee-codes{display:flex;flex-direction:column;gap:4px}
+.fe2ee-codes[hidden]{display:none}
+.fe2ee-code-row{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+.fe2ee-code-name{min-width:0;font-size:14px;line-height:18px;color:var(--text-muted,#b5bac1);overflow-wrap:anywhere}
+.fe2ee-unlock{font:inherit;font-style:normal;font-size:13px;font-weight:500;line-height:18px;margin-inline-start:8px;padding:2px 8px;border:0;border-radius:4px;cursor:pointer;color:var(--text-default,#dbdee1);background:var(--control-secondary-background-default,#4e5058);transition:background-color 120ms ease-out,scale 200ms ease-out}
+.fe2ee-unlock:active{scale:.97}
+.fe2ee-unlock:focus-visible{outline:2px solid var(--focus-primary,#00a8fc);outline-offset:2px}
+@media (hover:hover){.fe2ee-unlock:hover{background:var(--control-secondary-background-hover,#6d6f78)}}
+.fe2ee-section{display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--border-subtle,rgb(255 255 255 / .06))}
+.fe2ee-section[hidden]{display:none}
+.fe2ee-section h3{margin:0;font-size:16px;line-height:20px;font-weight:600;color:var(--text-strong,#f2f3f5)}
+.fe2ee-section > .fe2ee-button{align-self:flex-start}
+.fe2ee-field{display:flex;flex-direction:column;gap:8px}
+.fe2ee-field label{font-size:14px;font-weight:500;color:var(--text-default,#dbdee1)}
+.fe2ee-row{display:flex;gap:8px;align-items:center}
+.fe2ee-input{flex:1;min-width:0;font:inherit;font-size:16px;line-height:20px;padding:9px 12px;border-radius:8px;border:0;color:var(--text-default,#dbdee1);background:var(--input-background-default,var(--background-base-lowest,#1e1f22));box-shadow:inset 0 0 0 1px var(--border-subtle,rgb(255 255 255 / .06))}
+.fe2ee-input-code{font-family:var(--font-code,ui-monospace,monospace);font-size:15px;letter-spacing:.02em;text-transform:uppercase}
+.fe2ee-input-code::placeholder{text-transform:none}
+.fe2ee-row[data-stack]{flex-direction:column;align-items:stretch}
+.fe2ee-row[data-stack] > .fe2ee-input{flex:none;width:100%;box-sizing:border-box}
+.fe2ee-row[data-stack] > .fe2ee-button{align-self:flex-start}
+.fe2ee-input:focus-visible{outline:2px solid var(--focus-primary,#00a8fc);outline-offset:-1px}
+.fe2ee-input[aria-invalid="true"]{box-shadow:inset 0 0 0 1px var(--status-danger,#f23f43)}
+.fe2ee-input[aria-invalid="true"]:focus-visible{outline-color:var(--status-danger,#f23f43)}
+.fe2ee-field:has(.fe2ee-input[aria-invalid="true"]) label{color:var(--text-feedback-critical,var(--status-danger,#f23f43))}
+.fe2ee-dialog p.fe2ee-detail{margin-top:-8px;font-size:14px;line-height:18px}
+.fe2ee-dialog .fe2ee-error,.fe2ee-page .fe2ee-error{margin:0;font-size:14px;line-height:18px;color:var(--text-feedback-critical,var(--status-danger,#f23f43))}
+.fe2ee-code{font-size:28px;line-height:36px;font-weight:600;letter-spacing:.08em;font-variant-numeric:tabular-nums;color:var(--text-strong,#f2f3f5)}
+.fe2ee-recovery{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0;padding:12px;list-style:none;border-radius:8px;background:var(--background-base-lowest,#1e1f22)}
+.fe2ee-recovery li{font-family:var(--font-code,ui-monospace,monospace);font-size:16px;line-height:24px;font-weight:600;text-align:center;letter-spacing:.06em;color:var(--text-strong,#f2f3f5)}
+.fe2ee-devices{display:flex;flex-direction:column;border-radius:8px;background:var(--card-background-default,var(--background-base-lower,#2b2d31));box-shadow:inset 0 0 0 1px var(--border-subtle,rgb(255 255 255 / .06))}
+.fe2ee-device{display:flex;align-items:center;gap:12px;padding:12px 16px}
+.fe2ee-device + .fe2ee-device{border-top:1px solid var(--border-subtle,rgb(255 255 255 / .06))}
+.fe2ee-device-icon{flex:none;width:40px;height:40px;display:grid;place-items:center;border-radius:50%;color:var(--icon-default,#b5bac1);background:var(--background-mod-subtle,rgb(255 255 255 / .06))}
+.fe2ee-device-icon svg{width:20px;height:20px}
+.fe2ee-device-text{flex:1;min-width:0;display:flex;flex-direction:column}
+.fe2ee-device-name{font-size:15px;line-height:20px;font-weight:600;color:var(--text-strong,#f2f3f5);overflow-wrap:anywhere}
+.fe2ee-device-meta{font-size:13px;line-height:18px;color:var(--text-muted,#b5bac1);overflow-wrap:anywhere}
+.fe2ee-device-meta[data-current="true"]{color:var(--text-feedback-positive,var(--status-positive,#23a55a))}
+.fe2ee-device-actions{flex:none;display:flex;gap:8px}
+.fe2ee-page{display:flex;flex-direction:column;gap:40px;font-size:14px;line-height:20px;color:var(--text-default,#dbdee1);padding-bottom:40px}
+.fe2ee-page .fe2ee-section{border-top:0;padding-top:0;gap:12px}
+.fe2ee-page .fe2ee-section + .fe2ee-section{border-top:1px solid var(--border-subtle,rgb(255 255 255 / .06));padding-top:40px}
+.fe2ee-page .fe2ee-section h3{font-size:24px;line-height:30px;font-weight:400;margin-bottom:4px}
+`;
+
+const svg = (path: string, label?: string) =>
+    `<svg viewBox="0 0 24 24" fill="currentColor" ${label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"'}><path fill-rule="evenodd" d="${path}"/></svg>`;
+
+const escape = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+const currentChannel = () => /^\/channels\/@me\/(\d+)/.exec(location.pathname)?.[1] ?? null;
+
+const memberName = (m: ChannelMember) => m.global_name || m.username;
+
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const ago = (iso: string) => {
+    const seconds = (Date.parse(iso) - Date.now()) / 1000;
+    const steps: [number, Intl.RelativeTimeFormatUnit][] = [
+        [60, "second"],
+        [60, "minute"],
+        [24, "hour"],
+        [30, "day"],
+        [12, "month"],
+        [Infinity, "year"],
+    ];
+    let value = seconds;
+    for (const [size, unit] of steps) {
+        if (Math.abs(value) < size) return new Intl.RelativeTimeFormat(locale(), { numeric: "auto" }).format(Math.round(value), unit);
+        value /= size;
+    }
+    return "";
+};
+
+type Notice = {
+    tone: "danger" | "warning" | "info";
+    text: string;
+    action?: { label: string; run: () => void };
+};
+
+const UNLOCK_SNOOZE_KEY = "fe2ee-unlock-snoozed-until";
+const UNLOCK_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
+const INVITE_MS = 15000;
+
+const unlockSnoozed = () => {
+    try {
+        return Number(browserStorage?.getItem(UNLOCK_SNOOZE_KEY)) > Date.now();
+    } catch {
+        return false;
+    }
+};
+
+const snoozeUnlock = () => {
+    try {
+        browserStorage?.setItem(UNLOCK_SNOOZE_KEY, String(Date.now() + UNLOCK_SNOOZE_MS));
+    } catch {
+        return;
+    }
+};
+
+export interface UiOptions {
+    engine: Engine;
+    ready: Promise<boolean>;
+    states: Map<string, { state: MessageState; reason?: string }>;
+    enableChannel: (channelId: string) => Promise<void>;
+    link: {
+        outgoing: () => Outgoing | null;
+        request: () => Promise<void>;
+        cancel: () => Promise<void>;
+        invite: (deviceId: string) => Promise<void>;
+    };
+    verifyPassword: (password: string) => Promise<boolean>;
+    reset: (password: string) => Promise<void>;
+}
+
+export const createUi = ({ engine, ready, states, enableChannel, link, verifyPassword, reset }: UiOptions) => {
+    const style = document.createElement("style");
+    style.textContent = css;
+    const bar = document.createElement("div");
+    bar.className = "fe2ee-notice";
+    bar.setAttribute("role", "status");
+    let bootstrapped = false;
+    ready.then((ok) => {
+        bootstrapped = ok;
+        refresh();
+    });
+    let failure: string | null = null;
+    let paused: string | null = null;
+    let transient: (Notice & { channelId: string; until: number }) | null = null;
+    let transientTimer: ReturnType<typeof setTimeout> | null = null;
+    let unlockOpen: { render: () => void; close: () => void } | null = null;
+    const approvals = new Map<string, () => void>();
+    let members: { channelId: string; list: ChannelMember[] } | null = null;
+    const loadMembers = createChannelLoader({
+        current: currentChannel,
+        load: (id) => engine.channelMembers(id).then((ids) => Promise.all(ids.map((member) => engine.profile(member)))),
+        receive: (channelId, list) => {
+            members = { channelId, list };
+            refresh();
+        },
+        retry: () => refresh(),
+    });
+    let scheduled = false;
+    let tooltip: HTMLElement | null = null;
+    let backupPromptDismissed = false;
+    let requiredPasswordOpen: (() => void) | null = null;
+    let passwordPromptTimer: ReturnType<typeof setTimeout> | null = null;
+    const invited = new Map<string, number>();
+
+    const mount = () => {
+        if (!style.isConnected) document.head.append(style);
+    };
+
+    const flash = (channelId: string, notice: Notice, ms = 8000) => {
+        transient = { ...notice, channelId, until: Date.now() + ms };
+        if (transientTimer) clearTimeout(transientTimer);
+        transientTimer = setTimeout(refresh, ms + 50);
+        refresh();
+    };
+
+    const hideTooltip = () => {
+        tooltip?.remove();
+        tooltip = null;
+    };
+
+    const showTooltip = (anchor: HTMLElement, text: string) => {
+        hideTooltip();
+        const el = document.createElement("div");
+        el.className = "fe2ee-tooltip";
+        el.setAttribute("role", "tooltip");
+        el.textContent = text;
+        document.body.append(el);
+        const box = anchor.getBoundingClientRect();
+        const below = box.bottom + 8 + el.offsetHeight < innerHeight;
+        el.dataset.side = below ? "bottom" : "top";
+        el.style.top = `${below ? box.bottom + 8 : box.top - 8 - el.offsetHeight}px`;
+        el.style.left = `${Math.max(8, Math.min(innerWidth - el.offsetWidth - 8, box.left + box.width / 2 - el.offsetWidth / 2))}px`;
+        tooltip = el;
+    };
+
+    const withTooltip = (el: HTMLElement, text: () => string) => {
+        const show = () => showTooltip(el, text());
+        el.addEventListener("mouseenter", show);
+        el.addEventListener("focus", show);
+        el.addEventListener("mouseleave", hideTooltip);
+        el.addEventListener("blur", hideTooltip);
+        el.addEventListener("click", hideTooltip);
+    };
+
+    const button = (label: string, variant: "primary" | "secondary" | "danger" | "link", run: () => void) => {
+        const el = document.createElement("button");
+        el.type = "button";
+        el.className = "fe2ee-button";
+        el.dataset.variant = variant;
+        el.textContent = label;
+        el.addEventListener("click", run);
+        return el;
+    };
+
+    interface DialogHandle {
+        el: HTMLDialogElement;
+        close: () => void;
+        setDismissable: (value: boolean) => void;
+    }
+
+    addEventListener(
+        "keydown",
+        (event) => {
+            if (event.key === "Escape" && document.querySelector("dialog.fe2ee-dialog[open]:not([data-closing])")) event.stopPropagation();
+        },
+        true,
+    );
+
+    const dialog = (title: string, build: (body: HTMLElement, actions: HTMLElement, handle: DialogHandle) => HTMLElement | void) => {
+        const el = document.createElement("dialog");
+        el.className = "fe2ee-dialog";
+        el.setAttribute("aria-label", title);
+        const head = document.createElement("div");
+        head.className = "fe2ee-dialog-head";
+        head.innerHTML = `<h2>${escape(title)}</h2>`;
+        const x = document.createElement("button");
+        x.type = "button";
+        x.className = "fe2ee-close";
+        x.setAttribute("aria-label", t("Close"));
+        x.innerHTML = svg(CLOSE_PATH);
+        head.append(x);
+        const body = document.createElement("div");
+        body.className = "fe2ee-dialog-body";
+        const actions = document.createElement("div");
+        actions.className = "fe2ee-dialog-actions";
+        el.append(head, body, actions);
+        let dismissable = true;
+        let closing = false;
+        const close = () => {
+            if (closing || !el.isConnected) return;
+            closing = true;
+            const finish = () => {
+                el.close();
+                el.remove();
+            };
+            if (reducedMotion()) return finish();
+            el.dataset.closing = "";
+            el.addEventListener("animationend", finish, { once: true });
+            setTimeout(finish, 250);
+        };
+        const handle: DialogHandle = {
+            el,
+            close,
+            setDismissable: (value) => {
+                dismissable = value;
+                x.hidden = !value;
+            },
+        };
+        x.addEventListener("click", close);
+        el.addEventListener("cancel", (event) => {
+            event.preventDefault();
+            if (dismissable) close();
+        });
+        let pressedBackdrop = false;
+        el.addEventListener("pointerdown", (event) => {
+            pressedBackdrop = event.target === el;
+        });
+        el.addEventListener("click", (event) => {
+            if (event.target === el && pressedBackdrop && dismissable) close();
+            pressedBackdrop = false;
+        });
+        const initial = build(body, actions, handle) ?? body.querySelector("input") ?? actions.querySelector<HTMLElement>('.fe2ee-button[data-variant="primary"]') ?? el;
+        if (initial === el) el.tabIndex = -1;
+        initial.autofocus = true;
+        document.body.append(el);
+        el.showModal();
+        initial.focus({ focusVisible: initial instanceof HTMLInputElement } as FocusOptions);
+        return handle;
+    };
+
+    const field = (labelText: string, type: "password" | "text", autocomplete: AutoFill) => {
+        const id = `fe2ee-${Math.random().toString(36).slice(2)}`;
+        const wrap = document.createElement("div");
+        wrap.className = "fe2ee-field";
+        wrap.innerHTML = `<label for="${id}">${escape(labelText)}</label><div class="fe2ee-row"></div><p class="fe2ee-error" id="${id}-error" role="alert" hidden></p>`;
+        const input = document.createElement("input");
+        input.className = "fe2ee-input";
+        input.id = id;
+        input.type = type;
+        input.autocomplete = autocomplete;
+        input.spellcheck = false;
+        input.setAttribute("aria-describedby", `${id}-error`);
+        const row = wrap.querySelector<HTMLElement>(".fe2ee-row")!;
+        row.append(input);
+        const error = wrap.querySelector<HTMLElement>(".fe2ee-error")!;
+        const setError = (text: string | null) => {
+            error.hidden = !text;
+            error.textContent = text ?? "";
+            input.setAttribute("aria-invalid", String(!!text));
+            if (text) input.focus();
+        };
+        return { wrap, input, row, setError };
+    };
+
+    const section = (title: string, text?: string) => {
+        const el = document.createElement("section");
+        el.className = "fe2ee-section";
+        el.innerHTML = `<h3>${escape(title)}</h3>${text ? `<p>${escape(text)}</p>` : ""}`;
+        return el;
+    };
+
+    const describe = (el: HTMLElement, text: string) => {
+        const p = document.createElement("p");
+        p.textContent = text;
+        el.append(p);
+        return p;
+    };
+
+    const namesOf = async (ids: string[]) => {
+        const list = await Promise.all(ids.map((id) => engine.profile(id)));
+        const names = list.map(memberName);
+        if (names.length <= 1) return names[0] ?? t("Someone here");
+        return conjunction(names);
+    };
+
+    const showError = (error: unknown, channelId: string) => {
+        const name = (id?: string) => (id && members?.channelId === channelId ? (members.list.find((m) => m.id === id) ?? null) : null);
+        const body = (error as { body?: { message?: string; user_ids?: unknown } })?.body;
+        if (body?.message === "E2EE_RECIPIENT_NO_DEVICES") {
+            const ids = Array.isArray(body.user_ids) ? body.user_ids.map(String) : [];
+            namesOf(ids).then((who) =>
+                flash(channelId, {
+                    tone: "warning",
+                    text:
+                        ids.length > 1
+                            ? t("{names} haven't set up encryption yet. Ask them to open the app once, then try again.", { names: who })
+                            : t("{name} hasn't set up encryption yet. Ask them to open the app once, then try again.", { name: who }),
+                }),
+            );
+            return;
+        }
+        let text = t("Your message couldn't be encrypted, so it wasn't sent.");
+        let action: Notice["action"];
+        if (error instanceof E2eeError) {
+            const who = name(error.userId);
+            if (error.code === "NO_DEVICES")
+                text = t("{name} hasn't set up encryption yet, so your message wasn't sent. Ask them to open the app once.", { name: who ? memberName(who) : t("Someone here") });
+            else if (error.code === "IDENTITY_CHANGED")
+                text = t("{name}'s safety number changed. Review it before sending more messages.", {
+                    name: who ? memberName(who) : t("Someone"),
+                });
+            else if (error.code === "UNSUPPORTED") text = t("{reason}. Your message wasn't sent.", { reason: error.message });
+            else if (error.code === "NOT_LINKED") {
+                text = engine.trustsServer
+                    ? t("Preparing private chat… Your message is still in the text box.")
+                    : t("Unlock this browser to send encrypted messages. Your message wasn't sent.");
+                if (!engine.trustsServer) action = { label: t("Unlock"), run: showUnlock };
+            } else if (error.code === "NOT_READY") text = t("End-to-end encryption is unavailable right now, so your message wasn't sent.");
+        }
+        flash(channelId, { tone: "danger", text, action });
+    };
+
+    const confirmEnable = (channelId: string) =>
+        dialog(t("Turn on end-to-end encryption?"), (body, actions, { close }) => {
+            body.insertAdjacentHTML(
+                "beforeend",
+                `<p>${escape(t("New messages, files and stickers in this conversation are encrypted in your browser before they're sent, and only the people in it can read them. Encryption can't be turned off later."))}</p><p>${escape(t("Polls can't be sent in encrypted conversations."))}</p>`,
+            );
+            const error = document.createElement("p");
+            error.className = "fe2ee-error";
+            error.setAttribute("role", "alert");
+            error.hidden = true;
+            body.append(error);
+            const notReady = (ids: string[]) =>
+                namesOf(ids).then((who) => {
+                    error.textContent =
+                        ids.length > 1
+                            ? t("{names} haven't set up encryption yet, so this conversation can't be encrypted. Ask them to open the app once, then try again.", { names: who })
+                            : t("{name} hasn't set up encryption yet, so this conversation can't be encrypted. Ask them to open the app once, then try again.", { name: who });
+                    error.hidden = false;
+                    confirm.disabled = true;
+                });
+            const confirm = button(t("Turn on encryption"), "primary", async () => {
+                confirm.disabled = true;
+                error.hidden = true;
+                try {
+                    await enableChannel(channelId);
+                    close();
+                } catch (failure) {
+                    const body = (failure as { body?: { message?: string; user_ids?: unknown } })?.body;
+                    if (body?.message === "E2EE_RECIPIENT_NO_DEVICES") return void (await notReady(Array.isArray(body.user_ids) ? body.user_ids.map(String) : []));
+                    error.textContent = t("Couldn't turn on encryption. {error}", {
+                        error: errorText(failure),
+                    });
+                    error.hidden = false;
+                    confirm.disabled = false;
+                }
+            });
+            actions.append(button(t("Cancel"), "secondary", close), confirm);
+            engine
+                .channelMembers(channelId)
+                .then((ids) => engine.keysFor(ids, true))
+                .then((entries) => {
+                    const missing = entries.filter((entry) => !entry.devices.some((d) => d.status === "active")).map((entry) => entry.userId);
+                    if (missing.length) return notReady(missing);
+                })
+                .catch(() => {});
+        });
+
+    const showSafety = async (channelId: string) => {
+        const list = await Promise.all((await engine.channelMembers(channelId)).map((id) => engine.profile(id)));
+        dialog(t("Safety numbers"), (body, actions, { close }) => {
+            body.insertAdjacentHTML(
+                "beforeend",
+                `<p>${escape(t("Compare these numbers with each person in a call or face to face. If they match, nobody is intercepting your messages. Mark them as verified so you're warned if they change."))}</p>`,
+            );
+            for (const member of list) {
+                const block = document.createElement("section");
+                block.className = "fe2ee-member";
+                block.innerHTML = `<div class="fe2ee-member-head"><span class="fe2ee-member-name">${escape(memberName(member))}</span><span class="fe2ee-status"></span></div><div class="fe2ee-safety"><div class="fe2ee-digits" aria-label="${escape(t("Safety number for {name}", { name: memberName(member) }))}">${escape(t("Calculating…"))}</div></div><div class="fe2ee-member-actions"></div>`;
+                body.append(block);
+                const render = async () => {
+                    const contact = engine.contacts[member.id];
+                    const status = block.querySelector<HTMLElement>(".fe2ee-status")!;
+                    status.dataset.verified = String(!!contact?.verified && !contact.pendingKey);
+                    status.dataset.changed = String(!!contact?.pendingKey);
+                    status.innerHTML = contact?.pendingKey
+                        ? `${svg(OPEN_LOCK_PATH)}${escape(t("Safety number changed"))}`
+                        : contact?.verified
+                          ? `${svg(VERIFIED_PATH)}${escape(t("Verified"))}`
+                          : `${svg(OPEN_LOCK_PATH)}${escape(t("Not verified"))}`;
+                    const digits = await engine.safetyNumber(member.id);
+                    const grid = block.querySelector<HTMLElement>(".fe2ee-digits")!;
+                    grid.innerHTML = digits ? (digits.match(/\d{5}/g) ?? []).map((g) => `<span>${g}</span>`).join("") : escape(t("This person hasn't set up encryption yet."));
+                    grid.dataset.number = digits ?? "";
+                    const row = block.querySelector<HTMLElement>(".fe2ee-member-actions")!;
+                    row.replaceChildren();
+                    if (!contact) return;
+                    if (contact.pendingKey)
+                        row.append(
+                            button(t("Accept new safety number"), "primary", async () => {
+                                await engine.acceptIdentity(member.id);
+                                render();
+                            }),
+                        );
+                    else
+                        row.append(
+                            button(contact.verified ? t("Remove verification") : t("Mark as verified"), contact.verified ? "secondary" : "primary", async () => {
+                                await engine.setVerified(member.id, !contact.verified);
+                                render();
+                            }),
+                        );
+                };
+                render();
+            }
+            actions.append(
+                button(t("Encryption settings"), "secondary", () => {
+                    close();
+                    showSettings();
+                }),
+                button(t("Done"), "primary", close),
+            );
+        });
+    };
+
+    const showReset = (onDone?: () => void) =>
+        dialog(t("Reset encryption?"), (body, actions, { close }) => {
+            describe(
+                body,
+                engine.linked
+                    ? t("This replaces your encryption keys. Only do this if you think someone else got hold of them.")
+                    : engine.backup?.mode === "recovery"
+                      ? t("Only do this if you lost your recovery code and no other signed-in browser can approve this one.")
+                      : t("Only do this if your password doesn't unlock your keys and no other signed-in browser can approve this one."),
+            );
+            describe(
+                body,
+                t(
+                    "You get new keys and can keep chatting, but none of your browsers can read the messages sent before the reset anymore. The people you talk to keep what they received.",
+                ),
+            );
+            describe(body, t("Your other browsers have to be approved again, and the people you talk to are told that your safety number changed."));
+            const { wrap, input, setError } = field(t("Account password"), "password", "current-password");
+            body.append(wrap);
+            const confirm = button(t("Reset encryption"), "danger", async () => {
+                if (!input.value) return setError(t("Enter your password."));
+                confirm.disabled = true;
+                setError(null);
+                try {
+                    await reset(input.value);
+                    close();
+                    onDone?.();
+                    const channelId = currentChannel();
+                    if (channelId) flash(channelId, { tone: "info", text: t("Encryption was reset. New messages use your new keys.") }, 6000);
+                } catch (error) {
+                    const status = (error as { status?: number })?.status;
+                    setError(status === 400 ? t("That password isn't right.") : errorText(error));
+                } finally {
+                    confirm.disabled = false;
+                }
+            });
+            input.addEventListener("keydown", (event) => event.key === "Enter" && confirm.click());
+            actions.append(button(t("Cancel"), "secondary", close), confirm);
+            requestAnimationFrame(() => input.focus());
+        });
+
+    const unlockForm = (kind: "password" | "recovery") => {
+        const { wrap, input, row, setError } = kind === "password" ? field(t("Account password"), "password", "current-password") : field(t("Recovery code"), "text", "off");
+        if (kind === "recovery") {
+            input.placeholder = "XXXX XXXX XXXX XXXX XXXX XXXX XXXX XXXX";
+            input.classList.add("fe2ee-input-code");
+            row.dataset.stack = "";
+        }
+        const submit = button(t("Unlock"), "primary", async () => {
+            if (!input.value.trim()) return setError(kind === "password" ? t("Enter your password.") : t("Enter your recovery code."));
+            submit.disabled = true;
+            setError(null);
+            try {
+                await engine.unlockWith(kind, input.value.trim());
+            } catch (error) {
+                setError(errorText(error));
+            } finally {
+                submit.disabled = false;
+            }
+        });
+        input.addEventListener("keydown", (event) => event.key === "Enter" && submit.click());
+        row.append(submit);
+        return wrap;
+    };
+
+    const showRequiredPassword = () => {
+        if (requiredPasswordOpen || unlockOpen || !engine.locked || !engine.trustsServer || failure) return;
+        dialog(t("Enter your password"), (body, actions, { el, close, setDismissable }) => {
+            setDismissable(false);
+            el.dataset.requiredPassword = "true";
+            describe(body, t("Enter your account password to finish setting up this browser."));
+            const { wrap, input, setError } = field(t("Account password"), "password", "current-password");
+            input.required = true;
+            body.append(wrap);
+            let finished = false;
+            const finish = () => {
+                if (finished) return;
+                finished = true;
+                stop();
+                requiredPasswordOpen = null;
+                if (engine.linked && transient?.tone === "info") transient = null;
+                close();
+                refresh();
+            };
+            const stop = engine.onChange(() => {
+                if (engine.linked) finish();
+            });
+            requiredPasswordOpen = finish;
+            const advanced = button(t("Advanced recovery"), "link", showSettings);
+            advanced.hidden = true;
+            const submit = button(t("Continue"), "primary", async () => {
+                if (!input.value) return setError(t("Enter your password."));
+                submit.disabled = true;
+                setError(null);
+                try {
+                    if (!(await verifyPassword(input.value))) return setError(t("That password isn't right."));
+                    await engine.reloadBackup();
+                    if (engine.backup?.mode === "password" && engine.backup.wrapped_secret) await engine.unlockWith("password", input.value).catch(() => {});
+                    if (!engine.linked) await engine.recoverWithPassword(input.value).catch(() => false);
+                    if (!engine.linked) {
+                        await link.request();
+                        await new Promise<void>((resolve) => {
+                            const timer = setTimeout(() => {
+                                unsubscribe();
+                                resolve();
+                            }, 8000);
+                            const unsubscribe = engine.onChange(() => {
+                                if (!engine.linked) return;
+                                clearTimeout(timer);
+                                unsubscribe();
+                                resolve();
+                            });
+                        });
+                    }
+                    input.value = "";
+                    if (engine.linked) finish();
+                    else {
+                        advanced.hidden = false;
+                        setError(t("Your saved keys aren’t available yet. Open a browser where your messages still work, or use your recovery code in Encryption settings."));
+                    }
+                } catch (error) {
+                    setError(errorText(error));
+                } finally {
+                    submit.disabled = false;
+                }
+            });
+            input.addEventListener("keydown", (event) => event.key === "Enter" && submit.click());
+            actions.append(advanced, submit);
+        });
+    };
+
+    const showUnlock = () => {
+        if (unlockOpen || !engine.locked) return;
+        const current = link.outgoing();
+        if (!current || current.state === "failed") link.request().catch(() => {});
+        dialog(t("Unlock encrypted messages"), (body, actions, { el, close }) => {
+            const backup = engine.backup;
+            const intro = describe(body, t("This browser can't read your encrypted messages yet. Bring your keys over with one of these."));
+            if (!backup || (backup.mode === "password" && !backup.wrapped_secret)) {
+                const own = section(
+                    t("Enter your password"),
+                    t(
+                        "If your keys aren't backed up with your password yet, open the app on a browser you used before. It asks for your password once, and then it works here too.",
+                    ),
+                );
+                own.append(unlockForm("password"));
+                body.append(own);
+            } else if (backup.wrapped_secret && backup.identity_key === engine.serverKey) {
+                const own = section(
+                    backup.mode === "recovery" ? t("Enter your recovery code") : t("Enter your password"),
+                    backup.mode === "recovery" ? t("Use the code you saved when you switched to a recovery code.") : undefined,
+                );
+                own.append(unlockForm(backup.mode));
+                body.append(own);
+            }
+            const approval = section(t("Approve from another device"));
+            const status = document.createElement("p");
+            status.setAttribute("role", "status");
+            const codes = document.createElement("div");
+            codes.className = "fe2ee-codes";
+            const again = button(t("Ask for approval"), "secondary", () => link.request().catch(() => {}));
+            approval.append(status, codes, again);
+            body.append(approval);
+            const lost = section(backup?.mode === "recovery" ? t("Lost your code?") : t("Can't unlock this browser?"));
+            describe(lost, t("If you can't use any of these, reset encryption to keep chatting. Messages sent before the reset can't be read anymore."));
+            lost.append(button(t("Reset encryption"), "link", () => showReset(done)));
+            body.append(lost);
+            const render = () => {
+                const state = link.outgoing();
+                const approvers = state?.state === "comparing" ? state.approvers : [];
+                codes.hidden = !approvers.length;
+                codes.replaceChildren(
+                    ...approvers.map(({ name, sas }) => {
+                        const row = document.createElement("div");
+                        row.className = "fe2ee-code-row";
+                        row.innerHTML = `${approvers.length > 1 ? `<span class="fe2ee-code-name">${escape(name)}</span>` : ""}<span class="fe2ee-code">${escape(sas)}</span>`;
+                        return row;
+                    }),
+                );
+                again.hidden = state?.state === "waiting" || state?.state === "comparing" || state?.state === "done" || state?.state === "denied";
+                again.textContent = state ? t("Ask again") : t("Ask for approval");
+                status.textContent =
+                    state?.state === "comparing"
+                        ? approvers.length > 1
+                            ? t(
+                                  "Your signed-in browsers are asking you to approve this one. Approve it on any of them after checking that it shows the code listed under its name.",
+                              )
+                            : t("{name} is asking you to approve this browser. Check that it shows this code, then approve it there.", {
+                                  name: approvers[0]?.name ?? t("Your other browser"),
+                              })
+                        : state?.state === "denied"
+                          ? t("This login was denied on your other browser, so this browser was signed out.")
+                          : state?.state === "failed"
+                            ? state.error
+                                ? t("The approval didn't unlock this browser. {error}", { error: state.error })
+                                : t("The approval didn't unlock this browser. Ask again to retry.")
+                            : state?.state === "waiting"
+                              ? t("Open the app on a browser where you're already signed in. It asks you to approve this one.")
+                              : t("Ask a browser where you're already signed in to approve this one.");
+                const denied = state?.state === "denied";
+                for (const el of [intro, ...body.querySelectorAll<HTMLElement>(":scope > .fe2ee-section")]) el.hidden = denied && el !== approval;
+                notNow.textContent = denied ? t("Close") : t("Not now");
+                if (engine.linked) {
+                    done();
+                    const channelId = currentChannel();
+                    if (channelId) flash(channelId, { tone: "info", text: t("This browser is unlocked.") }, 4000);
+                }
+            };
+            const stop = engine.onChange(render);
+            const done = () => {
+                stop();
+                unlockOpen = null;
+                close();
+            };
+            unlockOpen = { render, close: done };
+            el.addEventListener("close", () => {
+                stop();
+                unlockOpen = null;
+                if (engine.locked && link.outgoing()?.state !== "denied") snoozeUnlock();
+            });
+            const notNow = button(t("Not now"), "secondary", () => {
+                link.cancel().catch(() => {});
+                done();
+            });
+            actions.append(notNow);
+            render();
+        });
+    };
+
+    const showApproval = (prompt: Incoming) => {
+        if (approvals.has(prompt.requestId)) return;
+        dialog(t("New login on {name}", { name: prompt.name }), (body, actions, { el, close }) => {
+            body.insertAdjacentHTML(
+                "beforeend",
+                `${prompt.detail ? `<p class="fe2ee-detail">${escape(prompt.detail)}</p>` : ""}<p>${escape(t("Approve it only if you just signed in there yourself, because it gets access to your encrypted messages. Deny signs it out. The other browser should show this code:"))}</p><div class="fe2ee-code">${escape(prompt.sas)}</div>`,
+            );
+            const error = document.createElement("p");
+            error.className = "fe2ee-error";
+            error.setAttribute("role", "alert");
+            error.hidden = true;
+            body.append(error);
+            const finish = () => {
+                approvals.delete(prompt.requestId);
+                close();
+            };
+            approvals.set(prompt.requestId, finish);
+            el.addEventListener("close", () => approvals.delete(prompt.requestId));
+            const run = async (action: () => Promise<void>) => {
+                approve.disabled = deny.disabled = true;
+                error.hidden = true;
+                try {
+                    await action();
+                    finish();
+                } catch (failure) {
+                    error.textContent = t("Couldn't answer that login. {error}", {
+                        error: errorText(failure),
+                    });
+                    error.hidden = false;
+                    approve.disabled = deny.disabled = false;
+                }
+            };
+            const approve = button(t("Approve login"), "primary", () => run(prompt.approve));
+            const deny = button(t("Deny"), "secondary", () => run(prompt.deny));
+            actions.append(deny, approve);
+            return el;
+        });
+    };
+
+    const dismissApproval = (requestId: string) => approvals.get(requestId)?.();
+
+    const backupPasswordForm = (onDone: () => void) => {
+        const { wrap, input, row, setError } = field(t("Account password"), "password", "current-password");
+        const save = button(t("Back up keys"), "primary", async () => {
+            if (!input.value) return setError(t("Enter your password."));
+            save.disabled = true;
+            setError(null);
+            try {
+                if (!(await verifyPassword(input.value))) return setError(t("That password isn't right."));
+                await engine.backUpWithPassword(input.value);
+                onDone();
+            } catch (error) {
+                setError(errorText(error));
+            } finally {
+                save.disabled = false;
+            }
+        });
+        input.addEventListener("keydown", (event) => event.key === "Enter" && save.click());
+        row.append(save);
+        return wrap;
+    };
+
+    const showBackupPassword = () =>
+        dialog(t("Back up your encryption keys"), (body, actions, { close }) => {
+            describe(
+                body,
+                t(
+                    "Your encryption keys only exist in this browser right now. Enter your account password to lock a backup of them with it, so any browser you sign in to can read your encrypted messages.",
+                ),
+            );
+            body.append(
+                backupPasswordForm(() => {
+                    close();
+                    const channelId = currentChannel();
+                    if (channelId) flash(channelId, { tone: "info", text: t("Your encryption keys are backed up.") }, 5000);
+                }),
+            );
+            actions.append(button(t("Not now"), "secondary", close));
+        });
+
+    const showRecoveryCode = () =>
+        dialog(t("Use a recovery code"), (body, actions, { close, setDismissable }) => {
+            const intro = describe(
+                body,
+                t(
+                    "We'll make a code that locks your key backup instead of your password. You'll need it to set up a new browser when no other device is around to approve it. We only show it once.",
+                ),
+            );
+            const code = generateRecoveryCode();
+            const create = button(t("Make recovery code"), "primary", () => {
+                setDismissable(false);
+                intro.textContent = t(
+                    "Save this code somewhere safe, like a password manager. Anyone with it and access to your account can read your encrypted messages. It replaces your password lock once you confirm.",
+                );
+                const grid = document.createElement("ol");
+                grid.className = "fe2ee-recovery";
+                grid.dataset.code = code;
+                grid.setAttribute("aria-label", t("Recovery code"));
+                grid.innerHTML = code
+                    .split("-")
+                    .map((group) => `<li>${escape(group)}</li>`)
+                    .join("");
+                const error = document.createElement("p");
+                error.className = "fe2ee-error";
+                error.setAttribute("role", "alert");
+                error.hidden = true;
+                body.append(grid, error);
+                let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+                const copy = button(t("Copy code"), "secondary", () => {
+                    navigator.clipboard
+                        ?.writeText(code)
+                        .then(() => {
+                            copy.textContent = t("Copied!");
+                            if (copiedTimer) clearTimeout(copiedTimer);
+                            copiedTimer = setTimeout(() => (copy.textContent = t("Copy code")), 2000);
+                        })
+                        .catch(() => {
+                            copy.textContent = t("Couldn't copy");
+                        });
+                });
+                const saved = button(t("I saved it"), "primary", async () => {
+                    saved.disabled = true;
+                    error.hidden = true;
+                    try {
+                        await engine.setBackupMode("recovery", code);
+                        close();
+                    } catch (failure) {
+                        error.textContent = t("Couldn't switch to the recovery code. {error}", {
+                            error: errorText(failure),
+                        });
+                        error.hidden = false;
+                        saved.disabled = false;
+                    }
+                });
+                actions.replaceChildren(button(t("Cancel"), "secondary", close), copy, saved);
+                copy.focus({ focusVisible: false } as FocusOptions);
+            });
+            actions.append(button(t("Cancel"), "secondary", close), create);
+        });
+
+    const deviceMeta = (device: ServerDevice) => {
+        const current = device.device_id === engine.device?.deviceId;
+        const session = device.session;
+        const state = current
+            ? t("This browser")
+            : device.status === "pending"
+              ? t("Waiting for approval")
+              : session && !session.signed_in
+                ? t("Signed out")
+                : session?.last_seen && Date.now() - Date.parse(session.last_seen) < 5 * 60 * 1000
+                  ? t("Active now")
+                  : session?.last_seen
+                    ? t("Last active {time}", { time: ago(session.last_seen) })
+                    : t("Can read encrypted messages");
+        const when = deviceAdded(deviceTwins(engine.devices, device), device);
+        const added = when ? t("Added {date}", { date: when }) : null;
+        return { current, text: [state, session?.location, added].filter(Boolean).join(" · ") };
+    };
+
+    const confirmRemove = (device: ServerDevice, onDone: () => void) =>
+        dialog(t("Remove this device?"), (body, actions, { close }) => {
+            describe(
+                body,
+                t(
+                    "{name} is signed out and can't read new encrypted messages. To read them there again, it needs your recovery code, your password, or approval from another device.",
+                    { name: deviceTitle(device) ?? t("This browser") },
+                ),
+            );
+            const error = document.createElement("p");
+            error.className = "fe2ee-error";
+            error.setAttribute("role", "alert");
+            error.hidden = true;
+            body.append(error);
+            const confirm = button(t("Remove device"), "danger", async () => {
+                confirm.disabled = true;
+                try {
+                    await engine.removeDevice(device.device_id);
+                    close();
+                    onDone();
+                } catch (failure) {
+                    error.textContent = t("Couldn't remove it. {error}", { error: errorText(failure) });
+                    error.hidden = false;
+                    confirm.disabled = false;
+                }
+            });
+            actions.append(button(t("Cancel"), "secondary", close), confirm);
+        });
+
+    const buildSettings = (root: HTMLElement, close?: () => void) => {
+        const browser = section(t("This browser"));
+        const backupSection = section(t("Key backup"));
+        const devices = section(
+            t("Your devices"),
+            t(
+                "Unlocked browsers can read your encrypted messages, and browsers waiting for approval can once you approve them. Remove the ones you don't recognize or don't use anymore.",
+            ),
+        );
+        const resetSection = section(t("Reset encryption"));
+        const resetText = describe(resetSection, "");
+        const list = document.createElement("div");
+        list.className = "fe2ee-devices";
+        const inviteError = document.createElement("p");
+        inviteError.className = "fe2ee-error";
+        inviteError.setAttribute("role", "alert");
+        inviteError.hidden = true;
+        devices.append(list, inviteError);
+        resetSection.append(button(t("Reset encryption"), "danger", () => showReset()));
+        const renderReset = () => {
+            const text =
+                engine.backup?.mode === "recovery"
+                    ? t(
+                          "If you lost your recovery code and no other browser can approve a new one, reset encryption to keep chatting. Messages sent before the reset can't be read anymore.",
+                      )
+                    : t(
+                          "If your password doesn't unlock your keys and no other browser can approve a new one, reset encryption to keep chatting. Messages sent before the reset can't be read anymore.",
+                      );
+            if (resetText.textContent !== text) resetText.textContent = text;
+        };
+        const advanced = section(t("Advanced safety checks"));
+        const strictLabel = document.createElement("label");
+        strictLabel.className = "fe2ee-safety-option";
+        const strict = document.createElement("input");
+        strict.type = "checkbox";
+        strict.checked = !engine.trustsServer;
+        strict.addEventListener("change", () => {
+            if (strict.checked) browserStorage?.setItem("fosscord-e2ee-strict-safety", "true");
+            else browserStorage?.removeItem("fosscord-e2ee-strict-safety");
+            engine.invalidateAll();
+            refresh();
+        });
+        strictLabel.append(strict, document.createTextNode(t("Review safety number changes and new browser approvals")));
+        advanced.append(strictLabel);
+        describe(
+            advanced,
+            t(
+                "By default, this browser trusts this instance's signed-in sessions and key directory. The instance also stores an encrypted recovery copy of your backup secret, so your account password can recover this browser. Safety checks apply in this browser and do not erase a recovery copy already stored by another browser.",
+            ),
+        );
+        root.append(browser, backupSection, devices, resetSection, advanced);
+        const clear = (el: HTMLElement) => el.querySelectorAll(":scope > :not(h3)").forEach((child) => child.remove());
+        const renderBrowser = () => {
+            clear(browser);
+            describe(browser, engine.linked ? t("Unlocked. This browser can read and send encrypted messages.") : t("Locked. This browser can't read encrypted messages yet."));
+            if (!engine.linked)
+                browser.append(
+                    button(t("Unlock this browser"), "primary", () => {
+                        close?.();
+                        showUnlock();
+                    }),
+                );
+        };
+        let backupKey = "";
+        const renderBackup = (force = false) => {
+            const backup = engine.backup;
+            const key = `${backup?.mode}|${backup?.version}|${!!backup?.wrapped_secret}|${engine.hasSecret}|${engine.backupNeedsPassword}`;
+            if (!force && key === backupKey) return;
+            backupKey = key;
+            clear(backupSection);
+            backupSection.dataset.mode = backup?.mode ?? "none";
+            if (engine.backupNeedsPassword) {
+                describe(backupSection, t("Your keys aren't backed up yet, so new browsers can't read your encrypted messages. Enter your account password to back them up."));
+                backupSection.append(backupPasswordForm(() => renderBackup(true)));
+                return;
+            }
+            if (!backup) return void describe(backupSection, t("Your keys aren't backed up yet. Open the app on a browser that can read your messages to back them up."));
+            if (backup.mode === "recovery")
+                describe(
+                    backupSection,
+                    t(
+                        "Your keys have a recovery-code backup. In trusted-server mode, your account password can also recover a browser through the instance; advanced safety mode uses your recovery code or another device.",
+                    ),
+                );
+            else if (backup.wrapped_secret)
+                describe(
+                    backupSection,
+                    t(
+                        "Your keys are backed up and locked with your account password, so new browsers unlock as soon as you sign in. Someone with a copy of the server's database could try to guess a weak password offline.",
+                    ),
+                );
+            else
+                describe(
+                    backupSection,
+                    t("Your keys are backed up, but they aren't locked with your password yet. Open the app on a browser that can read your messages to finish the backup."),
+                );
+            if (!engine.hasSecret) return;
+            if (backup.mode === "password") {
+                backupSection.append(
+                    button(t("Use a recovery code instead"), "secondary", () => {
+                        close?.();
+                        showRecoveryCode();
+                    }),
+                );
+                return;
+            }
+            const { wrap, input, row, setError } = field(t("Account password"), "password", "current-password");
+            const save = button(t("Use my password instead"), "secondary", async () => {
+                if (!input.value) return setError(t("Enter your password."));
+                save.disabled = true;
+                setError(null);
+                try {
+                    if (!(await verifyPassword(input.value))) return setError(t("That password isn't right."));
+                    await engine.setBackupMode("password", input.value);
+                    renderBackup(true);
+                } catch (error) {
+                    setError(errorText(error));
+                } finally {
+                    save.disabled = false;
+                }
+            });
+            input.addEventListener("keydown", (event) => event.key === "Enter" && save.click());
+            row.append(save);
+            backupSection.append(
+                wrap,
+                button(t("Make a new recovery code"), "secondary", () => {
+                    close?.();
+                    showRecoveryCode();
+                }),
+            );
+        };
+        const renderDevices = () => {
+            list.replaceChildren();
+            const active = engine.devices
+                .filter((d) => d.status !== "revoked")
+                .sort(
+                    (a, b) =>
+                        Number(b.device_id === engine.device?.deviceId) - Number(a.device_id === engine.device?.deviceId) ||
+                        Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""),
+                );
+            for (const device of active) {
+                const row = document.createElement("div");
+                row.className = "fe2ee-device";
+                const { current, text } = deviceMeta(device);
+                row.innerHTML = `<div class="fe2ee-device-icon">${svg(SCREEN_PATH)}</div><div class="fe2ee-device-text"><span class="fe2ee-device-name">${escape(deviceTitle(device) ?? t("Unknown browser"))}</span><span class="fe2ee-device-meta" data-current="${current}">${escape(text)}</span></div>`;
+                const buttons = document.createElement("div");
+                buttons.className = "fe2ee-device-actions";
+                if (!current && device.status === "pending" && engine.linked && engine.hasSecret) {
+                    const asked = (invited.get(device.device_id) ?? 0) > Date.now();
+                    const approve = button(asked ? t("Asked") : t("Approve"), "primary", async () => {
+                        invited.set(device.device_id, Date.now() + INVITE_MS);
+                        setTimeout(renderDevices, INVITE_MS + 50);
+                        renderDevices();
+                        inviteError.hidden = true;
+                        try {
+                            await link.invite(device.device_id);
+                        } catch (error) {
+                            invited.delete(device.device_id);
+                            renderDevices();
+                            inviteError.textContent = t("Couldn't ask that browser for approval. {error}", {
+                                error: errorText(error),
+                            });
+                            inviteError.hidden = false;
+                        }
+                    });
+                    approve.disabled = asked;
+                    if (asked) approve.title = t("That browser shows a code and asks you to approve it here once it's open.");
+                    buttons.append(approve);
+                }
+                if (!current) buttons.append(button(t("Remove"), "secondary", () => confirmRemove(device, renderDevices)));
+                if (buttons.childElementCount) row.append(buttons);
+                list.append(row);
+            }
+        };
+        const render = () => {
+            renderBrowser();
+            renderBackup();
+            renderDevices();
+            renderReset();
+        };
+        render();
+        engine.reloadBackup().then(
+            () => renderBackup(true),
+            () => {},
+        );
+        engine.refresh().catch(() => {});
+        return engine.onChange(render);
+    };
+
+    const showSettings = () =>
+        dialog(t("Encryption settings"), (body, actions, { el, close }) => {
+            const stop = buildSettings(body, close);
+            el.addEventListener("close", () => stop());
+            actions.append(button(t("Done"), "primary", close));
+        });
+
+    const mountSettings = (container: HTMLElement) => {
+        mount();
+        const root = document.createElement("div");
+        root.className = "fe2ee-page";
+        container.replaceChildren(root);
+        if (!engine.userId) {
+            describe(root, failure ?? paused ?? t("Encryption is still starting up."));
+            return () => {};
+        }
+        const stop = buildSettings(root);
+        return () => {
+            stop();
+            root.remove();
+        };
+    };
+
+    const pauseForChange = (channelId: string, changed: ChannelMember) => {
+        flash(channelId, {
+            tone: "warning",
+            text: t("{name}'s safety number changed. Review it before sending. Your message is still in the text box.", { name: memberName(changed) }),
+            action: { label: t("Review"), run: () => showSafety(channelId) },
+        });
+        return true;
+    };
+
+    const changedMember = async (channelId: string) => {
+        const ids = await engine.channelMembers(channelId);
+        await engine.keysFor(ids);
+        const id = ids.find((m) => engine.contacts[m]?.pendingKey);
+        return id ? engine.profile(id) : null;
+    };
+
+    const beforeSend = async (channelId: string) => {
+        if (!engine.isEncrypted(channelId)) return false;
+        if (!(await ready)) {
+            flash(channelId, {
+                tone: "danger",
+                text: failure ?? t("Encryption is unavailable in this client build"),
+            });
+            return true;
+        }
+        if (failure) {
+            flash(channelId, { tone: "danger", text: failure });
+            return true;
+        }
+        if (paused) {
+            flash(channelId, { tone: "warning", text: paused });
+            return true;
+        }
+        const changed = members?.channelId === channelId ? members.list.find((m) => engine.contacts[m.id]?.pendingKey) : undefined;
+        if (changed && !engine.trustsServer) return pauseForChange(channelId, changed);
+        if (engine.locked) {
+            if (engine.trustsServer) {
+                link.request().catch(() => {});
+                showRequiredPassword();
+                flash(channelId, {
+                    tone: "info",
+                    text: t("Preparing private chat… Your message is still in the text box."),
+                });
+                return true;
+            }
+            showUnlock();
+            flash(channelId, {
+                tone: "warning",
+                text: t("Unlock this browser to send encrypted messages. Your message is still in the text box."),
+                action: { label: t("Unlock"), run: showUnlock },
+            });
+            return true;
+        }
+        if (!engine.trustsServer) {
+            const checked = await Promise.race([changedMember(channelId).catch(() => null), new Promise<null>((resolve) => void setTimeout(() => resolve(null), 3000))]);
+            if (checked) return pauseForChange(channelId, checked);
+        }
+        const entries = await Promise.race([
+            engine
+                .channelMembers(channelId)
+                .then((ids) => engine.keysFor(ids))
+                .catch(() => null),
+            new Promise<null>((resolve) => void setTimeout(() => resolve(null), 3000)),
+        ]);
+        if (!entries) {
+            if (!engine.trustsServer) return false;
+            flash(channelId, {
+                tone: "info",
+                text: t("Preparing private chat… Your message is still in the text box."),
+            });
+            return true;
+        }
+        const unreadable = unreadableMembers(entries, engine.userId);
+        if (!unreadable.length) return false;
+        const who = await namesOf(unreadable);
+        const many = unreadable.length > 1;
+        if (unreadable.length === entries.length) {
+            flash(channelId, {
+                tone: "danger",
+                text: many
+                    ? t("{names} haven't set up encryption yet, so nobody here could read your message. It's still in the text box.", { names: who })
+                    : t("{name} hasn't set up encryption yet, so they couldn't read your message. It's still in the text box.", { name: who }),
+            });
+            return true;
+        }
+        flash(
+            channelId,
+            {
+                tone: "warning",
+                text: many
+                    ? t("{names} haven't set up encryption yet and can't read this message. Everyone else here can.", { names: who })
+                    : t("{name} hasn't set up encryption yet and can't read this message. Everyone else here can.", { name: who }),
+            },
+            15000,
+        );
+        return false;
+    };
+
+    const decorateMessages = () => {
+        for (const [id, info] of states) {
+            const content = document.getElementById(`message-content-${id}`);
+            if (!content) continue;
+            if (info.state === "decrypted") delete content.dataset.fe2eeState;
+            else if (content.dataset.fe2eeState !== info.state) content.dataset.fe2eeState = info.state;
+            content.querySelectorAll(".fe2ee-lock, .fe2ee-unlock").forEach((el) => el.remove());
+        }
+    };
+
+    const headerLabel = (channelId: string) => {
+        if (!engine.isEncrypted(channelId)) return t("Turn On Encryption");
+        if (!bootstrapped) return t("Preparing private chat…");
+        const list = members?.channelId === channelId ? members.list : [];
+        if (!engine.trustsServer && list.some((m) => engine.contacts[m.id]?.pendingKey)) return t("Safety Number Changed");
+        if (list.length && list.every((m) => engine.contacts[m.id]?.verified)) return t("Encrypted and Verified");
+        return t(engine.trustsServer ? "Encrypted" : "End-to-End Encrypted");
+    };
+
+    const decorateHeader = (channelId: string | null) => {
+        const existing = document.querySelector<HTMLButtonElement>(".fe2ee-toggle");
+        if (!channelId) return existing?.remove();
+        const toolbars = [...document.querySelectorAll<HTMLElement>('[class*="toolbar__"]')];
+        const toolbar = toolbars.find((t) => t.parentElement?.className.includes("upperContainer")) ?? toolbars[0];
+        if (!toolbar) return;
+        const on = engine.isEncrypted(channelId);
+        const list = members?.channelId === channelId ? members.list : [];
+        const verified = on && list.length > 0 && list.every((m) => engine.contacts[m.id]?.verified && !engine.contacts[m.id]?.pendingKey);
+        let toggle = existing;
+        if (!toggle || toggle.parentElement !== toolbar) {
+            toggle?.remove();
+            toggle = document.createElement("button");
+            toggle.type = "button";
+            toggle.className = "fe2ee-toggle";
+            toggle.addEventListener("click", () => {
+                const id = currentChannel();
+                if (!id) return;
+                if (engine.isEncrypted(id)) showSafety(id);
+                else confirmEnable(id);
+            });
+            withTooltip(toggle, () => headerLabel(currentChannel() ?? ""));
+            toolbar.prepend(toggle);
+        }
+        const label = headerLabel(channelId);
+        toggle.disabled = on && !bootstrapped;
+        const key = `${on}|${verified}|${label}`;
+        if (toggle.dataset.key === key) return;
+        toggle.dataset.key = key;
+        toggle.dataset.verified = String(verified);
+        toggle.setAttribute("aria-pressed", String(on));
+        toggle.setAttribute("aria-label", on ? t("{label}. View safety numbers", { label: headerLabel(channelId) }) : t("Turn on end-to-end encryption"));
+        toggle.innerHTML = svg(verified ? VERIFIED_PATH : on ? LOCK_PATH : OPEN_LOCK_PATH);
+    };
+
+    const currentNotice = (channelId: string | null): Notice | null => {
+        if (!channelId) return null;
+        const temporary = transient && transient.channelId === channelId && transient.until > Date.now() ? transient : null;
+        if (!engine.isEncrypted(channelId)) return temporary;
+        if (failure) return { tone: "danger", text: failure };
+        if (paused) return { tone: "warning", text: paused };
+        if (!bootstrapped) return { tone: "info", text: t("Preparing private chat…") };
+        const changed = members?.channelId === channelId ? members.list.find((m) => engine.contacts[m.id]?.pendingKey) : undefined;
+        if (changed && !engine.trustsServer)
+            return {
+                tone: "warning",
+                text: t("{name}'s safety number changed. Sending is paused until you review it.", {
+                    name: memberName(changed),
+                }),
+                action: { label: t("Review"), run: () => showSafety(channelId) },
+            };
+        if (temporary) return temporary;
+        if (engine.locked)
+            return engine.trustsServer
+                ? {
+                      tone: "info",
+                      text: t("Unlock this browser to read and send encrypted messages here."),
+                      action: { label: t("Unlock"), run: showRequiredPassword },
+                  }
+                : {
+                      tone: "info",
+                      text: t("Unlock this browser to read and send encrypted messages here."),
+                      action: { label: t("Unlock"), run: showUnlock },
+                  };
+        if (!engine.trustsServer && engine.backupNeedsPassword && !backupPromptDismissed)
+            return {
+                tone: "info",
+                text: t("Back up your encryption keys with your password so your other browsers can read your encrypted messages."),
+                action: {
+                    label: t("Back up"),
+                    run: () => {
+                        backupPromptDismissed = true;
+                        refresh();
+                        showBackupPassword();
+                    },
+                },
+            };
+        return null;
+    };
+
+    const decorateNotice = (channelId: string | null) => {
+        const notice = currentNotice(channelId);
+        const form = document.querySelector<HTMLElement>('[role="textbox"]')?.closest("form");
+        if (!notice || !form) return bar.remove();
+        if (bar.parentElement !== form || form.firstElementChild !== bar) form.prepend(bar);
+        const key = `${notice.tone}|${notice.text}|${notice.action?.label ?? ""}`;
+        if (bar.dataset.key === key) return;
+        bar.dataset.key = key;
+        bar.dataset.tone = notice.tone;
+        bar.setAttribute("role", notice.tone === "danger" ? "alert" : "status");
+        bar.innerHTML = `${svg(notice.tone === "info" ? LOCK_PATH : OPEN_LOCK_PATH)}<p>${escape(notice.text)}</p>`;
+        if (notice.action) {
+            const { run } = notice.action;
+            bar.append(button(notice.action.label, "secondary", run));
+        }
+    };
+
+    const refresh = () => {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => {
+            scheduled = false;
+            mount();
+            const channelId = currentChannel();
+            if (bootstrapped && channelId && engine.userId && members?.channelId !== channelId) loadMembers(channelId);
+            if (tooltip && !document.querySelector(".fe2ee-toggle:hover, .fe2ee-lock:hover")) hideTooltip();
+            decorateMessages();
+            decorateHeader(channelId);
+            decorateNotice(channelId);
+            const needsPassword = bootstrapped && !failure && engine.trustsServer && engine.locked && !!channelId && engine.isEncrypted(channelId);
+            if (!needsPassword && passwordPromptTimer) {
+                clearTimeout(passwordPromptTimer);
+                passwordPromptTimer = null;
+            }
+            if (needsPassword && !requiredPasswordOpen && !passwordPromptTimer) {
+                passwordPromptTimer = setTimeout(() => {
+                    passwordPromptTimer = null;
+                    const current = currentChannel();
+                    if (current && engine.isEncrypted(current)) showRequiredPassword();
+                }, 8000);
+            }
+        });
+    };
+
+    const start = () => {
+        mount();
+        new MutationObserver(refresh).observe(document.body, { childList: true, subtree: true });
+        engine.onChange(refresh);
+        refresh();
+    };
+
+    if (document.body) start();
+    else document.addEventListener("DOMContentLoaded", start, { once: true });
+
+    return {
+        refresh,
+        showError,
+        showUnlock,
+        unlockSnoozed,
+        showApproval,
+        dismissApproval,
+        showSettings,
+        mountSettings,
+        beforeSend,
+        renderUnlock: () => unlockOpen?.render(),
+        fail: (text: string | null) => {
+            failure = text;
+            refresh();
+        },
+        pause: (text: string | null) => {
+            paused = text;
+            refresh();
+        },
+    };
+};

@@ -1,0 +1,89 @@
+.fosscord-cap-verification {
+    margin-block: 20px;
+    color: var(--text-default);
+    font-size: 14px;
+}
+.fosscord-cap-label {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+.fosscord-cap-label span,
+.fosscord-cap-verification p {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.fosscord-cap-verification p {
+    margin-block: 8px;
+    line-height: 1.4;
+    text-wrap: pretty;
+}
+.fosscord-cap-container {
+    min-height: 52px;
+    max-width: 100%;
+}
+.fosscord-cap-container:focus-visible {
+    outline: 2px solid var(--focus-primary);
+    outline-offset: 4px;
+}
+.fosscord-cap-verification cap-widget {
+    --cap-background: var(--background-base-lowest, var(--input-background-default));
+    --cap-border-color: var(--input-border-default, var(--background-mod-strong));
+    --cap-color: var(--text-default);
+    --cap-border-radius: 6px;
+    --cap-checkbox-background: var(--background-base-lowest, var(--input-background-default));
+    --cap-checkbox-border: 1px solid var(--interactive-text-default);
+    --cap-focus-ring: var(--focus-primary);
+    --cap-font: var(--font-primary);
+    --cap-spinner-color: var(--text-default);
+    --cap-spinner-background-color: var(--background-mod-strong);
+    display: block;
+    max-width: 100%;
+}
+.fosscord-cap-verification button {
+    min-height: 40px;
+    padding: 6px 12px;
+    border: 1px solid var(--input-border-default, var(--background-mod-strong));
+    border-radius: 4px;
+    background: var(--background-base-lowest, var(--input-background-default));
+    color: var(--text-default);
+    cursor: pointer;
+}
+.fosscord-cap-verification button:focus-visible {
+    outline: 2px solid var(--focus-primary);
+    outline-offset: 2px;
+}
+@media (hover: hover) {
+    .fosscord-cap-verification button:hover {
+        background: var(--background-modifier-hover);
+    }
+}
+@media (prefers-reduced-motion: no-preference) {
+    .fosscord-cap-verification button {
+        transition: scale 200ms ease-out;
+    }
+    .fosscord-cap-verification button:active {
+        scale: 0.97;
+    }
+}
+
+.fosscord-cap-recovery a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    color: var(--text-link);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.fosscord-cap-recovery a:focus-visible {
+    outline: 2px solid var(--focus-primary);
+    outline-offset: 2px;
+}
+@media (pointer: coarse) {
+    .fosscord-cap-recovery a,
+    .fosscord-cap-verification button {
+        min-height: 44px;
+    }
+}

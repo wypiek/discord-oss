@@ -1,0 +1,110 @@
+import { NextFunction, Request, Response } from "express";
+import { HTTPError } from "lambert-server/HTTPError";
+import { ApiError, DiscordApiErrors, FederationRequestError, FieldError, FieldErrors } from "@spacebar/util";
+import { StringLengthOutOfBoundsException } from "@spacebar/extensions";
+const EntityNotFoundErrorRegex = /"(\w+)"/;
+const SECRET_BODY_KEY = /pass|token|secret|code|ticket|key|credential|nonce|otp|hash|authorization|private|e2ee|ciphertext|content|email|phone|login/i;
+
+export function redactBody(body: unknown, depth = 0): unknown {
+    if (Array.isArray(body)) return depth > 4 ? "[array]" : body.map((value) => redactBody(value, depth + 1));
+    if (!body || typeof body !== "object" || Buffer.isBuffer(body)) return Buffer.isBuffer(body) ? `[${body.length} bytes]` : body;
+    if (depth > 4) return "[object]";
+    return Object.fromEntries(Object.entries(body).map(([key, value]) => [key, SECRET_BODY_KEY.test(key) ? "[redacted]" : redactBody(value, depth + 1)]));
+}
+const UNKNOWN_ENTITY_ERRORS: Record<string, ApiError> = {
+    Channel: DiscordApiErrors.UNKNOWN_CHANNEL,
+    Message: DiscordApiErrors.UNKNOWN_MESSAGE,
+    Guild: DiscordApiErrors.UNKNOWN_GUILD,
+    Member: DiscordApiErrors.UNKNOWN_MEMBER,
+    Role: DiscordApiErrors.UNKNOWN_ROLE,
+    User: DiscordApiErrors.UNKNOWN_USER,
+    Webhook: DiscordApiErrors.UNKNOWN_WEBHOOK,
+    Emoji: DiscordApiErrors.UNKNOWN_EMOJI,
+    Sticker: DiscordApiErrors.UNKNOWN_STICKER,
+    Invite: DiscordApiErrors.UNKNOWN_INVITE,
+    StageInstance: DiscordApiErrors.UNKNOWN_STAGE_INSTANCE,
+    GuildScheduledEvent: DiscordApiErrors.UNKNOWN_GUILD_SCHEDULED_EVENT,
+};
+
+export function ErrorHandler(error: Error & { type?: string }, req: Request, res: Response, next: NextFunction) {
+    if (!error) return next();
+
+    const response = error as Error & { status?: number; body?: object };
+    if (response.name === "ResponseError" && response.status && response.body) return res.status(response.status).json(response.body);
+
+    // Convert custom generic exception classes to spacebar errors
+    if (error instanceof StringLengthOutOfBoundsException)
+        error = FieldErrors({
+            [error.key]: {
+                code: "BASE_TYPE_BAD_LENGTH",
+                message: req.t("common:field.BASE_TYPE_BAD_LENGTH", {
+                    length: `${error.min} - ${error.max}`,
+                }),
+            },
+        });
+
+    try {
+        let code = 400;
+        let httpcode = code;
+        let message = error?.toString();
+        let errors;
+        let _ajvErrors;
+
+        if (process.env.LOG_API_ERRORS === "true") console.error("[ErrorHandler] Uncaught exception:", error);
+
+        if (error instanceof HTTPError && error.code) {
+            code = httpcode = error.code;
+            message = error.message;
+        } else if (error instanceof ApiError) {
+            code = error.code;
+            message = error.message;
+            httpcode = error.httpStatus;
+        } else if (error.name === "EntityNotFoundError") {
+            const entity = error.message.match(EntityNotFoundErrorRegex)?.[1] || "Item";
+            const known = UNKNOWN_ENTITY_ERRORS[entity];
+            message = known?.message ?? `${entity} could not be found`;
+            code = known?.code ?? 404;
+            httpcode = 404;
+        } else if (error instanceof FederationRequestError) {
+            code = 0;
+            httpcode = error.status === 401 ? 502 : error.status;
+            message = error.message;
+        } else if (error instanceof FieldError) {
+            code = Number(error.code);
+            message = error.message;
+            errors = error.errors;
+            _ajvErrors = error._ajvErrors;
+        } else if (error.name === "QueryFailedError" && /invalid input syntax for type bigint/.test(error.message)) {
+            code = 0;
+            httpcode = 404;
+            message = "404: Not Found";
+        } else if (error instanceof URIError) {
+            code = 0;
+            httpcode = 400;
+            message = "The request URL contains a malformed escape sequence.";
+        } else if (error?.type == "entity.parse.failed") {
+            // body-parser failed
+            httpcode = 400;
+            code = 50109;
+            message = "The request body contains invalid JSON.";
+        } else {
+            console.error(`[Error] ${code} ${req.url}\n`, errors ?? error, "\nbody:", redactBody(req.body));
+            message = "500: Internal Server Error";
+            code = 0;
+            httpcode = 500;
+        }
+
+        if (httpcode > 511) httpcode = 400;
+
+        const retry_after = (error as Error & { retry_after?: number }).retry_after;
+        if (retry_after !== undefined) {
+            res.setHeader("Retry-After", Math.ceil(retry_after));
+            return res.status(httpcode).json({ code, message, retry_after, global: false });
+        }
+
+        res.status(httpcode).json({ code, message, errors, _ajvErrors, request: `${req.method} ${req.url}` });
+    } catch (error) {
+        console.error(`[Internal Server Error] 500`, error);
+        return res.status(500).json({ code: 0, message: "500: Internal Server Error" });
+    }
+}

@@ -1,0 +1,575 @@
+{
+  "repository": "https://github.com/b3yc0d3/twemoji-flags",
+  "commit": "1eee036f2567edc1f56f7dcb4105eae5a347cc7b",
+  "graphicsLicense": "CC-BY-4.0",
+  "upstreamDirectory": "assets/flags",
+  "excluded": ["TEMPLATE_FLAG.svg"],
+  "upstreamFlagCount": 40,
+  "supplementalSlugs": [
+    "rainbow",
+    "original-rainbow",
+    "philadelphia",
+    "intersex-progress",
+    "lesbian-seven",
+    "gay-five",
+    "gray-asexual",
+    "grayromantic",
+    "unlabeled",
+    "androgyne",
+    "abroromantic",
+    "aceflux",
+    "ambiamorous",
+    "androromantic",
+    "aporagender",
+    "aroflux",
+    "bigender",
+    "biromantic",
+    "ceteroromantic",
+    "ceterosexual",
+    "demifluid",
+    "diamoric",
+    "egogender",
+    "frayromantic",
+    "gender-neutral",
+    "gender-questioning",
+    "graygender",
+    "gyneromantic",
+    "hijra",
+    "intergender",
+    "maverique",
+    "mogai",
+    "multigender",
+    "multisexual",
+    "neurogender",
+    "omniromantic",
+    "pangender",
+    "panromantic",
+    "polygender",
+    "polyromantic",
+    "pomosexual",
+    "transneutral",
+    "trigender",
+    "two-spirit",
+    "waria",
+    "xenogender"
+  ],
+  "flags": [
+    {
+      "file": "abrosexual_flag.svg",
+      "slug": "abrosexual",
+      "icon": "pride_abrosexual",
+      "sha256": "4e6aefae20581b094f4ab026e0948c3ab34175f12c6d6d8a4af4507f3d54f1a7"
+    },
+    {
+      "file": "achillean_flag.svg",
+      "slug": "achillean",
+      "icon": "pride_achillean",
+      "sha256": "fb9e204c7cfaf2dc1b08617ef9b8c4ba6e6c4004e431f123bfd84f944d1d3b67"
+    },
+    {
+      "file": "agender_flag.svg",
+      "slug": "agender",
+      "icon": "pride_agender",
+      "sha256": "d3449ef82fdb8827e74c6e16a5b1b9902cfa4c6c9f767e51eee748e749d86a7e"
+    },
+    {
+      "file": "androsexual_flag.svg",
+      "slug": "androsexual",
+      "icon": "pride_androsexual",
+      "sha256": "fd925e36bdd66f6f188bb48b9e299d0742801b4d1da10a9dd78e62d5d477e5fc"
+    },
+    {
+      "file": "aroace_flag.svg",
+      "slug": "aroace",
+      "icon": "pride_aroace",
+      "sha256": "1d54957d54a64749970afb01fab0366a23f2dd3ed676fa103b4b992cedac2080"
+    },
+    {
+      "file": "aromantic_flag.svg",
+      "slug": "aromantic",
+      "icon": "pride_aromantic",
+      "sha256": "0acb97ea658fc8555f01331a5b1feb47f971238bc60fad23b655f8dbd42133ba"
+    },
+    {
+      "file": "asexual_flag.svg",
+      "slug": "asexual",
+      "icon": "pride_asexual",
+      "sha256": "a9bb774a9e309708f08c685da40996042254b1c2efa386a946d5373bf146dc92"
+    },
+    {
+      "file": "aspec_flag.svg",
+      "slug": "aspec",
+      "icon": "pride_aspec",
+      "sha256": "feb4a3830975284355394b47862dc68b75a0775ea7052444189f11d35053808e"
+    },
+    {
+      "file": "bi_flag.svg",
+      "slug": "bisexual",
+      "icon": "pride_bisexual",
+      "sha256": "29829013d8efbfd7ff9e3515a361b57d9338b0e47f1ad4d1a4aed3b6653617d1"
+    },
+    {
+      "file": "ceres_flag.svg",
+      "slug": "ceres",
+      "icon": "pride_ceres",
+      "sha256": "aab791c6fb170f1f58ec0475d6d98101e577d2709b111caf199538b17d7e3686"
+    },
+    {
+      "file": "demiboy_flag.svg",
+      "slug": "demiboy",
+      "icon": "pride_demiboy",
+      "sha256": "cd1aa5c1a9a29b2915f066d4ee661e8dd5b58c51ce1b1a426c8beeb16bac6fad"
+    },
+    {
+      "file": "demiflux_flag.svg",
+      "slug": "demiflux",
+      "icon": "pride_demiflux",
+      "sha256": "ef10acf04f9fc62021bd341d5f96443e1d12c4c7d97d364661097e8f5016c4a4"
+    },
+    {
+      "file": "demigender_flag.svg",
+      "slug": "demigender",
+      "icon": "pride_demigender",
+      "sha256": "72b5df7a2efe070c726394f117f7bb9754fd497c91131aa6906d96a1678ea9d5"
+    },
+    {
+      "file": "demigirl_flag.svg",
+      "slug": "demigirl",
+      "icon": "pride_demigirl",
+      "sha256": "fd793a6480bddeb604ec577cffed2b23fe5ca659cb3ac1cfb49aa0300776c1e2"
+    },
+    {
+      "file": "demiromantic_flag.svg",
+      "slug": "demiromantic",
+      "icon": "pride_demiromantic",
+      "sha256": "53e51eb6f4fcfcfc8311d30977f49e555cd05c403195dd658d3a54b2e6074769"
+    },
+    {
+      "file": "demisexual_flag.svg",
+      "slug": "demisexual",
+      "icon": "pride_demisexual",
+      "sha256": "8852bd4b8c77cde480910f48400d4d7a5f81b10dd3b6ee2b6a7ea290fcddd4fa"
+    },
+    {
+      "file": "femboy_flag.svg",
+      "slug": "femboy",
+      "icon": "pride_femboy",
+      "sha256": "d6c1c34cc25655c3427321edf098add5af2f60468557d1e15a3f07f8a726b8c3"
+    },
+    {
+      "file": "gay_men_flag.svg",
+      "slug": "gay-seven",
+      "icon": "pride_gay_seven",
+      "sha256": "f70bb7783bd96cf01cb26456b234d14d4e44e325989bc567005cb6b766b138e2"
+    },
+    {
+      "file": "genderfluid_flag.svg",
+      "slug": "genderfluid",
+      "icon": "pride_genderfluid",
+      "sha256": "3a39e844505be35440dfdcdc4ee8865bd093957f56ab3b4dcca25eb17649565a"
+    },
+    {
+      "file": "genderflux_flag.svg",
+      "slug": "genderflux",
+      "icon": "pride_genderflux",
+      "sha256": "066ce30c676b9d777436bee3af3b485d787fbc908508f177df791e9e898c0fb3"
+    },
+    {
+      "file": "genderqueer_nb1_flag.svg",
+      "slug": "genderqueer",
+      "icon": "pride_genderqueer",
+      "sha256": "357e74d0f1231b640d86b427bad9df8048950822841343a8fb76f6dffca1b4f1"
+    },
+    {
+      "file": "genderqueer_nb_flag.svg",
+      "slug": "genderqueer-symbol",
+      "icon": "pride_genderqueer_symbol",
+      "sha256": "f6f2b075e28b5b73674ed20de471a4c591d02c679448a9f624535a17497de6d8"
+    },
+    {
+      "file": "gynesexual_flag.svg",
+      "slug": "gynesexual",
+      "icon": "pride_gynesexual",
+      "sha256": "340835444b0d74034387a5f00ff3b0aa6e1208f056dcc5e11b876b4c0c6b261b"
+    },
+    {
+      "file": "intersexualtiy_flag.svg",
+      "slug": "intersex",
+      "icon": "pride_intersex",
+      "sha256": "1eb08883dacafeedc7341798409d16dd7710f7dee40cf0c18a58cdda71473275"
+    },
+    {
+      "file": "lesbian_flag.svg",
+      "slug": "lesbian-five",
+      "icon": "pride_lesbian_five",
+      "sha256": "64d8bce5b42f59ab2ecbe5ac2f3ef0e47380dee11e5b9c5aea6b2e7a3c56659f"
+    },
+    {
+      "file": "nb_flag.svg",
+      "slug": "nonbinary",
+      "icon": "pride_nonbinary",
+      "sha256": "3d0d4622413c56c31c822c73b34550c8365d4b9e740487eadc9a69bd5eb13336"
+    },
+    {
+      "file": "neutrois_flag.svg",
+      "slug": "neutrois",
+      "icon": "pride_neutrois",
+      "sha256": "26d504cf21f1b54aa119fe7e7771fb9b7d5080cd50d4d635fee959fd06280d2b"
+    },
+    {
+      "file": "omni_flag.svg",
+      "slug": "omnisexual",
+      "icon": "pride_omnisexual",
+      "sha256": "a9360b6c5a3715ee5f8c983649fa98256210ccc9a36ebb58442229bdaf7bdc67"
+    },
+    {
+      "file": "pan_flag.svg",
+      "slug": "pansexual",
+      "icon": "pride_pansexual",
+      "sha256": "e32034094dc0a5d806f842bf9df11733c9bd67ddd5c8fbbae9f12d6e330d1aa3"
+    },
+    {
+      "file": "polyamory1_flag.svg",
+      "slug": "polyamory-alternative",
+      "icon": "pride_polyamory_alternative",
+      "sha256": "7d7b12739928c412170802bf9d8c85d9b8cdbdd963049d283231a859c6c5ddf7"
+    },
+    {
+      "file": "polyamory_flag.svg",
+      "slug": "polyamory",
+      "icon": "pride_polyamory",
+      "sha256": "55371d97a3cd7edc336ec9a70ff9c828c2e5d8dce4c0f374223519dcbbdb3d43"
+    },
+    {
+      "file": "polysexual_flag.svg",
+      "slug": "polysexual",
+      "icon": "pride_polysexual",
+      "sha256": "62642e9c60958d399a723c41a790f539fd74b8969dead205b165a8e799ea0898"
+    },
+    {
+      "file": "progress_pride_flag.svg",
+      "slug": "progress",
+      "icon": "pride_progress",
+      "sha256": "f1d8565cd6176b468c36129b090a930bef2139954036b24fba134c509b4990a2"
+    },
+    {
+      "file": "queer_flag.svg",
+      "slug": "queer",
+      "icon": "pride_queer",
+      "sha256": "cdf24656df842a633e67cfee855b1bc5e2a9428eb4f6cc5067f5a47e692a1b0c"
+    },
+    {
+      "file": "sapphic_flag.svg",
+      "slug": "sapphic",
+      "icon": "pride_sapphic",
+      "sha256": "c722368df65dfd333da79b744f6000e533cbbd0218908fa9a3e57f5e61a5059d"
+    },
+    {
+      "file": "straight_ally_flag.svg",
+      "slug": "straight-ally",
+      "icon": "pride_straight_ally",
+      "sha256": "888e1e52797b77eecaf42efc27c13e79fe00cd42e3e3edf1141596c16ff350aa"
+    },
+    {
+      "file": "trans_flag.svg",
+      "slug": "transgender",
+      "icon": "pride_transgender",
+      "sha256": "f308d11dee77add381f6987811b5a7e3d13a8cabb8b2e3113cc39d3bcaaae8c7"
+    },
+    {
+      "file": "transfem_flag.svg",
+      "slug": "transfeminine",
+      "icon": "pride_transfeminine",
+      "sha256": "1d382bbe429154c0eb85b267ca8f86601179cfc240307e5e4358fd374fd420a2"
+    },
+    {
+      "file": "transmasc_flag.svg",
+      "slug": "transmasculine",
+      "icon": "pride_transmasculine",
+      "sha256": "1a90eaf2654815ef1024a7a9d84344b1b8a48fb727e876cff8b77e4e4e5d9b0e"
+    }
+  ],
+  "template": {
+    "file": "TEMPLATE_FLAG.svg",
+    "sha256": "e5d5b6fa534dcc88ef80f115387ac4e8de28d5045c5bf79505d7237a51383245"
+  },
+  "supplementalStyle": "Derived from upstream template silhouette; locally drawn authentic stripe variants and symbols.",
+  "supplementalFlags": [
+    {
+      "slug": "rainbow",
+      "icon": "pride_rainbow",
+      "sha256": "c8e087daa41ee94f1143c69f18712fa78e0456d7c318439ce5db1a70d9712f86",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "original-rainbow",
+      "icon": "pride_original_rainbow",
+      "sha256": "ef4f22e8d75a5758848925d0c42bed22f46ff1995f3973e4f4fd760a877308aa",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "philadelphia",
+      "icon": "pride_philadelphia",
+      "sha256": "1509f9697585738e3c9b33b5ba62d66d4cd7c1e49bb6637e5ca70bcd0b0185e6",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "intersex-progress",
+      "icon": "pride_intersex_progress",
+      "sha256": "40a3e2ae2331e9aea79d504814fbccbfdecbc7d795661a16dbd5702c899f9259",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "lesbian-seven",
+      "icon": "pride_lesbian_seven",
+      "sha256": "c4fc3778f32b0022a466befd153066b4af716fbbd483379ee295315d7db35b5b",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "gay-five",
+      "icon": "pride_gay_five",
+      "sha256": "6d21657d1df03092952ed9d15e519a7804396402eb748f8b306588653ec8c587",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "gray-asexual",
+      "icon": "pride_gray_asexual",
+      "sha256": "e83dbbd4c7093d64efd85b4ffe5a625bd75a5c251d36fb3b8bbcfb540c3b6db3",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "grayromantic",
+      "icon": "pride_grayromantic",
+      "sha256": "2071dcec9ed74c8d47bbbb2e37b7ffd90e9b0e3a539ecb90746bd1770d8d02eb",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "unlabeled",
+      "icon": "pride_unlabeled",
+      "sha256": "42972d5e1d163e0bb38aadb92d69287d3d181dc5d381991518b82f1adca07556",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "androgyne",
+      "icon": "pride_androgyne",
+      "sha256": "e50f54b8e38707d45dd289a448246ad404e2e3e80c2cc9e8d9f9a134f611438c",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "abroromantic",
+      "icon": "pride_abroromantic",
+      "sha256": "c1c1193e5341b88dfc6d06f9c0ef68e2b71c90dc22ccf8cc3caf49c6490f1bd7",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "aceflux",
+      "icon": "pride_aceflux",
+      "sha256": "5e75b3a85478f9159c25d494ff76305fc126ff02feaa23dc668a6c53fcb973e9",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "ambiamorous",
+      "icon": "pride_ambiamorous",
+      "sha256": "ba3ff8d188cd25fe6ad02c2a3d56855322f73a909a8aa93f7e87a86a208bba00",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "androromantic",
+      "icon": "pride_androromantic",
+      "sha256": "d0fde9dc1debffa1d35005507a0560bb7ef955dbbec87401e51f5b6bf0afa637",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "aporagender",
+      "icon": "pride_aporagender",
+      "sha256": "31e40735446fd6c00414950b86760de0157f011f22d8d3ce5a372810b0e417f5",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "aroflux",
+      "icon": "pride_aroflux",
+      "sha256": "2a96fb6724c38a97e74f883f09ee89f4009c77cb45c9a0d7193598425d079021",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "bigender",
+      "icon": "pride_bigender",
+      "sha256": "0649664f5a47f83c8ded81f0323d9bcf286d54456d236383fa622c3b6b489a98",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "biromantic",
+      "icon": "pride_biromantic",
+      "sha256": "6e41de9d792a0d0f7897f1fc6ab4911e5c0ef4daeb578161a7c0b57e5a5f5e4d",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "ceteroromantic",
+      "icon": "pride_ceteroromantic",
+      "sha256": "ab0aa3139b1116e20fd359e7b9e7ee6d8f24f0a433f65f06cf22ac2369036de1",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "ceterosexual",
+      "icon": "pride_ceterosexual",
+      "sha256": "f1090cadbc54f88abe17f1f930515df415b85f8e1b3f67e6c64af4fed77a80e3",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "demifluid",
+      "icon": "pride_demifluid",
+      "sha256": "f9299cae66d199978c75c7774b5ee8e8ec5245ff63552feab929250f51bb026e",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "diamoric",
+      "icon": "pride_diamoric",
+      "sha256": "9802c977c7d7936d0be21c301a81fde3baa2b9c3c3ff245cba18759892f7aa68",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "egogender",
+      "icon": "pride_egogender",
+      "sha256": "e8beab2ddbdac149d7d13ed5b2d93d89192b41d587a02d29c82c41055e0849bf",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "frayromantic",
+      "icon": "pride_frayromantic",
+      "sha256": "0134c49f4a07e7d9549e07466a907cd18c463101d18ea85bb00e51d87a982f55",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "gender-neutral",
+      "icon": "pride_gender_neutral",
+      "sha256": "85f77544ceb52a8c7ed88d33584c7b849b62f722ff139692e1937dcfbf135bea",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "gender-questioning",
+      "icon": "pride_gender_questioning",
+      "sha256": "02791fbb9075a55124351cfff8951b23b5ce04652cdfb28d5485a83c057e042c",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "graygender",
+      "icon": "pride_graygender",
+      "sha256": "a1ada8d8e40761590e6e1538ffd1dc543d5ed4e3c7bfa7c5e058af94bd4b6ff3",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "gyneromantic",
+      "icon": "pride_gyneromantic",
+      "sha256": "f54e570cadaf77dca0264225d06fe24e12a27d784c1a439429428a66f5572e5e",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "hijra",
+      "icon": "pride_hijra",
+      "sha256": "4fa26be6bfaf11a602cf0c5e20c89737e03562add3c5e3ad397386e68085c13a",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "intergender",
+      "icon": "pride_intergender",
+      "sha256": "17fcc610f2fea4de05e628f087f8c2d885100a3d99f870127b28fe13b4ebf6ca",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "maverique",
+      "icon": "pride_maverique",
+      "sha256": "5dd7e706c04e857f47f467cf7309472e1cf5e0477c362d0838f47e89ca5c3138",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "mogai",
+      "icon": "pride_mogai",
+      "sha256": "9fb2ad738a53c6f21dffea24aaa12274596d071d42595b4dd39d279d103096cc",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "multigender",
+      "icon": "pride_multigender",
+      "sha256": "291ab33cdedf1b1e67a46eb238bf116c873f24081235b8c0e2b4650fda46643c",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "multisexual",
+      "icon": "pride_multisexual",
+      "sha256": "f07da09b57b1f4294b4cd62dd32e3f3fd00c0dc16a98a3bee792f04f8eb1ee23",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "neurogender",
+      "icon": "pride_neurogender",
+      "sha256": "0431eced0c60588c1a248d21399cd1c057e846761ab18e0160de0fb2bca12ac5",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "omniromantic",
+      "icon": "pride_omniromantic",
+      "sha256": "6819ef59284a147a3448b8a703a351719bed91e5d90ccddc8a436467cf718d14",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "pangender",
+      "icon": "pride_pangender",
+      "sha256": "e0638cf9d71dc38bdcb92a077477c5fef41434b34eb41644d92304cc188e52a4",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "panromantic",
+      "icon": "pride_panromantic",
+      "sha256": "b811bfe0813984a904d763c059f77322dc6a6881995b3f9ccb5428dc9f2ca778",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "polygender",
+      "icon": "pride_polygender",
+      "sha256": "8f3e7ffaf766c0dc5a55b0b01cb6e260aab6105d92f4d172ee476784213347cf",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "polyromantic",
+      "icon": "pride_polyromantic",
+      "sha256": "69fdb7e3caff3d287b311d0cb86f4db5679d5f71b74543f4933ce0b86f8b676a",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "pomosexual",
+      "icon": "pride_pomosexual",
+      "sha256": "46fa7071133b4c3250a0e07217ea1f32e1f0b27b40ca461a5dde357a0297ee81",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "transneutral",
+      "icon": "pride_transneutral",
+      "sha256": "fcfb64f2da173965749b8900d6f1b8595e8dfe87b1e142669bcab50f34a960a4",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "trigender",
+      "icon": "pride_trigender",
+      "sha256": "3691467309d7b9a6d24301b7e702f404f066530641860c53b56ea82fdd20429b",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "two-spirit",
+      "icon": "pride_two_spirit",
+      "sha256": "e0e05e114189b8012d5f9adb566482eddf6a358a491ad95255edcd8199bed4cd",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "waria",
+      "icon": "pride_waria",
+      "sha256": "4dc952d92e8f065558fc6cd6abf404b73e82bae0030202bc9239495cb568e63a",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    },
+    {
+      "slug": "xenogender",
+      "icon": "pride_xenogender",
+      "sha256": "8333412635a6c8a00c02cf13fef81a3598ab2c53eea5dc23c4ea6b4f8af944f3",
+      "derivedFrom": "TEMPLATE_FLAG.svg"
+    }
+  ]
+}

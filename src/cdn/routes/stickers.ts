@@ -1,0 +1,100 @@
+import crypto from "node:crypto";
+import { Router, Response, Request } from "express";
+import { fileTypeFromBuffer } from "file-type";
+import { HTTPError } from "lambert-server/HTTPError";
+import { Config, isRequestSignature } from "@spacebar/util";
+import { Sticker } from "@spacebar/database";
+import { StickerFormatType, StickerType } from "@spacebar/schemas";
+import { ensureStandardStickerPacks } from "@spacebar/api/util";
+import { storage, internalUpload, setCacheControl, setCacheControlNotFound, fetchUpstreamAsset, safeMediaType } from "../util";
+import { extension, sendRemoteFallback } from "../util/federationMedia";
+
+const ANIMATED_MIME_TYPES = ["image/apng", "image/gif", "image/gifv"];
+const STATIC_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/avif", "image/svg+xml", "image/svg"];
+const ALLOWED_MIME_TYPES = [...ANIMATED_MIME_TYPES, ...STATIC_MIME_TYPES];
+
+const router = Router({ mergeParams: true });
+
+const pathPrefix = "stickers";
+router.post(
+    "/:sticker_id",
+    internalUpload(async (req: Request, res: Response) => {
+        if (!isRequestSignature(req.headers.signature)) throw new HTTPError("Invalid request signature");
+        if (!req.file) throw new HTTPError("Missing file");
+        const { buffer, size } = req.file;
+        const { sticker_id } = req.params as { [key: string]: string };
+
+        let hash = crypto.createHash("md5").update(buffer).digest("hex");
+
+        const type = (await fileTypeFromBuffer(buffer)) ?? (isLottie(buffer) ? { mime: "application/json" } : undefined);
+        if (!type || ![...ALLOWED_MIME_TYPES, "application/json"].includes(type.mime)) throw new HTTPError("Invalid file type");
+        if (ANIMATED_MIME_TYPES.includes(type.mime)) hash = `a_${hash}`;
+
+        const path = `${pathPrefix}/${sticker_id}`;
+        const endpoint = Config.get().cdn.endpointPublic;
+
+        await storage.set(path, buffer);
+
+        return res.json({
+            id: hash,
+            content_type: type.mime,
+            size,
+            url: `${endpoint}${req.baseUrl}/${sticker_id}`,
+        });
+    }),
+);
+
+router.get("/:sticker_id", setCacheControl, async (req: Request, res: Response) => {
+    let { sticker_id } = req.params as { [key: string]: string };
+    sticker_id = sticker_id.split(".")[0]; // remove .file extension
+    const path = `${pathPrefix}/${sticker_id}`;
+
+    const file = (await storage.get(path)) ?? (await fetchStandardSticker(sticker_id, path));
+    if (!file && (await sendRemoteFallback(req, res, sticker_id, (remote) => `/${pathPrefix}/${remote}${extension(String(req.params.sticker_id))}`))) return;
+    if (!file) return setCacheControlNotFound(req, res);
+    const type = await fileTypeFromBuffer(file);
+
+    res.set("Content-Type", type ? safeMediaType(type.mime) : isLottie(file) ? "application/json" : "application/octet-stream");
+
+    return res.send(file);
+});
+
+function isLottie(buffer: Buffer) {
+    if (buffer[0] !== 0x7b) return false;
+    try {
+        const json = JSON.parse(buffer.toString("utf8"));
+        return typeof json === "object" && json !== null && "layers" in json;
+    } catch {
+        return false;
+    }
+}
+
+async function fetchStandardSticker(sticker_id: string, path: string) {
+    if (!/^\d+$/.test(sticker_id)) return null;
+    const find = () =>
+        Sticker.findOne({
+            where: { id: sticker_id, type: StickerType.STANDARD, pack_upload: false },
+            select: { id: true, format_type: true },
+        });
+    let sticker = await find();
+    if (!sticker && !(await Sticker.exists({ where: { id: sticker_id } }))) {
+        await ensureStandardStickerPacks().catch(() => null);
+        sticker = await find();
+    }
+    if (!sticker) return null;
+    const extension = sticker.format_type === StickerFormatType.LOTTIE ? "json" : sticker.format_type === StickerFormatType.GIF ? "gif" : "png";
+    const url = `https://cdn.discordapp.com/stickers/${sticker_id}.${extension}`;
+    return fetchUpstreamAsset(path, url);
+}
+
+router.delete("/:sticker_id/", async (req: Request, res: Response) => {
+    if (!isRequestSignature(req.headers.signature)) throw new HTTPError("Invalid request signature");
+    const { sticker_id } = req.params as { [key: string]: string };
+    const path = `${pathPrefix}/${sticker_id}`;
+
+    await storage.delete(path);
+
+    return res.send({ success: true });
+});
+
+export default router;

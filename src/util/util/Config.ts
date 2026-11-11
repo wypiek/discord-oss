@@ -1,0 +1,323 @@
+import { existsSync } from "node:fs";
+import fs from "node:fs/promises";
+import { OrmUtils } from "../imports";
+import { ConfigValue } from "../config";
+import { ConfigEntity } from "../../database/entities";
+import { JsonValue } from "@protobuf-ts/runtime";
+import { bold, red, redBright } from "picocolors";
+import { DEFAULT_INSTANCE_NAME } from "../config/types/ClientConfiguration";
+import { AUTOMOD_POLICY_KEYS } from "../config/types/AutomodConfiguration";
+
+// TODO: yaml instead of json
+const overridePath = process.env.CONFIG_PATH ?? "";
+
+let config: ConfigValue;
+let pairs: ConfigEntity[];
+
+// TODO: use events to inform about config updates
+// Config keys are separated with _
+
+async function loadConfig() {
+    let config: ConfigValue;
+    console.log("[Config] Loading configuration...");
+    if (process.env.CONFIG_JSON) {
+        config = JSON.parse(process.env.CONFIG_JSON);
+        pairs = generatePairs(config);
+    } else if (!process.env.CONFIG_PATH) {
+        if (process.env.CONFIG_SOURCE !== "database") {
+            console.log("[Config]:", redBright("Warning:"), bold("Database driven configuration has been deprecated"));
+            console.log("[Config]:", redBright("Warning:"), "Please migrate to JSON configuration by setting CONFIG_PATH=/path/to/config.json");
+            console.log("[Config]:", redBright("Warning:"), "  or set CONFIG_SOURCE=database to ignore this warning for now.");
+            console.log("[Config]:", redBright("Warning:"), "");
+            console.log("[Config]:", redBright("Warning:"), "Note that this option will be removed soon, and lack hereof will stop the server from starting!");
+        }
+
+        pairs = await validateConfig();
+        config = pairsToConfig(pairs);
+    } else {
+        console.log(`[Config] Using CONFIG_PATH rather than database:`, process.env.CONFIG_PATH);
+        if (existsSync(process.env.CONFIG_PATH)) {
+            const file = JSON.parse((await fs.readFile(process.env.CONFIG_PATH)).toString());
+            config = file;
+        } else config = new ConfigValue();
+        pairs = generatePairs(config);
+    }
+
+    // If a config doesn't exist, create it.
+    if (Object.keys(config).length == 0) config = new ConfigValue();
+
+    const identityBlockedTerms = config.user?.identityBlockedTerms;
+    const automodWordLists = config.automod?.wordLists;
+    const federationPeers = config.federation?.peers;
+    const storedLists = AUTOMOD_STRING_LISTS.map((path) => [path, readPath(config, path)] as const);
+    config = OrmUtils.mergeDeep({}, { ...new ConfigValue() }, config);
+    if (Array.isArray(identityBlockedTerms)) config.user.identityBlockedTerms = [...identityBlockedTerms];
+    if (Array.isArray(automodWordLists)) config.automod.wordLists = automodWordLists.map((list) => ({ ...list, terms: [...(list.terms ?? [])] }));
+    for (const [path, stored] of storedLists) if (Array.isArray(stored)) writePath(config, path, [...stored]);
+    if (Array.isArray(federationPeers)) config.federation.peers = [...federationPeers];
+    replaceStaleDefaults(config);
+    delete (config.security?.captcha as { service?: unknown } | undefined)?.service;
+
+    // TODO: factor this out someday
+    if (process.env.CDN_SIGNATURE_PATH) config.security.cdnSignatureKey = await Config.readSecret("CDN_SIGNATURE_PATH");
+    if (process.env.LEGACY_JWT_SECRET_PATH) config.security.jwtSecret = await Config.readSecret("LEGACY_JWT_SECRET_PATH");
+    if (process.env.MAILJET_API_KEY_PATH) config.email.mailjet.apiKey = await Config.readSecret("MAILJET_API_KEY_PATH");
+    if (process.env.MAILJET_API_SECRET_PATH) config.email.mailjet.apiSecret = await Config.readSecret("MAILJET_API_SECRET_PATH");
+    if (process.env.SMTP_PASSWORD_PATH) config.email.smtp.password = await Config.readSecret("SMTP_PASSWORD_PATH");
+    if (process.env.GIF_API_KEY_PATH) config.gif.apiKey = await Config.readSecret("GIF_API_KEY_PATH");
+    if (process.env.RABBITMQ_HOST) config.rabbitmq.host = process.env.RABBITMQ_HOST.trim();
+    if (process.env.RABBITMQ_HOST_PATH) config.rabbitmq.host = await Config.readSecret("RABBITMQ_HOST_PATH");
+    if (process.env.ABUSEIPDB_API_KEY_PATH) config.security.abuseIpDbApiKey = await Config.readSecret("ABUSEIPDB_API_KEY_PATH");
+    if (process.env.CAPTCHA_SECRET_KEY_PATH) config.security.captcha.secret = await Config.readSecret("CAPTCHA_SECRET_KEY_PATH");
+    if (process.env.CAPTCHA_SITE_KEY_PATH) config.security.captcha.sitekey = await Config.readSecret("CAPTCHA_SITE_KEY_PATH");
+    if (process.env.IPDATA_API_KEY_PATH) config.security.ipdataApiKey = await Config.readSecret("IPDATA_API_KEY_PATH");
+    if (process.env.REQUEST_SIGNATURE_PATH) config.security.requestSignature = await Config.readSecret("REQUEST_SIGNATURE_PATH");
+    if (process.env.KLIPY_API_KEY_PATH) config.integrations.gifs.klipy.apiKeyPath = process.env.KLIPY_API_KEY_PATH;
+    return config;
+}
+
+export class Config {
+    public static async init(force: boolean = false) {
+        if (config && !force) return config;
+        config = await loadConfig();
+        await this.set(config);
+        validateFinalConfig(config);
+        return config;
+    }
+
+    public static async refresh(overrides?: object) {
+        const loaded = await loadConfig();
+        config = overrides ? OrmUtils.mergeDeep(loaded, overrides) : loaded;
+        return config;
+    }
+
+    public static async insertMissing() {
+        if (!config) return 0;
+        const stored = new Set((await ConfigEntity.find({ select: { key: true } })).map((row) => row.key));
+        const missing = generatePairs(config).filter((pair) => !stored.has(pair.key));
+        let inserted = 0;
+        for (let start = 0; start < missing.length; start += CONFIG_WRITE_BATCH) {
+            const result = await ConfigEntity.createQueryBuilder()
+                .insert()
+                .values(missing.slice(start, start + CONFIG_WRITE_BATCH))
+                .orIgnore()
+                .returning(["key"])
+                .execute();
+            inserted += Array.isArray(result.raw) ? result.raw.length : 0;
+        }
+        return inserted;
+    }
+
+    public static async readSecret(name: string) {
+        process.stdout.write(`[Config] Reading secret ${name}...`);
+        const res = (await fs.readFile(process.env[name]!, "utf-8")).trim();
+        if (process.env.LOG_SECRET_VALUES) process.stdout.write(" " + res);
+        else process.stdout.write(" Done!");
+        process.stdout.write("\n");
+        return res;
+    }
+    public static get() {
+        if (!config) {
+            // If we haven't initialised the config yet, return default config.
+            // Typeorm instantiates each entity once when initialising database,
+            // which means when we use config values as default values in entity classes,
+            // the config isn't initialised yet and would throw an error about the config being undefined.
+
+            return new ConfigValue();
+        }
+
+        return config;
+    }
+    public static set(val: Partial<ConfigValue>) {
+        if (!config || !val) return;
+        config = OrmUtils.mergeDeep(config, val);
+
+        return applyConfig(config);
+    }
+}
+
+const StaleDefaults: [string, JsonValue, JsonValue][] = [
+    ["limits.absoluteRate.register.enabled", true, false],
+    ["limits.rate.enabled", false, true],
+    ["limits.rate.error", { count: 10, window: 5 }, { count: 10000, window: 600 }],
+    ["limits.message.maxCharacters", 1048576, 4000],
+    ["limits.message.maxBulkDelete", 1000, 100],
+    ["limits.message.maxEmbeds", 20, 10],
+    ["limits.channel.maxName", 32, 100],
+    ["limits.user.maxGuilds", 1048576, 200],
+    ["general.instanceDescription", "This is a Spacebar instance made in the pre-release days", null],
+    ["client.instanceName", "Fosscord", DEFAULT_INSTANCE_NAME],
+    ["general.instanceName", "Fosscord", DEFAULT_INSTANCE_NAME],
+];
+
+function replaceStaleDefaults(config: ConfigValue) {
+    for (const [path, previous, next] of StaleDefaults.slice(config.defaultsRevision ?? 0)) {
+        const keys = path.split(".");
+        const last = keys.pop()!;
+        const parent = keys.reduce<Record<string, JsonValue> | undefined>((obj, key) => obj?.[key] as Record<string, JsonValue> | undefined, config as never);
+        if (parent && JSON.stringify(parent[last]) === JSON.stringify(previous)) parent[last] = next;
+    }
+    config.defaultsRevision = StaleDefaults.length;
+}
+
+const AUTOMOD_STRING_LISTS = [
+    "automod.allowList",
+    "automod.ipAllowList",
+    "automod.spam.ignoreLinkDomains",
+    "automod.scam.extraDomains",
+    "automod.scam.allowDomains",
+    "automod.signup.deniedEmailDomains",
+    "automod.signup.allowedEmailDomains",
+    "automod.explicitContent.terms",
+    "automod.explicitContent.blockedHashes",
+    ...AUTOMOD_POLICY_KEYS.flatMap((key) => [`automod.policies.${key}.exemptUserIds`, `automod.policies.${key}.exemptGuildIds`]),
+];
+
+const readPath = (value: unknown, path: string) => path.split(".").reduce<unknown>((obj, key) => (obj as Record<string, unknown> | undefined)?.[key], value);
+
+const writePath = (value: object, path: string, next: unknown) => {
+    const keys = path.split(".");
+    const last = keys.pop()!;
+    const parent = keys.reduce<Record<string, unknown> | undefined>((obj, key) => obj?.[key] as Record<string, unknown> | undefined, value as Record<string, unknown>);
+    if (parent) parent[last] = next;
+};
+
+const WHOLE_LIST_KEYS = new Set(["user_identityBlockedTerms", "automod_wordLists", ...AUTOMOD_STRING_LISTS.map((path) => path.replaceAll(".", "_"))]);
+
+// TODO: better types
+const generatePairs = (obj: object | null, key = ""): ConfigEntity[] => {
+    if (WHOLE_LIST_KEYS.has(key) && Array.isArray(obj)) {
+        const entry = new ConfigEntity();
+        entry.key = key;
+        entry.value = obj as string[];
+        return [entry];
+    }
+    if (typeof obj == "object" && obj != null) {
+        return Object.keys(obj).flatMap((k) =>
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            generatePairs((obj as any)[k], key ? `${key}_${k}` : k),
+        );
+    }
+
+    const ret = new ConfigEntity();
+    ret.key = key;
+    ret.value = obj;
+    return [ret];
+};
+
+const CONFIG_WRITE_BATCH = 200;
+
+async function applyConfig(val: ConfigValue) {
+    if (process.env.CONFIG_JSON) return val;
+    if (process.env.CONFIG_PATH)
+        if (!process.env.CONFIG_READONLY) await fs.writeFile(overridePath, JSON.stringify(val, null, 4));
+        else console.log("[WARNING] JSON config file in use, and writing is disabled! Programmatic config changes will not be persisted, and your config will not get updated!");
+    else {
+        const pairs = generatePairs(val).sort((x, y) => (x.key > y.key ? 1 : -1));
+        for (let start = 0; start < pairs.length; start += CONFIG_WRITE_BATCH) {
+            const batch = pairs.slice(start, start + CONFIG_WRITE_BATCH);
+            const defined = batch.filter((pair) => pair.value !== undefined);
+            const unset = batch.filter((pair) => pair.value === undefined);
+            if (defined.length) await ConfigEntity.createQueryBuilder().insert().values(defined).orUpdate(["value"], ["key"]).execute();
+            if (unset.length) await ConfigEntity.createQueryBuilder().insert().values(unset).orIgnore().execute();
+        }
+    }
+    return val;
+}
+
+function pairsToConfig(pairs: ConfigEntity[]) {
+    // TODO: typings
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const value: any = {};
+
+    pairs.forEach((p) => {
+        const keys = p.key.split("_");
+        let obj = value;
+        let prev = "";
+        let prevObj = obj;
+        let i = 0;
+
+        for (const key of keys) {
+            if (!isNaN(Number(key)) && !prevObj[prev]?.length) prevObj[prev] = obj = [];
+            if (i++ === keys.length - 1) obj[key] = p.value;
+            else if (!obj[key]) obj[key] = {};
+
+            prev = key;
+            prevObj = obj;
+            obj = obj[key];
+        }
+    });
+
+    return value as ConfigValue;
+}
+
+const validateConfig = async () => {
+    const all = await ConfigEntity.find().catch(() => null);
+    if (all) return all;
+    let hasErrored = false;
+    const totalStartTime = new Date();
+    const config = await ConfigEntity.find({ select: { key: true } });
+
+    for (const row in config) {
+        // extension methods...
+        if (typeof config[row] === "function") continue;
+
+        try {
+            const found = await ConfigEntity.findOne({
+                where: { key: config[row].key },
+            });
+            if (!found) continue;
+            config[row] = found;
+        } catch (e) {
+            console.error(`Config key '${config[row].key}' has invalid JSON value : ${(e as Error)?.message}`);
+            hasErrored = true;
+        }
+    }
+
+    console.log("[Config] Total config load time:", new Date().getTime() - totalStartTime.getTime(), "ms");
+
+    if (hasErrored) {
+        console.error("[Config] Your config has invalid values. Fix them first https://docs.spacebar.chat/setup/server/configuration");
+        process.exit(1);
+    }
+
+    return config;
+};
+
+function validateFinalConfig(config: ConfigValue) {
+    let hasErrors = false;
+    function assertConfig(path: string, condition: (val: JsonValue) => boolean, recommendedValue: string) {
+        // _ to separate keys
+        const keys = path.split("_");
+        let obj: never = config as never;
+
+        for (const key of keys) {
+            if (obj == null || !(key in obj)) {
+                console.warn(`[Config] Missing config value for '${path}'. Recommended value: ${recommendedValue}`);
+                return;
+            }
+            obj = obj[key];
+        }
+
+        if (!condition(obj)) {
+            console.warn(`[Config] Invalid config value for '${path}': ${obj}. Recommended value: ${recommendedValue}`);
+            hasErrors = true;
+        }
+    }
+
+    assertConfig(
+        "general_serverName",
+        (v) => v != null,
+        'A valid domain hosting your .well-known (defaulting to https at port 443), eg. "spacebar.chat" or "http://localhost:3001"',
+    );
+    assertConfig("api_endpointPublic", (v) => v != null, 'A valid public API endpoint URL, eg. "http://localhost:3001/api/v9"');
+    assertConfig("cdn_endpointPublic", (v) => v != null, 'A valid public CDN endpoint URL, eg. "http://localhost:3003/"');
+    assertConfig("cdn_endpointPrivate", (v) => v != null, 'A valid private CDN endpoint URL, eg. "http://localhost:3003/" - must be routable from the API server!');
+    assertConfig("gateway_endpointPublic", (v) => v != null, 'A valid public gateway endpoint URL, eg. "ws://localhost:3002/"');
+
+    if (hasErrors) {
+        console.error("[Config] Your config has invalid values. Fix them first https://docs.spacebar.chat/setup/server/configuration");
+        console.error("[Config] Hint: if you're just testing with bundle (`bun run start`), you can set all endpoint URLs to [proto]://localhost:3001");
+        process.exit(1);
+    } else console.log("[Config] Configuration validated successfully.");
+}

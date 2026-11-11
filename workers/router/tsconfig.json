@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "target": "ES2024",
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "lib": ["ES2024"],
+        "types": [],
+        "strict": true,
+        "noEmit": true,
+        "skipLibCheck": true,
+        "allowImportingTsExtensions": true,
+        "isolatedModules": true
+    },
+    "include": ["src", "../cdn/src", "worker-configuration.d.ts"]
+}

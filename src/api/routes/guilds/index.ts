@@ -1,0 +1,54 @@
+import { Request, Response, Router } from "express";
+import { route } from "@spacebar/api/middlewares";
+import { enforceNameAutomod } from "@spacebar/api/util";
+import { reindexDiscoverySoon } from "@spacebar/api/util/handlers/Discovery";
+import { Guild, Member } from "@spacebar/database";
+import { Config, DiscordApiErrors, getRights } from "@spacebar/util";
+import { GuildCreateSchema } from "@spacebar/schemas";
+
+const router: Router = Router({ mergeParams: true });
+
+//TODO: create default channel
+
+router.post(
+    "/",
+    route({
+        requestBody: "GuildCreateSchema",
+        right: "CREATE_GUILDS",
+        responses: {
+            201: {
+                body: "GuildCreateResponse",
+            },
+            400: {
+                body: "APIErrorResponse",
+            },
+            403: {
+                body: "APIErrorResponse",
+            },
+        },
+    }),
+    async (req: Request, res: Response) => {
+        const body = req.body as GuildCreateSchema;
+        await enforceNameAutomod({ user_id: req.user_id, name: body.name, field: "name", source: "guild_name" });
+
+        const { maxGuilds } = Config.get().limits.user;
+        const guild_count = await Member.count({ where: { id: req.user_id } });
+        const rights = await getRights(req.user_id);
+        if (guild_count >= maxGuilds && !rights.has("MANAGE_GUILDS")) {
+            throw DiscordApiErrors.MAXIMUM_GUILDS.withParams(maxGuilds);
+        }
+
+        const guild = await Guild.createGuild({
+            ...body,
+            owner_id: req.user_id,
+            source_guild_id: null,
+        });
+
+        await Member.addToGuild(req.user_id, guild.id);
+        reindexDiscoverySoon(guild.id);
+
+        res.status(201).json(guild);
+    },
+);
+
+export default router;

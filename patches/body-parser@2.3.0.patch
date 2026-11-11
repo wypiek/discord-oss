@@ -1,0 +1,48 @@
+diff --git a/lib/types/json.js b/lib/types/json.js
+index 14ca3e49b8ee04a9f1603eaa110388a93435b165..90430b876ca5fda3a3264cec4c5b92924039b027 100644
+--- a/lib/types/json.js
++++ b/lib/types/json.js
+@@ -15,6 +15,7 @@
+ const debug = require('debug')('body-parser:json')
+ const read = require('../read')
+ const { normalizeOptions } = require('../utils')
++const JSONbig = require('json-bigint')
+ 
+ /**
+  * Module exports.
+@@ -88,7 +89,7 @@ function createJsonParser (options) {
+ 
+       try {
+         debug('parse json')
+-        return JSON.parse(body, reviver)
++        return JSONbig.parse(body, reviver)
+       } catch (e) {
+         throw normalizeJsonSyntaxError(e, {
+           message: e.message,
+@@ -107,7 +108,7 @@ function createJsonParser (options) {
+ 
+     try {
+       debug('parse json')
+-      return JSON.parse(body, reviver)
++      return JSONbig.parse(body, reviver)
+     } catch (e) {
+       throw normalizeJsonSyntaxError(e, {
+         message: e.message,
+@@ -134,7 +135,7 @@ function createStrictSyntaxError (str, char) {
+   }
+ 
+   try {
+-    JSON.parse(partial); /* istanbul ignore next */ throw new SyntaxError('strict violation')
++    JSONbig.parse(partial); /* istanbul ignore next */ throw new SyntaxError('strict violation')
+   } catch (e) {
+     return normalizeJsonSyntaxError(e, {
+       message: e.message.replace(JSON_SYNTAX_REGEXP, function (placeholder) {
+@@ -179,7 +180,7 @@ function normalizeJsonSyntaxError (error, obj) {
+   }
+ 
+   // replace stack before message for Node.js 0.10 and below
+-  error.stack = obj.stack.replace(error.message, obj.message)
++  error.stack = obj.stack?.replace(error.message, obj.message)
+   error.message = obj.message
+ 
+   return error

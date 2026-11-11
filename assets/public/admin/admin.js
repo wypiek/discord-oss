@@ -1,0 +1,8809 @@
+"use strict";
+
+/* ---------- tiny helpers ---------- */
+
+const API = "/api/v9";
+const SNOWFLAKE_EPOCH = 1420070400000n;
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+// everything interpolated into html`` is escaped unless wrapped in raw()
+class Raw {
+  constructor(value) {
+    this.value = value;
+  }
+}
+const raw = (value) => new Raw(value);
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+const renderValue = (value) => {
+  if (value instanceof Raw) return value.value;
+  if (Array.isArray(value)) return value.map(renderValue).join("");
+  if (value === false || value === null || value === undefined) return "";
+  return escapeHtml(value);
+};
+const html = (strings, ...values) =>
+  raw(
+    strings.reduce(
+      (out, str, i) => out + str + (i < values.length ? renderValue(values[i]) : ""),
+      "",
+    ),
+  );
+const mount = (el, content) => {
+  el.innerHTML = renderValue(content);
+  return el;
+};
+
+const snowflakeDate = (id) => {
+  try {
+    return new Date(Number((BigInt(id) >> 22n) + SNOWFLAKE_EPOCH));
+  } catch {
+    return null;
+  }
+};
+const fmtDate = (value) => {
+  const d = value instanceof Date ? value : value ? new Date(value) : null;
+  return d && !isNaN(d)
+    ? d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+    : "—";
+};
+const fmtDay = (value) => {
+  const d = value instanceof Date ? value : value ? new Date(value) : null;
+  return d && !isNaN(d) ? d.toLocaleDateString(undefined, { dateStyle: "medium" }) : "—";
+};
+const fmtNumber = (n) => Number(n ?? 0).toLocaleString();
+const fmtDuration = (seconds) => {
+  const s = Math.floor(seconds);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m ${s % 60}s`;
+};
+// datetime-local inputs work in local time without a zone
+const toLocalInput = (value) => {
+  if (!value) return "";
+  const d = new Date(value);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+const fromLocalInput = (value) => (value ? new Date(value).toISOString() : null);
+
+const debounce = (fn, ms = 250) => {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+};
+
+const toast = (message, kind = "ok", { action } = {}) => {
+  const el = document.createElement("div");
+  el.className = `toast ${kind === "error" ? "error" : ""}`;
+  if (kind === "error") el.setAttribute("role", "alert");
+  const text = document.createElement("span");
+  text.textContent = message;
+  el.append(text);
+  if (action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn small";
+    button.textContent = action.label;
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      el.remove();
+      await action.run();
+    });
+    el.append(button);
+  }
+  const container = $("#toasts");
+  container.append(el);
+  while (container.children.length > 3) container.firstElementChild.remove();
+  setTimeout(() => el.remove(), action ? 10000 : kind === "error" ? 6000 : 3000);
+};
+
+const confirmDialog = ({ title, message, confirm: confirmLabel, danger = true }) =>
+  new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "confirm-dialog";
+    dialog.setAttribute("aria-labelledby", "confirm-title");
+    if (message) dialog.setAttribute("aria-describedby", "confirm-message");
+    mount(
+      dialog,
+      html`<form method="dialog" class="stack">
+        <h2 id="confirm-title">${title}</h2>
+        ${message ? html`<p id="confirm-message" class="muted">${message}</p>` : ""}
+        <div class="confirm-actions">
+          <button class="btn" type="submit" value="cancel">Cancel</button>
+          <button class="btn ${danger ? "danger" : "primary"}" type="submit" value="confirm">${confirmLabel}</button>
+        </div>
+      </form>`,
+    );
+    const returnFocus = document.activeElement;
+    document.body.append(dialog);
+    dialog.addEventListener("close", () => {
+      resolve(dialog.returnValue === "confirm");
+      dialog.remove();
+      if (returnFocus?.isConnected && !returnFocus.closest("[inert]")) returnFocus.focus();
+    });
+    dialog.showModal();
+    $(danger ? "button[value=cancel]" : "button[value=confirm]", dialog).focus();
+  });
+
+const emptyCard = (text, action) =>
+  html`<div class="card empty"><p>${text}</p>${action ? html`<button class="btn" type="button" data-empty-action>${action}</button>` : ""}</div>`;
+
+const onRowOpen = (row, open) => {
+  row.tabIndex = 0;
+  row.addEventListener("click", (event) => {
+    if (event.target.closest("a, button, input, select, textarea, label, [data-select]")) return;
+    open(event);
+  });
+  row.addEventListener("keydown", (event) => {
+    if (event.target !== row || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    open(event);
+  });
+};
+
+const userName = (u) => (u ? u.global_name || u.username || u.id : "—");
+const userTag = (u) =>
+  u
+    ? u.discriminator && u.discriminator !== "0"
+      ? `${u.username}#${u.discriminator}`
+      : `@${u.username}`
+    : "";
+
+const initials = (name) =>
+  String(name || "?")
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+const defaultAvatarIndex = (u) => {
+  try {
+    return u.discriminator && u.discriminator !== "0"
+      ? Number(u.discriminator) % 5
+      : Number((BigInt(u.id) >> 22n) % 6n);
+  } catch {
+    return 0;
+  }
+};
+
+const avatar = (u, cls = "") =>
+  !u
+    ? html`<span class="avatar ${cls}">${initials(userName(u))}</span>`
+    : u.avatar
+      ? html`<img class="avatar ${cls}" src="/avatars/${u.id}/${u.avatar}.${u.avatar.startsWith("a_") ? "gif" : "png"}?size=128" alt="" loading="lazy" />`
+      : html`<img class="avatar ${cls}" src="/embed/avatars/${defaultAvatarIndex(u)}.png" alt="" loading="lazy" />`;
+
+// a server tag the way it looks next to a name: badge icon + tag text
+const tagChip = (guildId, tag, badgeHash) =>
+  html`<span class="tag-chip small">${badgeHash ? html`<img src="/clan-badges/${guildId}/${badgeHash}.png?size=32" alt="" />` : ""}${tag}</span>`;
+
+const guildIcon = (g, cls = "") =>
+  g?.icon
+    ? html`<img class="avatar square ${cls}" src="/icons/${g.id}/${g.icon}.${g.icon.startsWith("a_") ? "gif" : "png"}?size=128" alt="" loading="lazy" />`
+    : html`<span class="avatar square ${cls}">${initials(g?.name)}</span>`;
+
+/* ---------- auth + api ---------- */
+
+const auth = {
+  get token() {
+    try {
+      const own = localStorage.getItem("admin_token");
+      if (own) return own;
+      // reuse the web client's session on the same origin, unless the dashboard was explicitly signed out of
+      if (sessionStorage.getItem("admin_skip_client")) return null;
+      const client = localStorage.getItem("token");
+      return client ? JSON.parse(client) : null;
+    } catch {
+      return null;
+    }
+  },
+  set(token) {
+    try {
+      localStorage.setItem("admin_token", token);
+      sessionStorage.removeItem("admin_skip_client");
+    } catch {
+      /* storage blocked: the session just won't survive a reload */
+    }
+    this.memory = token;
+  },
+  clear({ skipClient = false } = {}) {
+    try {
+      localStorage.removeItem("admin_token");
+      if (skipClient) sessionStorage.setItem("admin_skip_client", "1");
+    } catch {
+      /* ignore */
+    }
+    this.memory = null;
+  },
+  memory: null,
+};
+const currentToken = () => auth.memory || auth.token;
+
+class ApiError extends Error {
+  constructor(status, body) {
+    super(
+      status >= 500
+        ? "Something went wrong on the server. Try again in a moment."
+        : describeError(body) || `Request failed (${status})`,
+    );
+    this.status = status;
+    this.body = body;
+  }
+}
+
+function describeError(body) {
+  if (!body || typeof body !== "object") return null;
+  const fieldErrors = [];
+  const walk = (node, path) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node._errors))
+      node._errors.forEach((e) => fieldErrors.push(`${path}: ${e.message}`));
+    for (const [k, v] of Object.entries(node))
+      if (k !== "_errors") walk(v, path ? `${path}.${k}` : k);
+  };
+  walk(body.errors, "");
+  return fieldErrors.length ? fieldErrors.join("; ") : body.message;
+}
+
+let pageRequests = new AbortController();
+
+async function api(
+  path,
+  { method = "GET", body, auth: useAuth = true, signal: requestSignal, reason } = {},
+) {
+  // FormData goes as multipart, and the browser sets its content type with the boundary
+  const signal =
+    method === "GET"
+      ? requestSignal
+        ? AbortSignal.any([pageRequests.signal, requestSignal])
+        : pageRequests.signal
+      : requestSignal;
+  const multipart = body instanceof FormData;
+  const headers = {};
+  if (body !== undefined && !multipart) headers["Content-Type"] = "application/json";
+  if (useAuth && currentToken()) headers.Authorization = currentToken();
+  if (reason) headers["X-Audit-Log-Reason"] = encodeURIComponent(reason);
+  const res = await fetch(API + path, {
+    method,
+    headers,
+    signal,
+    body: body !== undefined && !multipart ? JSON.stringify(body) : body,
+  }).catch((error) => {
+    if (signal?.aborted) throw new ApiError(499, { message: "Navigation changed" });
+    throw new ApiError(0, {
+      message: "Couldn't reach the server. Check your connection and try again.",
+    });
+  });
+  const text = await res.text();
+  if (signal?.aborted) throw new ApiError(499, { message: "Navigation changed" });
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { message: text };
+  }
+  if (res.status === 401 && useAuth) {
+    auth.clear();
+    showLogin("Your session expired. Sign in again.");
+    throw new ApiError(res.status, data);
+  }
+  if (!res.ok) throw new ApiError(res.status, data);
+  return data;
+}
+
+// run an action, surfacing errors as toasts and disabling the trigger meanwhile
+const formEditVersions = new WeakMap();
+const formControlValues = new WeakMap();
+async function act(button, fn, success) {
+  const form = button?.closest("form");
+  const editVersion = form && formEditVersions.get(form);
+  if (button) button.disabled = true;
+  try {
+    const result = await fn();
+    if (success) {
+      if (form && formEditVersions.get(form) === editVersion) delete form.dataset.dirty;
+      toast(success);
+    }
+    return result;
+  } catch (e) {
+    if (e.status !== 401 && e.status !== 499) toast(e.message, "error");
+    return undefined;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+/* ---------- constants ---------- */
+
+const RIGHTS = [
+  ["OPERATOR", 0, "Full access to everything"],
+  ["MANAGE_GUILDS", 2, "Manage every server"],
+  ["MANAGE_MESSAGES", 3, "Edit/delete any visible message"],
+  ["MANAGE_USERS", 7, "Manage users from this dashboard"],
+  ["BYPASS_RATE_LIMITS", 9, "Not rate limited"],
+  ["CREATE_GUILDS", 14, "Create servers"],
+  ["CREATE_INVITES", 15, "Create mass invites"],
+  ["JOIN_GUILDS", 19, "Join servers"],
+  ["SELF_ADD_REACTIONS", 21, "Add reactions"],
+  ["SELF_DELETE_MESSAGES", 22, "Delete own messages"],
+  ["SELF_EDIT_MESSAGES", 23, "Edit own messages"],
+  ["SEND_MESSAGES", 25, "Send messages"],
+  ["KICK_BAN_MEMBERS", 33, "Kick/ban in servers they moderate"],
+  ["SELF_LEAVE_GROUPS", 34, "Leave group DMs"],
+  ["PRESENCE", 35, "Presence routing override"],
+  ["SEND_BACKDATED_EVENTS", 42, "Send backdated events"],
+  ["USE_MASS_INVITES", 43, "Accept mass invites"],
+  ["VIEW_USERS", 51, "View accounts in this dashboard"],
+  ["MODERATE_USERS", 52, "Warn, suspend, disable and ban users and handle reports"],
+  ["VIEW_MODERATION", 53, "Read reports, violations and moderation logs"],
+  ["SUPPORT_USERS", 54, "Account recovery and verification"],
+  ["MANAGE_STAFF", 55, "Manage staff roles below their own"],
+  ["VIEW_AUDIT_LOG", 56, "Read the staff audit log"],
+];
+const ACCESS_LABELS = {
+  settings: "Settings",
+  status: "Status page",
+  system: "System",
+  users: "View users",
+  manage_users: "Manage users",
+  moderate: "Moderate users",
+  support: "Account support",
+  guilds: "Servers",
+  reports: "Reports and moderation logs",
+  messages: "Messages",
+  staff: "Staff roles",
+  audit: "Audit log",
+};
+const staffRoleBadge = (role) =>
+  html`<span class="badge"><span class="dot" style="background:${role.color == null ? "currentColor" : hexColor(role.color)}"></span>${role.name}</span>`;
+const hasRight = (rights, bit) => {
+  try {
+    return (BigInt(rights || 0) & (1n << BigInt(bit))) !== 0n;
+  } catch {
+    return false;
+  }
+};
+
+const GUILD_FEATURES = [
+  "VERIFIED",
+  "PARTNERED",
+  "DISCOVERABLE",
+  "COMMUNITY",
+  "NEWS",
+  "VANITY_URL",
+  "INVITE_SPLASH",
+  "BANNER",
+  "ANIMATED_ICON",
+  "ANIMATED_BANNER",
+  "WELCOME_SCREEN_ENABLED",
+  "MEMBER_VERIFICATION_GATE_ENABLED",
+  "PREVIEW_ENABLED",
+  "ROLE_ICONS",
+  "INTERNAL_EMPLOYEE_ONLY",
+];
+
+const USER_TAGS = [
+  ["none", "No tag", "Bot accounts still show the regular BOT tag."],
+  ["verified_bot", "Verified Bot", "The blurple ✓ BOT tag. Only shows on bot accounts."],
+  ["ai", "AI", "The green AI tag, for any account."],
+  ["verified_ai", "Verified AI", "The green ✓ AI tag, for any account."],
+  [
+    "official",
+    "Official",
+    "The blurple ✓ OFFICIAL tag that Discord puts on its own messages, for any account.",
+  ],
+  ["system", "System", "The blurple ✓ SYSTEM tag, for any account."],
+];
+
+// mirrors how the patched web client draws the tag next to a name
+const nameTag = (tag, isBot) => {
+  if (tag === "official" || tag === "system")
+    return html`<span class="name-tag" title="Official message">${raw(CHECK_ICON)}${tag === "official" ? "OFFICIAL" : "SYSTEM"}</span>`;
+  const verified = tag === "verified_bot" || tag === "verified_ai";
+  const ai = tag === "ai" || tag === "verified_ai";
+  if (!ai && !isBot)
+    return html`
+      <span class="muted">no tag</span>
+    `;
+  return html`<span class="name-tag ${ai ? "ai" : ""}" title="${verified ? (ai ? "Verified AI" : "Verified Bot") : ""}"
+        >${verified ? raw(CHECK_ICON) : ""}${ai ? "AI" : "BOT"}</span
+    >`;
+};
+const CHECK_ICON =
+  '<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24"><path fill="currentColor" d="M18.7 7.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4l3.3 3.29 7.3-7.3a1 1 0 0 1 1.4 0Z"/></svg>';
+
+const badgeIcon = (b) =>
+  html`<img class="badge-icon" src="/badge-icons/${b.icon}.png" alt="" loading="lazy" />`;
+
+const STANDINGS = [
+  [100, "All good", "ok"],
+  [200, "Limited", "warn"],
+  [300, "Very limited", "warn"],
+  [400, "At risk", "danger"],
+  [500, "Suspended", "danger"],
+];
+const standingOf = (state) => STANDINGS.find(([v]) => v === state) ?? STANDINGS[0];
+
+const VIOLATION_TYPES = [
+  [3030, "Spam"],
+  [290, "Harassment and bullying"],
+  [320, "Hateful conduct"],
+  [220, "Hate speech"],
+  [210, "Glorifying violence"],
+  [3010, "Malicious conduct"],
+  [711, "Impersonation"],
+  [720, "Ban evasion"],
+  [4010, "Fraud"],
+  [250, "Social engineering"],
+  [240, "Illicit goods"],
+  [230, "Cracked accounts"],
+  [100, "Unsolicited adult content"],
+  [4000, "Non-consensual adult content"],
+  [5305, "Doxxing"],
+  [5440, "Copyright infringement"],
+  [280, "Child safety"],
+  [5090, "Self-harm"],
+  [5411, "Underage user"],
+  [1, "Other"],
+];
+const violationType = (id) => VIOLATION_TYPES.find(([v]) => v === id)?.[1] ?? `Type ${id}`;
+
+const VIOLATION_ACTIONS = [
+  [4, "Warning"],
+  [9, "Limited access"],
+  [1, "Temporary ban"],
+  [0, "Ban"],
+  [2, "Quarantine"],
+  [3, "Verification required"],
+  [13, "Content removed"],
+  [16, "Messages removed"],
+  [14, "Username reset"],
+  [22, "Profile reset"],
+  [5, "Marked as spammer"],
+];
+const APPEAL_REASONS = [
+  "They didn't break the rules",
+  "The decision was too strict or unfair",
+  "They disagree with the penalty",
+  "Something else",
+];
+
+const violationAction = (id) => VIOLATION_ACTIONS.find(([v]) => v === id)?.[1] ?? `Action ${id}`;
+
+const VIOLATION_DURATIONS = [
+  [7, "7 days"],
+  [30, "30 days"],
+  [90, "90 days"],
+  [180, "180 days"],
+  [365, "1 year"],
+  ["", "Permanent"],
+];
+
+const COMPONENT_STATUSES = [
+  ["operational", "Operational", "ok"],
+  ["degraded_performance", "Degraded performance", "warn"],
+  ["partial_outage", "Partial outage", "warn"],
+  ["major_outage", "Major outage", "danger"],
+  ["under_maintenance", "Under maintenance", "info"],
+];
+const componentStatus = (key) =>
+  COMPONENT_STATUSES.find(([k]) => k === key) ?? COMPONENT_STATUSES[0];
+
+const IMPACTS = [
+  ["none", "None", ""],
+  ["minor", "Minor", "warn"],
+  ["major", "Major", "danger"],
+  ["critical", "Critical", "danger"],
+];
+const INCIDENT_STATES = [
+  ["investigating", "Investigating"],
+  ["identified", "Identified"],
+  ["monitoring", "Monitoring"],
+  ["resolved", "Resolved"],
+];
+const MAINTENANCE_STATES = [
+  ["scheduled", "Scheduled"],
+  ["in_progress", "In progress"],
+  ["verifying", "Verifying"],
+  ["completed", "Completed"],
+];
+const RESOLVED = ["resolved", "completed"];
+const stateLabel = (key) =>
+  [...INCIDENT_STATES, ...MAINTENANCE_STATES].find(([k]) => k === key)?.[1] ?? key;
+const stateBadge = (key) =>
+  html`<span class="badge ${RESOLVED.includes(key) ? "ok" : key === "scheduled" ? "info" : "warn"}">${stateLabel(key)}</span>`;
+const impactBadge = (incident) =>
+  incident.impact === "maintenance"
+    ? html`
+        <span class="badge info">Maintenance</span>
+      `
+    : html`<span class="badge ${IMPACTS.find(([k]) => k === incident.impact)?.[2] ?? ""}"
+              >${IMPACTS.find(([k]) => k === incident.impact)?.[1] ?? incident.impact} impact</span
+          >`;
+
+const options = (list, selected) =>
+  list.map(
+    ([value, label]) =>
+      html`<option value="${value}" ${String(value) === String(selected) ? raw("selected") : ""}>${label}</option>`,
+  );
+
+/* ---------- shell ---------- */
+
+const state = { overview: null, me: null };
+
+function showLogin(message) {
+  pageRequests.abort();
+  pageRequests = new AbortController();
+  state.overview = null;
+  state.me = null;
+  $("#app").hidden = true;
+  $("#login").hidden = false;
+  closeDrawer({ discard: true });
+  $("#view").replaceChildren();
+  $("#me").replaceChildren();
+  const err = $("#login-error");
+  err.hidden = !message;
+  err.textContent = message || "";
+  $("#login-form input[name=login]").focus();
+}
+
+function syncBrandIcon() {
+  const image = state.overview.instance.image;
+  const icon = $(".sidebar .brand-icon");
+  if (!image || icon?.getAttribute("src") === image) return;
+  icon?.replaceWith(
+    Object.assign(document.createElement("img"), { className: "brand-icon", src: image, alt: "" }),
+  );
+}
+
+async function boot() {
+  if (!currentToken()) return showLogin();
+  try {
+    const [overview, me] = await Promise.all([api("/admin"), api("/users/@me")]);
+    state.overview = overview;
+    state.me = me;
+  } catch (e) {
+    if (e.status === 401) return;
+    if (e.status === 403 || e.body?.code === 50013) {
+      auth.clear();
+      return showLogin("This account doesn't have admin rights on this instance.");
+    }
+    return showLogin(e.message);
+  }
+
+  $("#login").hidden = true;
+  $("#app").hidden = false;
+  $("#brand-name").textContent = state.overview.instance.name;
+  document.title = `${state.overview.instance.name} Admin`;
+  syncBrandIcon();
+  mount(
+    $("#me"),
+    html`${avatar(state.me)}
+            <div class="ident">
+                <div><strong>${userName(state.me)}</strong><span class="muted">${userTag(state.me)}</span></div>
+            </div>`,
+  );
+  filterNavigation();
+  syncNavCounts();
+  route();
+}
+
+$("#login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const button = $("button[type=submit]", form);
+  const data = Object.fromEntries(new FormData(form));
+  const err = $("#login-error");
+  err.hidden = true;
+  button.disabled = true;
+  try {
+    let result;
+    if (form.dataset.ticket)
+      result = await api("/auth/mfa/totp", {
+        method: "POST",
+        body: { code: data.code, ticket: form.dataset.ticket },
+        auth: false,
+      });
+    else
+      result = await api("/auth/login", {
+        method: "POST",
+        body: { login: data.login, password: data.password, undelete: false },
+        auth: false,
+      });
+
+    if (result.mfa && result.ticket) {
+      form.dataset.ticket = result.ticket;
+      $("#mfa-field").hidden = false;
+      $("#mfa-field input").required = true;
+      $("#mfa-field input").focus();
+      return;
+    }
+    if (!result.token)
+      throw new Error(
+        "This account needs a sign-in method this page doesn't support (security key).",
+      );
+    auth.set(result.token);
+    delete form.dataset.ticket;
+    form.reset();
+    $("#mfa-field").hidden = true;
+    await boot();
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#logout").addEventListener("click", () => {
+  // only drops the dashboard's session; the web client stays signed in
+  auth.clear({ skipClient: true });
+  state.overview = null;
+  showLogin();
+});
+
+/* ---------- router ---------- */
+
+const CAP_CONTEXTS = [
+  ["register", "Registration"],
+  ["login", "Sign-in"],
+  ["passwordReset", "Password reset"],
+];
+
+const TABS = {
+  invites: renderInstanceInvites,
+  settings: renderSettings,
+  users: renderUsers,
+  badges: renderBadges,
+  experiments: renderExperiments,
+  games: renderGames,
+  store: renderStore,
+  stickers: renderStickerPacks,
+  announcements: renderAnnouncements,
+  official: renderOfficialInbox,
+  guilds: renderGuilds,
+  reports: renderReports,
+  status: renderStatus,
+  system: renderSystem,
+  performance: renderPerformance,
+};
+
+const ACCESS_RIGHTS = {
+  operator: "OPERATOR",
+  settings: "OPERATOR",
+  status: "OPERATOR",
+  system: "OPERATOR",
+  users: "VIEW_USERS",
+  guilds: "MANAGE_GUILDS",
+  reports: "VIEW_MODERATION",
+  staff: "MANAGE_STAFF",
+  audit: "VIEW_AUDIT_LOG",
+};
+
+let activeHash = location.hash;
+function route() {
+  if (!state.overview) return;
+  let [tab] = location.hash.replace(/^#\/?/, "").split("/");
+  const link = $(`#nav a[data-tab="${CSS.escape(tab || "")}"]`);
+  if (!TABS[tab] || !link) tab = "overview";
+  const blocked = TABS[tab] && link?.dataset.access && !state.overview.access[link.dataset.access] ? link : null;
+  if (
+    !closeDrawer() ||
+    ($("form[data-dirty]", $("#view")) && !confirm("Discard unsaved changes?"))
+  ) {
+    history.replaceState(null, "", activeHash);
+    return;
+  }
+  for (const a of $$("#nav a")) {
+    const current = !blocked && a.dataset.tab === tab;
+    a.classList.toggle("active", current);
+    if (current) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  }
+  activeHash = location.hash;
+  pageRequests.abort();
+  pageRequests = new AbortController();
+  const view = $("#view").cloneNode(false);
+  $("#view").replaceWith(view);
+  if (blocked) {
+    const page = blocked.textContent.trim();
+    const right = ACCESS_RIGHTS[blocked.dataset.access];
+    const label = STAFF_ROLE_RIGHTS.find(([name]) => name === right)?.[2];
+    mount(
+      view,
+      html`<div class="page-head"><div><h1>${page}</h1></div></div>
+        ${emptyCard(
+          right === "OPERATOR" || !label
+            ? `Only the instance operator can open ${page}. Staff roles can't carry the operator right, so ask the operator for what you need here.`
+            : `${page} needs the "${label}" right, which none of your staff roles has. Someone who can manage staff can add it to one of your roles.`,
+          "Go to overview",
+        )}`,
+    );
+    $("[data-empty-action]", view).addEventListener("click", () => {
+      location.hash = "#/overview";
+    });
+    return;
+  }
+  mount(
+    view,
+    html`
+      <div class="spinner">Loading…</div>
+    `,
+  );
+  TABS[tab](view).catch((e) => {
+    if (e.status !== 401 && e.status !== 499)
+      mount(
+        view,
+        html`<div class="card">
+                    <h2>Something went wrong</h2>
+                    <p class="muted">${e.message}</p>
+                </div>`,
+      );
+  });
+}
+window.addEventListener("hashchange", route);
+
+/* ---------- drawer ---------- */
+
+let drawerReturnFocus;
+let drawerReturnSelector;
+let drawerScrollState;
+const DRAWER_ROW_KEYS = ["id", "ip", "ban", "invite", "pack", "role", "stickerPack"];
+function openDrawer(title, content) {
+  if (!$("#drawer").hidden && !closeDrawer()) return null;
+  drawerReturnFocus = document.activeElement;
+  const row = drawerReturnFocus?.closest?.("#view [tabindex]");
+  const key = row && DRAWER_ROW_KEYS.find((name) => row.dataset[name]);
+  drawerReturnSelector = key
+    ? `#view ${row.tagName.toLowerCase()}[data-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${CSS.escape(row.dataset[key])}"]`
+    : null;
+  const fresh = $("#drawer-body").cloneNode(false);
+  $("#drawer-body").replaceWith(fresh);
+  $("#drawer-title").textContent = title;
+  mount($("#drawer-body"), content);
+  $("#drawer").hidden = false;
+  $("#app").inert = true;
+  drawerScrollState = ["overflow-x", "overflow-y"].map((property) => ({
+    property,
+    value: document.body.style.getPropertyValue(property),
+    priority: document.body.style.getPropertyPriority(property),
+  }));
+  document.body.style.overflow = "hidden";
+  $(".drawer-head button").focus();
+  return $("#drawer-body");
+}
+function closeDrawer({ discard = false } = {}) {
+  if ($("#drawer").hidden) return true;
+  if (!discard && $("form[data-dirty]", $("#drawer")) && !confirm("Discard unsaved changes?"))
+    return false;
+  $("#drawer").hidden = true;
+  $("#app").inert = false;
+  for (const { property, value, priority } of drawerScrollState) {
+    if (value) document.body.style.setProperty(property, value, priority);
+    else document.body.style.removeProperty(property);
+  }
+  drawerScrollState = undefined;
+  const returnFocus = [
+    drawerReturnFocus,
+    drawerReturnSelector && $(drawerReturnSelector),
+    $("#nav-search"),
+    $("#login-form input[name=login]"),
+  ].find(
+    (element) =>
+      element &&
+      element !== document.body &&
+      element.isConnected &&
+      !element.matches(":disabled, [aria-disabled=true]") &&
+      !element.closest("[inert]") &&
+      getComputedStyle(element).visibility === "visible" &&
+      element.getClientRects().length,
+  );
+  returnFocus?.focus();
+  drawerReturnFocus = undefined;
+  drawerReturnSelector = undefined;
+  $("#drawer-body").innerHTML = "";
+  return true;
+}
+$("#drawer").addEventListener("click", (e) => {
+  if (e.target.closest("[data-close]")) closeDrawer();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#drawer").hidden && !$("dialog[open]")) closeDrawer();
+});
+
+function filterNavigation() {
+  const query = $("#nav-search").value.trim().toLowerCase();
+  for (const link of $$("#nav a")) {
+    const allowed = !link.dataset.access || state.overview?.access[link.dataset.access];
+    link.hidden = !allowed || !link.textContent.toLowerCase().includes(query);
+  }
+  for (const group of $$(".nav-group")) group.hidden = !$$("a", group).some((link) => !link.hidden);
+  $("#nav-empty").hidden = $$("#nav a").some((link) => !link.hidden);
+}
+$("#nav-search").addEventListener("input", filterNavigation);
+
+const jump = { controller: null, options: [], active: -1, generation: 0 };
+const looksLikeIp = (text) => /^[0-9a-f:.]+$/i.test(text) && (/^\d{1,3}(\.\d{1,3}){3}$/.test(text) || (text.includes(":") && text.length > 2));
+
+function setJumpActive(index) {
+  const input = $("#nav-search");
+  const items = $$("[role=option]", $("#jump-results"));
+  jump.active = items.length ? (index + items.length) % items.length : -1;
+  for (const [i, item] of items.entries()) item.setAttribute("aria-selected", String(i === jump.active));
+  const current = items[jump.active];
+  if (current) {
+    input.setAttribute("aria-activedescendant", current.id);
+    current.scrollIntoView({ block: "nearest" });
+  } else input.removeAttribute("aria-activedescendant");
+}
+
+function hideJump() {
+  jump.controller?.abort();
+  jump.generation++;
+  jump.options = [];
+  jump.active = -1;
+  const list = $("#jump-results");
+  list.hidden = true;
+  list.replaceChildren();
+  $("#nav-search").setAttribute("aria-expanded", "false");
+  $("#nav-search").removeAttribute("aria-activedescendant");
+}
+
+function chooseJump(index) {
+  const option = jump.options[index];
+  if (!option) return;
+  const input = $("#nav-search");
+  input.value = "";
+  filterNavigation();
+  hideJump();
+  option.open();
+}
+
+function renderJump(query, groups, status) {
+  const list = $("#jump-results");
+  jump.options = groups.flatMap((group) => group.items);
+  let index = 0;
+  mount(
+    list,
+    html`${groups.map(
+      (group) =>
+        group.items.length
+          ? html`<div class="jump-group" role="group" aria-label="${group.label}">
+              <div class="jump-label" aria-hidden="true">${group.label}</div>
+              ${group.items.map((item) => {
+                const id = `jump-option-${index++}`;
+                return html`<div class="jump-option" role="option" id="${id}" aria-selected="false" data-index="${index - 1}">${item.render}</div>`;
+              })}
+            </div>`
+          : "",
+    )}${status ? html`<p class="jump-status muted">${status}</p>` : ""}`,
+  );
+  list.hidden = false;
+  $("#nav-search").setAttribute("aria-expanded", "true");
+  setJumpActive(jump.options.length ? 0 : -1);
+}
+
+const runJump = debounce(async (query) => {
+  const generation = ++jump.generation;
+  jump.controller?.abort();
+  const controller = new AbortController();
+  jump.controller = controller;
+  const access = state.overview?.access ?? {};
+  const ip = access.users && looksLikeIp(query);
+  renderJump(query, [], "Searching…");
+  const search = (path) => api(path, { signal: controller.signal }).catch((error) => (error.status === 499 ? null : { error }));
+  const [users, guilds] = await Promise.all([
+    access.users ? search(`/admin/users?${new URLSearchParams({ q: query, origin: "all", limit: 5 })}`) : null,
+    access.guilds && !ip ? search(`/admin/guilds?${new URLSearchParams({ q: query, origin: "all", limit: 5 })}`) : null,
+  ]);
+  if (generation !== jump.generation || $("#nav-search").value.trim() !== query) return;
+  const groups = [];
+  if (ip)
+    groups.push({
+      label: "Address",
+      items: [{ open: () => openIp(query), render: html`<span class="jump-main"><code>${query}</code><span class="muted">Open this address</span></span>` }],
+    });
+  if (users?.users?.length)
+    groups.push({
+      label: ip ? `Accounts on this address (${fmtNumber(users.total)})` : `People (${fmtNumber(users.total)})`,
+      items: users.users.map((u) => ({
+        open: () => openUser(u.id),
+        render: html`${avatar(u)}<span class="jump-main"><strong>${userName(u)}</strong><span class="muted">${userTag(u)}${u.email ? ` · ${u.email}` : ""}${u.federated_instance ? ` · ${u.federated_instance}` : ""}${u.disabled ? " · disabled" : ""}</span></span>`,
+      })),
+    });
+  if (guilds?.guilds?.length)
+    groups.push({
+      label: `Servers (${fmtNumber(guilds.total)})`,
+      items: guilds.guilds.map((g) => ({
+        open: () => openGuild(g.id),
+        render: html`${guildIcon(g)}<span class="jump-main"><strong>${g.name}</strong><span class="muted">${plural(g.member_count, "member")}${g.federated_instance ? ` · ${g.federated_instance}` : ""}</span></span>`,
+      })),
+    });
+  if (users?.total > users?.users?.length && !ip)
+    groups.push({
+      label: "More",
+      items: [
+        {
+          open: () => {
+            usersState.q = query;
+            usersState.offset = 0;
+            usersState.selected.clear();
+            if (location.hash === "#/users") route();
+            else location.hash = "#/users";
+          },
+          render: html`<span class="jump-main"><span>Show all ${plural(users.total, "matching account")}</span></span>`,
+        },
+      ],
+    });
+  const failed = [users, guilds].find((result) => result?.error);
+  renderJump(
+    query,
+    groups,
+    groups.length ? (failed ? failed.error.message : "") : failed ? failed.error.message : "No people, servers or addresses match. Matching pages are listed below.",
+  );
+}, 200);
+
+$("#nav-search").addEventListener("input", (event) => {
+  const query = event.target.value.trim();
+  if (query.length < 2 || !state.overview) return hideJump();
+  runJump(query);
+});
+$("#nav-search").addEventListener("keydown", (event) => {
+  const open = !$("#jump-results").hidden && jump.options.length;
+  if (event.key === "ArrowDown" && open) {
+    event.preventDefault();
+    setJumpActive(jump.active + 1);
+  } else if (event.key === "ArrowUp" && open) {
+    event.preventDefault();
+    setJumpActive(jump.active - 1);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    if (open && jump.active >= 0) return chooseJump(jump.active);
+    const link = $$("#nav a").find((a) => !a.hidden);
+    if (!link) return;
+    event.target.value = "";
+    filterNavigation();
+    hideJump();
+    link.click();
+  } else if (event.key === "Escape" && event.target.value) {
+    event.preventDefault();
+    event.target.value = "";
+    filterNavigation();
+    hideJump();
+  }
+});
+$("#jump-results").addEventListener("mousedown", (event) => event.preventDefault());
+$("#jump-results").addEventListener("click", (event) => {
+  const option = event.target.closest("[role=option]");
+  if (option) chooseJump(Number(option.dataset.index));
+});
+$("#nav").addEventListener("click", (event) => {
+  if (!event.target.closest("a") || !$("#nav-search").value) return;
+  $("#nav-search").value = "";
+  filterNavigation();
+  hideJump();
+});
+function markFormDirty(event) {
+  const form = event.target.closest("form");
+  if (form && form.id !== "login-form" && !form.hasAttribute("data-action-form")) {
+    const control = event.target;
+    const value =
+      control.type === "file"
+        ? control.files
+        : ["checkbox", "radio"].includes(control.type)
+          ? control.checked
+          : control.multiple && control.selectedOptions
+            ? JSON.stringify(Array.from(control.selectedOptions, (option) => option.value))
+            : control.value;
+    if (
+      event.type === "change" &&
+      value !== undefined &&
+      formControlValues.has(control) &&
+      formControlValues.get(control) === value
+    )
+      return;
+    formControlValues.set(control, value);
+    form.dataset.dirty = "true";
+    formEditVersions.set(form, (formEditVersions.get(form) || 0) + 1);
+  }
+}
+document.addEventListener("input", markFormDirty);
+document.addEventListener("change", markFormDirty);
+window.addEventListener("beforeunload", (event) => {
+  if ($("form[data-dirty]")) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" && !$("#app").inert) {
+    event.preventDefault();
+    $("#nav-search").focus();
+    $("#nav-search").select();
+  }
+  if (event.key === "Tab" && !$("#drawer").hidden && !$("dialog[open]")) {
+    const focusable = $$(
+      "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]",
+      $("#drawer"),
+    ).filter((el) => el.getClientRects().length);
+    const first = focusable[0],
+      last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  }
+});
+
+/* ---------- settings ---------- */
+
+const ADDRESS_HEADERS = [
+  ["", "Automatic: X-Forwarded-For from trusted proxies, and CF-Connecting-IP when Cloudflare connects"],
+  ["X-Forwarded-For", "X-Forwarded-For"],
+  ["CF-Connecting-IP", "CF-Connecting-IP (Cloudflare)"],
+  ["True-Client-IP", "True-Client-IP (Cloudflare Enterprise, Akamai)"],
+  ["X-Real-IP", "X-Real-IP (nginx)"],
+  ["Fly-Client-IP", "Fly-Client-IP (Fly.io)"],
+];
+
+const CAP_MODES = [
+  ["core", "Cap core (default)"],
+  ["standalone", "Cap Standalone server"],
+];
+
+const RATE_LIMITS = [
+  ["ip", "Per IP, signed out", "Every request from an IP without an account"],
+  ["global", "Per account", "Every request from a signed-in account"],
+  ["error", "Failed requests per IP", "Requests answered with 401, 403 or 429"],
+  ["login", "Sign-in attempts", "Also covers two-factor, password reset and verification"],
+  ["register", "Registrations per IP", "Only successful sign-ups count"],
+];
+
+const RESOURCE_LIMITS = {
+  user: [
+    "Account limits",
+    [
+      ["maxGuilds", "Joined servers"],
+      ["maxUsername", "Username characters"],
+      ["maxFriends", "Friends"],
+      ["maxBio", "Bio characters"],
+      ["maxPronouns", "Pronoun characters"],
+    ],
+  ],
+  guild: [
+    "Server limits",
+    [
+      ["maxRoles", "Roles"],
+      ["maxEmojis", "Emojis"],
+      ["maxStickers", "Stickers"],
+      ["maxMembers", "Members"],
+      ["maxChannels", "Channels"],
+      ["maxBulkBanUsers", "Users per bulk ban"],
+      ["maxChannelsInCategory", "Channels per category"],
+    ],
+  ],
+  message: [
+    "Message limits",
+    [
+      ["maxCharacters", "Message characters"],
+      ["maxTTSCharacters", "Text-to-speech characters"],
+      ["maxReactions", "Reactions"],
+      ["maxAttachments", "Attachments"],
+      ["maxAttachmentSize", "Attachment bytes"],
+      ["maxBulkDelete", "Messages per bulk delete"],
+      ["maxEmbedDownloadSize", "Embed download bytes"],
+      ["maxPreloadCount", "Preloaded channels"],
+      ["maxEmbeds", "Embeds"],
+      ["maxEmbedCharacters", "Embed characters"],
+    ],
+  ],
+  channel: [
+    "Channel limits",
+    [
+      ["maxPins", "Pinned messages"],
+      ["maxTopic", "Topic characters"],
+      ["maxWebhooks", "Webhooks"],
+      ["maxName", "Name characters"],
+      ["maxGroupDmRecipients", "Group DM participants"],
+      ["maxStaffGroupDmRecipients", "Group DM participants added by accounts that bypass rate limits"],
+    ],
+  ],
+};
+
+const E2EE_LIMITS = [
+  [
+    "maxEnvelopeBytes",
+    "Largest encrypted message",
+    "Bytes. Discord-sized messages fit in the default 65536.",
+    1024,
+  ],
+  [
+    "maxEnvelopeDevices",
+    "Devices per encrypted message",
+    "How many recipient devices one message can be encrypted for.",
+    1,
+  ],
+  [
+    "pendingDeviceTtlHours",
+    "Unapproved device lifetime",
+    "Hours before a browser that was never approved is revoked.",
+    1,
+  ],
+  [
+    "deviceRegistrationsPerHour",
+    "New devices per hour",
+    "Per account. Re-signing a known device doesn't count.",
+    1,
+  ],
+  [
+    "deviceUpdatesPerHour",
+    "Device updates per hour",
+    "Per account, for re-signing devices that already exist.",
+    1,
+  ],
+  [
+    "keyQueriesPerMinute",
+    "Key lookups per minute",
+    "Per account, for fetching other people's device keys.",
+    1,
+  ],
+];
+
+const getPath = (obj, path) => path.split(".").reduce((o, k) => o?.[k], obj);
+const setPath = (obj, path, value) => {
+  const keys = path.split(".");
+  const last = keys.pop();
+  keys.reduce((o, k) => (o[k] ??= {}), obj)[last] = value;
+};
+
+async function renderSettings(view) {
+  const s = await api("/admin/settings");
+  const gifs = await api("/admin/gifs");
+  const text = (path, label, hint, type = "text", placeholder = "") =>
+    html`<label
+            >${label}${hint ? html`<span class="hint">${hint}</span>` : ""}<input type="${type}" name="${path}" value="${getPath(s, path) ?? ""}" placeholder="${placeholder}"
+        /></label>`;
+  const number = (path, label, hint, min = 0) =>
+    html`<label
+            >${label}${hint ? html`<span class="hint">${hint}</span>` : ""}<input
+                type="number"
+                data-number
+                name="${path}"
+                min="${min}"
+                step="1"
+                value="${getPath(s, path) ?? ""}"
+                required
+        /></label>`;
+  const toggle = (path, label, hint) =>
+    html`<label class="toggle"
+            ><input type="checkbox" name="${path}" ${getPath(s, path) ? raw("checked") : ""} /><span>${label}${hint ? html`<span class="hint">${hint}</span>` : ""}</span></label
+        >`;
+  const invertedToggle = (path, label, hint) =>
+    html`<label class="toggle"
+            ><input type="checkbox" name="${path}" data-inverted ${getPath(s, path) ? "" : raw("checked")} /><span>${label}${hint ? html`<span class="hint">${hint}</span>` : ""}</span></label
+        >`;
+  const captchaState =
+    s.captcha.active || s.register.requireCaptcha
+      ? html`<span class="badge ok"><span class="dot"></span>${s.register.requireCaptcha ? "Signup verification active" : "Active"}</span>`
+      : s.captcha.enabled
+        ? html`
+            <span class="badge warn"><span class="dot"></span>Enabled but incomplete</span>
+          `
+        : html`
+            <span class="badge"><span class="dot"></span>Off</span>
+          `;
+
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Site settings</h1>
+                    <p class="muted">Instance information, how the web client is branded, who can sign up, and the limits that protect the instance.</p>
+                </div>
+            </div>
+            <form id="settings-form" class="stack">
+                <div class="settings-jump" aria-label="Settings shortcuts">
+                    <a href="#/settings" data-settings-target="settings-instance">Instance</a><a href="#/settings" data-settings-target="settings-branding">Branding</a
+                    ><a href="#/settings" data-settings-target="settings-registration">Registration</a
+                    ><a href="#/settings" data-settings-target="settings-limits">Feature limits</a>
+                </div>
+                <div class="card">
+                    <h2>External requests</h2>
+                    <p class="muted">Local files and cached assets remain available. By default every Discord and Steam download is on and third-party integrations are off.</p>
+                    <div class="stack">
+                        ${toggle("externalRequests.discordDecorations", "Download existing Discord decoration artwork", "Avatar decorations, nameplates and profile effects. Shop items remain free.")}
+                        ${toggle("externalRequests.discordAssetFallback", "Download other missing Discord assets")}
+                        ${toggle("externalRequests.discordClientAssets", "Download missing Discord client assets while browsing")}
+                        ${toggle("externalRequests.discordGames", "Refresh the games list from Discord")}
+                        ${toggle("externalRequests.discordTemplates", "Import server templates from Discord")}
+                        ${toggle("externalRequests.discordStickerPacks", "Import standard sticker packs from Discord")}
+                        ${toggle("externalRequests.discordBadDomains", "Download Discord's blocked-domain list")}
+                        ${toggle("externalRequests.steamAssetFallback", "Download Steam avatar frame artwork", "Art for the Steam frames in the shop, fetched through the outbound proxy when someone views one.")}
+                        ${toggle("externalRequests.thirdParty", "Allow configured third-party integrations", "Also requires configuring each provider. Leave off for local operation.")}
+                    </div>
+                </div>
+                <div class="card" id="settings-gifs">
+                    <h2>GIF search</h2>
+                    <p class="muted">Klipy is the default. These providers work independently of other third-party integrations. Keys stay on the server.</p>
+                    <label class="toggle"><input id="gif-enabled" type="checkbox" ${gifs.enabled ? raw("checked") : ""} /><span>Enable GIF search</span></label>
+                    <label
+                        >Default provider<select id="gif-default">
+                            ${options(
+                              [
+                                ["klipy", "Klipy"],
+                                ["tenor", "Tenor"],
+                              ],
+                              gifs.defaultProvider,
+                            )}
+                        </select></label
+                    >
+                    <div class="form-grid">
+                        ${["klipy", "tenor"].map(
+                          (provider) =>
+                            html`<div class="stack">
+                                    <label class="toggle"
+                                        ><input id="gif-${provider}-enabled" type="checkbox" ${gifs[provider].enabled ? raw("checked") : ""} /><span
+                                            >Enable ${provider === "klipy" ? "Klipy" : "Tenor"}</span
+                                        ></label
+                                    ><label
+                                        >${provider === "klipy" ? "Klipy" : "Tenor"} API key<span class="hint"
+                                            >${gifs[provider].key_set ? "A key is configured. Leave blank to keep it." : "No key configured."}${provider === "tenor" ? " Uses Vencord's public key by default." : " Get a key from partner.klipy.com."}</span
+                                        ><input id="gif-${provider}-key" type="password" autocomplete="new-password" /></label
+                                    ><label class="toggle"><input id="gif-${provider}-clear" type="checkbox" /><span>Remove configured key</span></label>
+                                    <p class="muted">${gifs.providers[provider]?.available ? "Configured and ready" : "Not configured"}</p>
+                                </div>`,
+                        )}
+                    </div>
+                    <button class="btn" type="button" id="gif-save">Save GIF settings</button>
+                    <p class="hint">Google announced Tenor API retirement. This compatibility provider uses the same endpoint as Vencord; availability depends on Tenor.</p>
+                </div>
+                <div class="card" id="settings-limits">
+                    <h2>Feature limits</h2>
+                    <p class="muted">Control the limits used by accounts, servers, messages and channels.</p>
+                    ${Object.entries(RESOURCE_LIMITS).map(
+                      ([section, [label, fields]]) =>
+                        html`<details class="settings-section">
+                                <summary>${label}</summary>
+                                <div class="form-grid">${fields.map(([key, name]) => number(`limits.${section}.${key}`, name, "", 1))}</div>
+                            </details>`,
+                    )}
+                    <label
+                        >Default server features<span class="hint">One per line. Used when new servers are created.</span
+                        ><textarea name="guild.defaultFeatures" data-lines>${(s.guild.defaultFeatures ?? []).join("\n")}</textarea>
+                    </label>
+                    ${toggle("guild.publicThreadsInvitable", "Let members invite others to public threads")}
+                    ${toggle("limits.channel.allowSlowmodeBypass", "Allow moderators to bypass slowmode", "Owners and members with Manage Messages, Manage Channels or Bypass Slowmode can send without waiting.")}
+                    ${toggle("guild.discovery.hideJoinedGuilds", "Hide servers people are in from Discovery", "Off is how Discord works. When it's on, whoever adds a server to Discovery never sees it there.")}
+                </div>
+                <div class="card">
+                    <h2 id="settings-instance">Instance information</h2>
+                    <div class="form-grid">
+                        <label>Instance name<input name="general.instanceName" value="${s.general.instanceName}" required maxlength="100" /></label>
+                        ${text("general.image", "Icon URL", "Fallback icon when the client icon below is empty", "url")}
+                        <label class="span">Description<textarea name="general.instanceDescription" maxlength="1000">${s.general.instanceDescription ?? ""}</textarea></label>
+                        ${text("general.frontPage", "Homepage URL", "Linked from the status page", "url")}
+                        ${text("general.tosPage", "Terms of service URL", "Opened from every Terms of Service link in the client", "url")}
+                        ${text("general.privacyPage", "Privacy policy URL", "Falls back to the terms of service URL", "url")}
+                        ${text("general.guidelinesPage", "Community guidelines URL", "Falls back to the terms of service URL", "url")}
+                        ${text("general.correspondenceEmail", "Contact email", "", "email")}
+                        ${text("general.correspondenceUserID", "Contact user ID", "The account users can message for help")}
+                    </div>
+                </div>
+                <div class="card">
+                    <h2 id="settings-branding">Web client branding</h2>
+                    <p class="muted" style="margin:0 0 14px">
+                        What the bundled web client shows instead of Discord's name and artwork. Open clients pick it up on their next reload.
+                    </p>
+                    <div class="form-grid">
+                        <label
+                            >Name in the client<span class="hint">Replaces "Discord" in titles and text</span
+                            ><input name="client.instanceName" value="${s.client.instanceName}" required maxlength="100"
+                        /></label>
+                        ${text("client.icon", "Square icon", "A URL, or a file path relative to the server folder. Used for the favicon, avatars and the app icon.", "text", "assets/icon.png")}
+                        ${text("client.logo", "Wordmark logo", "A URL or file path. Shown where Discord shows its wordmark; empty draws the name next to the icon.", "text")}
+                        ${text("client.helpUrl", "Help center URL", "Where help links go. Empty hides them.", "url", "https://")}
+                        ${text("client.activityApplicationHost", "Activity host", "Host that serves embedded activities. Empty uses this instance.", "text", "activities.example.com")}
+                    </div>
+                </div>
+                <div class="card">
+                    <h2 id="settings-loading">Loading screen</h2>
+                    <p class="muted">Customize the loading screen for everyone on this instance. Changes appear after reload.</p>
+                    <label>Did you know? tips<span class="hint">One tip per line, up to 100 tips of 500 characters each. Leave empty to use the built-in tips.</span><textarea id="loading-tips" name="client.loadingTips" data-lines rows="5">${(s.client.loadingTips ?? []).join("\n")}</textarea></label>
+                    <label style="margin-top:16px">Loading animation SVG<span class="hint">Paste a self-contained SVG under 64 KB. Scripts, external images and embedded HTML are blocked. Leave empty for the built-in animation.</span><textarea id="loading-svg" name="client.loadingSvg" rows="8" spellcheck="false">${s.client.loadingSvg ?? ""}</textarea></label>
+                    <div class="row" style="margin-top:16px"><button class="btn" type="button" id="loading-preview-button">Preview</button><button class="btn" type="button" id="loading-reset">Restore defaults</button></div>
+                    <div id="loading-preview" class="stack" style="margin-top:16px;padding:24px;text-align:center;align-items:center" aria-live="polite"><p class="muted">Preview your loading screen before saving.</p></div>
+                </div>
+                <div class="card">
+                    <h2 id="settings-registration">Registration</h2>
+                    <div class="stack">
+                        ${toggle("register.disabled", "Disable registration entirely", "Nobody can create an account, including with an invite.")}
+                        ${toggle("register.allowNewRegistration", "Allow new registrations", "Turn off to stop new sign-ups while keeping invite-based registration rules.")}
+                        ${toggle("register.requireInvite", "Make the instance invite-only", "New accounts need an instance invite from a member or from Instance invites. Guild invites don't count.")}
+                        ${toggle("register.guestsRequireInvite", "Require an invite for guest accounts", "Guest accounts are created without a password.")}
+                        ${toggle("register.email.required", "Require an email address", "Off lets people sign up with only a username and password.")}
+                        ${invertedToggle("defaults.user.verified", "Verify email addresses", "Sends each new account a link to confirm its address. Off marks new accounts as verified without checking. Needs email delivery.")}
+                        ${toggle("login.requireVerification", "Require a verified email", "Until an account opens its verification link it can sign in and read, but not post, join or call. The app holds it at a prompt to resend the link or change its address. Needs an email address to be required.")}
+                        ${toggle("register.allowMultipleAccounts", "Allow multiple accounts per person", "When off, sign-ups from known devices or IPs are refused.")}
+                        ${toggle("register.incrementingDiscriminators", "Give out discriminators in order", "Off picks a random free one for legacy usernames.")}
+                    </div>
+                    <label style="margin-top:16px"
+                        >Blacklisted usernames<span class="hint"
+                            >One per line, not case-sensitive. Nobody can register with these or change their username to one, and the sign-up page says so as they type.
+                            <code>*</code> matches anything, so <code>*admin*</code> blocks every name containing "admin". Accounts that already have one keep it.</span
+                        ><textarea name="register.blacklistedUsernames" data-lines rows="5" placeholder="admin&#10;moderator&#10;*official*">
+${(s.register.blacklistedUsernames ?? []).join("\n")}</textarea>
+                    </label>
+                    <label style="margin-top:16px"
+                        >Blocked identity words<span class="hint" id="identity-blocked-terms-hint"
+                            >One word per line, up to 256 words of 64 letters or numbers each. Applies to usernames, display names and guild nicknames, including bots.
+                            Matching ignores case and common obfuscations. Leave empty to clear the list. Existing names are kept.</span
+                        ><textarea name="user.identityBlockedTerms" data-lines rows="5" aria-describedby="identity-blocked-terms-hint">${(s.user?.identityBlockedTerms ?? []).join("\n")}</textarea>
+                    </label>
+                    <div class="form-grid" style="margin-top:16px">
+                        ${number("register.dateOfBirth.minimum", "Minimum age", "Years. Set to 0 to accept any date of birth.")}
+                        ${number("register.password.minLength", "Minimum password length", "", 1)} ${number("register.password.minNumbers", "Digits a password needs")}
+                        ${number("register.password.minUpperCase", "Capital letters a password needs")} ${number("register.password.minSymbols", "Symbols a password needs")}
+                    </div>
+                    <h3 style="margin-top:16px">Instance invites</h3>
+                    <p class="muted">Every member gets invites to bring people in. Each person who joins uses one. Give someone more from their page in Users & profiles.</p>
+                    <div class="form-grid">
+                        ${number("register.instanceInvites.perUser", "Invites per member", "Raising it gives every member more right away.")}
+                        ${number("register.instanceInvites.minAccountAgeDays", "Days before a new account gets invites", "0 gives them right away. Extra invites you grant work at any age.")}
+                        ${number("register.instanceInvites.maxUsesPerInvite", "People one member invite can let in", "", 1)}
+                        ${number("register.instanceInvites.maxAgeDays", "Longest a member invite can last", "Days. 0 lets member invites last until they're used.")}
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>Client addresses</h2>
+                    <p class="muted">Rate limits, address bans and the accounts per address limit all use the address picked here. Behind a proxy or Cloudflare, a wrong choice makes everyone share one address. Check the Users page afterwards: accounts should show different addresses.</p>
+                    <div class="form-grid">
+                        <label
+                            >Address header<span class="hint">Read only when the connection comes from a trusted proxy or from Cloudflare, so visitors can't set it themselves.</span
+                            ><select name="network.forwardedFor">
+                                ${options(ADDRESS_HEADERS, s.network?.forwardedFor ?? "")}
+                            </select></label
+                        >
+                        <label
+                            >Trusted proxies<span class="hint">Comma separated addresses, ranges or the names loopback, linklocal and uniquelocal. Blank means loopback, linklocal, uniquelocal. Takes effect after a restart.</span
+                            ><input name="network.trustedProxies" value="${s.network?.trustedProxies ?? ""}" placeholder="loopback, linklocal, uniquelocal"
+                        /></label>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+                        <h2 style="margin:0">Captcha</h2>
+                        ${captchaState}
+                    </div>
+                    <div class="stack">
+                        <label
+                            >Cap mode<select id="captcha-provider" name="captcha.capMode">
+                                ${options(CAP_MODES, s.captcha.capMode === "standalone" ? "standalone" : "core")}
+                            </select></label
+                        >
+                        <p class="muted" data-cap-core>Cap core runs inside this instance. Signup verification needs no separate server, API key or external service.</p>
+                        <div class="form-grid">
+                            <label data-cap-standalone
+                                >Standalone server URL<span class="hint">The base URL of your Cap Standalone deployment. Browsers must be able to reach it.</span
+                                ><input type="url" name="captcha.instance" value="${s.captcha.instance ?? ""}" placeholder="https://cap.example.com"
+                            /></label>
+                            <label data-cap-standalone
+                                >Site key<span class="hint">The site key from your Cap Standalone dashboard.</span
+                                ><input name="captcha.sitekey" value="${s.captcha.sitekey ?? ""}"
+                            /></label>
+                            <label data-cap-standalone
+                                >Secret<span class="hint"
+                                    >${s.captcha.secret_set ? "A secret is configured. Leave blank to keep it." : "Enter the site's secret from Cap Standalone."}</span
+                                ><input type="password" name="captcha.secret" autocomplete="new-password"
+                            /></label>
+                        </div>
+                        ${toggle("captcha.enabled", "Enable additional sign-in and password-reset verification", "Uses the selected Cap mode for the actions enabled below. Required signup verification stays active independently.")}
+                        ${toggle("register.requireCaptcha", "Require Cap to create an account", "Always displays the selected Cap widget before an account can be created. Cap core is the default.")}
+                        ${toggle("login.requireCaptcha", "Ask for a captcha when signing in", "")}
+                        ${toggle("passwordReset.requireCaptcha", "Ask for a captcha when requesting a password reset", "")}
+                        <div data-cap-core class="stack">
+                            ${toggle("captcha.blockAutomatedBrowsers", "Refuse headless and automated browsers", "Checks signals like navigator.webdriver, HeadlessChrome and software WebGL inside the challenge. It stops cheap bots, not a determined attacker with a real browser. The dev setup turns it off so its scripts can solve Cap.")}
+                            <p class="muted">
+                                Proof-of-work cost for each place Cap is used. A browser finds one hash per proof, and every difficulty step makes each proof 16 times harder.
+                                Registration at 64 proofs and difficulty 5 took 3 to 6 seconds in desktop Brave on an Apple M3. Phones take longer.
+                            </p>
+                            <div class="form-grid">
+                                ${CAP_CONTEXTS.map(
+                                  ([key, label]) =>
+                                    html`<fieldset class="stack" style="gap:6px;border:0;padding:0;margin:0">
+                                            <legend><strong style="font-size:13px">${label}</strong></legend>
+                                            ${number(`captcha.challenges.${key}.count`, "Proofs", "", 1)} ${number(`captcha.challenges.${key}.difficulty`, "Difficulty", "1 to 8", 1)}
+                                            ${number(`captcha.challenges.${key}.size`, "Salt length", "16 to 64", 16)}
+                                        </fieldset>`,
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>Rate limits</h2>
+                    <p class="muted" style="margin:0 0 14px">Requests allowed per window of seconds. Changes apply after the server restarts.</p>
+                    <div class="stack">
+                        ${toggle("rate.enabled", "Rate limit requests", "Accounts with the BYPASS_RATE_LIMITS right are never limited.")}
+                        <div class="form-grid">
+                            ${RATE_LIMITS.map(
+                              ([key, label, hint]) =>
+                                html`<div class="stack" style="gap:6px">
+                                        <strong style="font-size:13px">${label}</strong><span class="hint muted" style="font-size:12px">${hint}</span>
+                                        <div class="row" style="flex-wrap:nowrap">
+                                            <input
+                                                type="number"
+                                                data-number
+                                                name="rate.${key}.count"
+                                                min="1"
+                                                step="1"
+                                                value="${s.rate[key].count}"
+                                                aria-label="${label}: requests"
+                                                required
+                                            />
+                                            <span class="muted">per</span>
+                                            <input
+                                                type="number"
+                                                data-number
+                                                name="rate.${key}.window"
+                                                min="1"
+                                                step="1"
+                                                value="${s.rate[key].window}"
+                                                aria-label="${label}: seconds"
+                                                required
+                                            />
+                                            <span class="muted">s</span>
+                                        </div>
+                                    </div>`,
+                            )}
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>Encrypted DMs</h2>
+                    <p class="muted" style="margin:0 0 14px">Limits for end-to-end encrypted conversations. They apply right away.</p>
+                    <div class="form-grid">${E2EE_LIMITS.map(([key, label, hint, min]) => number(`e2ee.${key}`, label, hint, min))}</div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn" type="reset">Discard changes</button>
+                    <button class="btn primary" type="submit">Save settings</button>
+                </div>
+            </form>
+        `,
+  );
+
+  const syncCaptchaProvider = () => {
+    const standalone = $("#captcha-provider", view).value === "standalone";
+    for (const group of $$("[data-cap-standalone]", view)) {
+      group.hidden = !standalone;
+      for (const input of $$("input", group)) {
+        input.disabled = !standalone;
+        input.required = standalone && (input.name !== "captcha.secret" || !s.captcha.secret_set);
+      }
+    }
+    for (const core of $$("[data-cap-core]", view)) core.hidden = standalone;
+  };
+  $("#captcha-provider", view).addEventListener("change", syncCaptchaProvider);
+  syncCaptchaProvider();
+  $("#gif-save", view).addEventListener("click", async () => {
+    const body = {
+      enabled: $("#gif-enabled", view).checked,
+      defaultProvider: $("#gif-default", view).value,
+    };
+    for (const provider of ["klipy", "tenor"]) {
+      const apiKey = $(`#gif-${provider}-key`, view).value.trim();
+      body[provider] = {
+        enabled: $(`#gif-${provider}-enabled`, view).checked,
+        clearKey: $(`#gif-${provider}-clear`, view).checked,
+        ...(apiKey ? { apiKey } : {}),
+      };
+    }
+    const saved = await act(
+      $("#gif-save", view),
+      () => api("/admin/gifs", { method: "PATCH", body }),
+      "GIF settings saved",
+    );
+    if (saved) renderSettings(view);
+  });
+  for (const link of $$("[data-settings-target]", view))
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      document.getElementById(link.dataset.settingsTarget)?.scrollIntoView({ block: "start" });
+    });
+  $("#loading-preview-button", view).addEventListener("click", () => {
+    const preview = $("#loading-preview", view);
+    preview.replaceChildren();
+    const svg = $("#loading-svg", view).value.trim();
+    if (svg) {
+      const image = document.createElement("img");
+      image.alt = "Loading animation preview";
+      image.style.cssText = "width:144px;height:144px;object-fit:contain";
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      preview.append(image);
+    }
+    const heading = document.createElement("strong");
+    heading.textContent = "Did you know?";
+    const tip = document.createElement("p");
+    tip.textContent =
+      $("#loading-tips", view)
+        .value.split("\n")
+        .map((line) => line.trim())
+        .find(Boolean) || "Built-in loading tips will be used.";
+    preview.append(heading, tip);
+  });
+  $("#loading-reset", view).addEventListener("click", () => {
+    $("#loading-tips", view).value = "";
+    $("#loading-svg", view).value = "";
+    $("#loading-preview", view).textContent =
+      "Built-in tips and animation will be restored when you save settings.";
+  });
+  $("#settings-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const body = {};
+    for (const el of $$("input, textarea, select", form)) {
+      if (!el.name || el.disabled) continue;
+      if (el.name === "captcha.secret" && !el.value) continue;
+      const value =
+        el.type === "checkbox"
+          ? "inverted" in el.dataset
+            ? !el.checked
+            : el.checked
+          : "number" in el.dataset
+            ? Number(el.value)
+            : "lines" in el.dataset
+              ? el.value
+                  .split("\n")
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+              : el.value;
+      setPath(body, el.name, value);
+    }
+    const saved = await act(
+      $("button[type=submit]", form),
+      () => api("/admin/settings", { method: "PATCH", body }),
+      "Settings saved",
+    );
+    if (saved) {
+      state.overview = await api("/admin");
+      $("#brand-name").textContent = state.overview.instance.name;
+      syncBrandIcon();
+      renderSettings(view);
+    }
+  });
+}
+
+function latestList(view, results, status) {
+  let pending;
+  let generation = 0;
+  const cancel = () => {
+    generation++;
+    pending?.abort();
+    results.setAttribute("aria-busy", "false");
+    status.hidden = true;
+  };
+  return {
+    cancel,
+    async load(path, render, retry) {
+      if (!view.isConnected) return;
+      cancel();
+      const current = generation;
+      pending = new AbortController();
+      results.setAttribute("aria-busy", "true");
+      status.hidden = false;
+      status.textContent = "Loading results…";
+      try {
+        const data = await api(path, { signal: pending.signal });
+        if (current !== generation || !view.isConnected) return;
+        render(data);
+        status.textContent = `${fmtNumber(data.total)} ${data.total === 1 ? "result" : "results"}`;
+      } catch (error) {
+        if (
+          current !== generation ||
+          !view.isConnected ||
+          error.status === 499 ||
+          error.status === 401
+        )
+          return;
+        mount(
+          status,
+          html`<span>${error.message}</span><button class="btn small" type="button">Retry search</button>`,
+        );
+        $("button", status).addEventListener("click", retry);
+        if (!$("table, .empty", results))
+          mount(
+            results,
+            html`
+              <div class="card empty">Results couldn't load. Retry your search.</div>
+            `,
+          );
+      } finally {
+        if (current === generation && view.isConnected) results.setAttribute("aria-busy", "false");
+      }
+    },
+  };
+}
+
+/* ---------- users ---------- */
+
+const usersState = { q: "", filter: "all", origin: "local", sort: "newest", offset: 0, limit: 50, selected: new Set() };
+const USER_SORTS = [
+  ["newest", "Newest first"],
+  ["oldest", "Oldest first"],
+  ["name", "Username, A to Z"],
+];
+const ipsState = { q: "", offset: 0, limit: 50 };
+const BULK_CHUNK = 100;
+
+const plural = (count, one, many = `${one}s`) => `${fmtNumber(count)} ${count === 1 ? one : many}`;
+
+async function runBulkRemoval(ids, { action, deleteMessages, ban, reason }, progress) {
+  const totals = { processed: 0, skipped: 0, messages: 0 };
+  for (let start = 0; start < ids.length; start += BULK_CHUNK) {
+    progress?.(start, ids.length);
+    const result = await api("/admin/users/bulk", {
+      method: "POST",
+      body: {
+        user_ids: ids.slice(start, start + BULK_CHUNK),
+        action,
+        delete_messages: deleteMessages,
+        ban,
+        ...(reason ? { reason } : {}),
+      },
+    });
+    totals.processed += result.processed.length;
+    totals.skipped += result.skipped.length;
+    totals.messages += result.messages_deleted;
+  }
+  progress?.(ids.length, ids.length);
+  return totals;
+}
+
+const removalTitle = ({ action }, count) => `${action === "delete" ? "Delete" : "Disable"} ${plural(count, "account")}?`;
+const removalLabel = ({ action }, count) => `${action === "delete" ? "Delete" : "Disable"} ${plural(count, "account")}`;
+const describeRemoval = ({ action, deleteMessages }) =>
+  action === "delete"
+    ? "The accounts and every message they sent are deleted permanently. This can't be undone."
+    : `They're signed out everywhere and can't sign in until you enable them again.${deleteMessages ? " Every message they sent is deleted, and deleted messages can't be restored." : ""}`;
+const IP_BAN_EFFECT =
+  "Registration and sign-in from this address are refused and tokens used from it stop working. Staff accounts and people from other instances are never caught.";
+const IP_LIFT_EFFECT = "People can register and sign in from this address again. Bans that spread from it to accounts are lifted too.";
+
+const removalSummary = (action, totals) =>
+  [
+    `${plural(totals.processed, "account")} ${action === "delete" ? "deleted" : "disabled"}`,
+    totals.messages ? `${plural(totals.messages, "message")} deleted` : "",
+    totals.skipped ? `${fmtNumber(totals.skipped)} skipped` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+const removalActions = () =>
+  [
+    state.overview.access.moderate ? ["disable", "Disable accounts"] : null,
+    state.overview.access.manage_users ? ["delete", "Delete accounts"] : null,
+  ].filter(Boolean);
+
+const removalOptions = (prefix) => html`
+  <label
+    >Action<select name="action" id="${prefix}-action">
+      ${options(removalActions(), removalActions()[0]?.[0])}
+    </select></label
+  >
+  ${
+    state.overview.access.messages
+      ? html`<label class="toggle"
+          ><input type="checkbox" name="delete_messages" id="${prefix}-messages" /><span
+            >Delete every message they sent<span class="hint">Deleting an account always removes its messages.</span></span
+          ></label
+        >`
+      : ""
+  }
+`;
+
+const readRemovalOptions = (root) => {
+  const action = $("[name=action]", root).value;
+  return {
+    action,
+    deleteMessages: action === "delete" || !!$("[name=delete_messages]", root)?.checked,
+    ban: false,
+  };
+};
+
+async function renderUsers(view) {
+  const [, , requested] = location.hash.split("/");
+  const canSeeBans = state.overview.access.reports;
+  const sub = requested === "bans" && !canSeeBans ? "" : requested;
+  const current = ["ips", "remote", "bans"].includes(sub) ? sub : "";
+  const tab = (key, href, label) =>
+    html`<a class="btn small ${current === key ? "primary" : ""}" href="${href}" ${current === key ? raw('aria-current="page"') : ""}>${label}</a>`;
+  const tabs = html`<div class="row view-switch" role="navigation" aria-label="Users views">
+    ${tab("", "#/users", "Accounts")} ${tab("remote", "#/users/remote", "Other instances")} ${tab("ips", "#/users/ips", "IP addresses")} ${canSeeBans ? tab("bans", "#/users/bans", "IP bans") : ""}
+  </div>`;
+  if (sub === "ips") return renderIps(view, tabs);
+  if (sub === "bans") return renderIpBans(view, tabs);
+  const remote = sub === "remote";
+  if (usersState.origin !== (remote ? "remote" : "local")) {
+    usersState.origin = remote ? "remote" : "local";
+    usersState.offset = 0;
+    usersState.selected.clear();
+  }
+
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Users</h1>
+                    <p class="muted">${
+                      remote
+                        ? "People from other instances that this instance stores because they share a server or a DM with someone here. Their home instance owns their profiles, so you can only disable, suspend or delete them here. Block them or their instance on the Federation page."
+                        : "Accounts registered on this instance. Search by name, @handle, name#1234, email, ID or IP address. Open a user to edit, suspend or ban them."
+                    }</p>
+                </div>
+            </div>
+            ${tabs}
+            <div class="row" style="margin-bottom:12px">
+                <label class="grow list-search"
+                    >Find users<input id="user-search" type="search" placeholder="Search names, emails, IDs or IPs" value="${usersState.q}" aria-controls="user-results"
+                /></label>
+                <label class="list-filter"
+                    ><span id="user-filter-label">Filter users</span
+                    ><select id="user-filter" aria-labelledby="user-filter-label">
+                        ${options(
+                          [
+                            ["all", "All users"],
+                            ["disabled", "Disabled"],
+                            ["verified", "Verified email"],
+                            ["unverified", "Unverified email"],
+                            ["bots", "Bots"],
+                            ["suspended", "Suspended now"],
+                            ["pending", "Waiting for approval"],
+                            ["with_reason", "Gave a join reason"],
+                          ],
+                          usersState.filter,
+                        )}
+                    </select></label
+                >
+                <label class="list-filter">Sort<select id="user-sort" aria-controls="user-results">${options(USER_SORTS, usersState.sort)}</select></label>
+            </div>
+            <form class="card bulk-bar" id="user-bulk" data-action-form hidden>
+                <div class="row bulk-summary">
+                    <strong id="user-bulk-count" role="status" aria-live="polite"></strong>
+                    <button class="btn small" type="button" id="user-bulk-matching" hidden></button>
+                    <button class="btn small ghost" type="button" id="user-bulk-clear">Clear selection</button>
+                </div>
+                <div class="row bulk-controls">
+                    ${removalOptions("user-bulk")}
+                    <button class="btn danger" type="submit" id="user-bulk-run">Apply to selected</button>
+                </div>
+            </form>
+            <div class="list-status muted" id="user-status" role="status" aria-live="polite" hidden></div>
+            <div id="user-results"><div class="spinner">Loading…</div></div>
+        `,
+  );
+
+  const results = $("#user-results", view);
+  const bulk = $("#user-bulk", view);
+  const canBulk = removalActions().length > 0;
+  const requests = latestList(view, results, $("#user-status", view));
+  let lastTotal = 0;
+  const query = () => ({ q: usersState.q, filter: usersState.filter, origin: usersState.origin });
+  const syncBulk = () => {
+    const count = usersState.selected.size;
+    bulk.hidden = !count;
+    $("#user-bulk-count", view).textContent = `${plural(count, "account")} selected`;
+    const boxes = $$("[data-select-user]", results);
+    const checked = boxes.filter((box) => usersState.selected.has(box.dataset.selectUser)).length;
+    for (const box of boxes) box.checked = usersState.selected.has(box.dataset.selectUser);
+    const all = $("#user-select-page", results);
+    if (all) {
+      all.checked = boxes.length > 0 && checked === boxes.length;
+      all.indeterminate = checked > 0 && checked < boxes.length;
+    }
+    const matching = $("#user-bulk-matching", view);
+    matching.hidden = !(lastTotal > count && boxes.length && checked === boxes.length);
+    matching.textContent = `Select all ${plural(lastTotal, "matching account")}`;
+  };
+  const clearSelection = () => {
+    usersState.selected.clear();
+    syncBulk();
+  };
+
+  const load = async () => {
+    const params = new URLSearchParams({
+      ...query(),
+      sort: usersState.sort,
+      limit: usersState.limit,
+    });
+    const remember = pageQuery(usersState, params);
+    await requests.load(
+      `/admin/users?${params}`,
+      ({ users, total, next }) => {
+        remember(next);
+        lastTotal = total;
+        mount(
+          results,
+          users.length
+            ? html`
+                              <div class="table-wrap">
+                                  <table>
+                                      <thead>
+                                          <tr>
+                                              ${canBulk ? html`<th style="width:1%"><input type="checkbox" id="user-select-page" aria-label="Select every user on this page" /></th>` : ""}
+                                              <th>User</th>
+                                              <th class="hide-sm">${remote ? "Instance" : "Email"}</th>
+                                              <th class="hide-sm">Joined</th>
+                                              <th>Flags</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody>
+                                          ${users.map(
+                                            (u) => html`
+                                                  <tr data-id="${u.id}">
+                                                      ${canBulk ? html`<td data-select><input type="checkbox" data-select-user="${u.id}" aria-label="Select ${userName(u)}" /></td>` : ""}
+                                                      <td>
+                                                          <div class="ident">
+                                                              ${avatar(u)}
+                                                              <div><strong>${userName(u)}</strong><span class="muted">${userTag(u)}</span></div>
+                                                          </div>
+                                                      </td>
+                                                      <td class="hide-sm">${
+                                                        (remote ? u.federated_instance : u.email) ||
+                                                        html`
+                                                          <span class="muted">—</span>
+                                                        `
+                                                      }</td>
+                                                      <td class="hide-sm">${fmtDay(u.created_at)}</td>
+                                                      <td>${userBadges(u)}</td>
+                                                  </tr>
+                                              `,
+                                          )}
+                                      </tbody>
+                                  </table>
+                              </div>
+                              ${pager(total, usersState)}
+                          `
+            : usersState.q || usersState.filter !== "all"
+              ? emptyCard("No accounts match this search and filter.", "Clear search and filter")
+              : emptyCard("No users from other instances are stored here. They appear once people here talk to someone on another instance.", "Show local accounts"),
+        );
+        $("[data-empty-action]", results)?.addEventListener("click", () => {
+          if (!usersState.q && usersState.filter === "all") {
+            location.hash = "#/users";
+            return;
+          }
+          usersState.q = "";
+          usersState.filter = "all";
+          usersState.offset = 0;
+          $("#user-search", view).value = "";
+          $("#user-filter", view).value = "all";
+          load();
+          $("#user-search", view).focus();
+        });
+        for (const row of $$("tbody tr", results))
+          onRowOpen(row, (event) => {
+            if (!event.target.closest("[data-select]")) openUser(row.dataset.id, load);
+          });
+        for (const box of $$("[data-select-user]", results))
+          box.addEventListener("change", () => {
+            if (box.checked) usersState.selected.add(box.dataset.selectUser);
+            else usersState.selected.delete(box.dataset.selectUser);
+            syncBulk();
+          });
+        $("#user-select-page", results)?.addEventListener("change", (event) => {
+          for (const box of $$("[data-select-user]", results)) {
+            if (event.target.checked) usersState.selected.add(box.dataset.selectUser);
+            else usersState.selected.delete(box.dataset.selectUser);
+          }
+          syncBulk();
+        });
+        bindPager(results, total, usersState, load);
+        syncBulk();
+      },
+      load,
+    );
+  };
+
+  $("#user-bulk-clear", view).addEventListener("click", clearSelection);
+  $("#user-bulk-matching", view).addEventListener("click", async (event) => {
+    const selection = await act(event.currentTarget, () =>
+      api(`/admin/users/bulk?${new URLSearchParams(query())}`),
+    );
+    if (!selection) return;
+    for (const id of selection.ids) usersState.selected.add(id);
+    syncBulk();
+    if (selection.truncated)
+      toast(`Selected the newest ${plural(selection.ids.length, "account")} of ${fmtNumber(selection.total)}. Run the action again for the rest.`);
+  });
+  const actionSelect = $("[name=action]", bulk);
+  const syncAction = () => {
+    const box = $("[name=delete_messages]", bulk);
+    if (!box) return;
+    box.disabled = actionSelect.value === "delete";
+    if (box.disabled) box.checked = true;
+  };
+  actionSelect.addEventListener("change", syncAction);
+  bulk.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const ids = [...usersState.selected];
+    const choice = readRemovalOptions(bulk);
+    const self = ids.includes(state.me.id) ? " Your own account is skipped." : "";
+    if (!ids.length || !await confirmDialog({ title: removalTitle(choice, ids.length), message: `${describeRemoval(choice)}${self}`, confirm: removalLabel(choice, ids.length) })) return;
+    const button = $("#user-bulk-run", bulk);
+    const label = button.textContent;
+    const totals = await act(button, () =>
+      runBulkRemoval(ids, choice, (done, total) => {
+        button.textContent = `Working… ${fmtNumber(done)} of ${fmtNumber(total)}`;
+      }),
+    );
+    button.textContent = label;
+    if (!totals) return;
+    toast(removalSummary(choice.action, totals));
+    clearSelection();
+    load();
+  });
+
+  const search = debounce(load);
+  $("#user-search", view).addEventListener("input", (e) => {
+    requests.cancel();
+    usersState.q = e.target.value.trim();
+    usersState.offset = 0;
+    usersState.selected.clear();
+    search();
+  });
+  $("#user-sort", view).addEventListener("change", (e) => {
+    usersState.sort = e.target.value;
+    usersState.offset = 0;
+    load();
+  });
+  $("#user-filter").addEventListener("change", (e) => {
+    usersState.filter = e.target.value;
+    usersState.offset = 0;
+    usersState.selected.clear();
+    load();
+  });
+  syncAction();
+  await load();
+}
+
+const ipBansState = { kind: "all", q: "", offset: 0, limit: 50, selected: new Set() };
+
+const IP_BAN_KINDS = [
+  ["all", "All address bans"],
+  ["explicit", "Set by staff"],
+  ["spread", "Spread from another ban"],
+];
+
+const restoreIpBans = async (bans) => {
+  const explicit = bans.filter((ban) => !ban.propagated);
+  let restored = 0;
+  for (const ban of explicit) {
+    const done = await act(null, () => api("/admin/ips/bans", { method: "POST", body: { ip: ban.ip, reason: ban.reason } }));
+    if (done) restored++;
+  }
+  const skipped = bans.length - explicit.length;
+  if (!restored && explicit.length) return;
+  toast(
+    `Banned ${plural(restored, "address", "addresses")} again.${skipped ? ` ${plural(skipped, "spread ban")} stayed lifted.` : ""} Account bans that spread from them stay lifted.`,
+  );
+};
+
+const liftIpBansWithUndo = async (button, bans) => {
+  const lifted = [];
+  const total = { spread: 0 };
+  const label = button?.textContent;
+  const result = await act(button, async () => {
+    for (let start = 0; start < bans.length; start += 100) {
+      if (button && bans.length > 100) button.textContent = `Lifting… ${fmtNumber(start)} of ${fmtNumber(bans.length)}`;
+      const page = await api("/admin/ips/bans/lift", { method: "POST", body: { ban_ids: bans.slice(start, start + 100).map((ban) => ban.id) } });
+      lifted.push(...page.lifted);
+      total.spread += page.spread_lifted;
+    }
+    return true;
+  });
+  if (button && label) button.textContent = label;
+  if (!result) return false;
+  const spread = total.spread ? ` and ${plural(total.spread, "ban")} that spread from them` : "";
+  toast(`Lifted ${lifted.length === 1 ? `the ban on ${lifted[0].ip}` : plural(lifted.length, "address ban")}${spread}`, "ok", {
+    action: lifted.length ? { label: "Undo", run: () => restoreIpBans(lifted).then(() => ipBansState.reload?.()) } : undefined,
+  });
+  return true;
+};
+
+async function renderIps(view, tabs) {
+  mount(
+    view,
+    html`
+      <div class="page-head">
+        <div>
+          <h1>Users</h1>
+          <p class="muted">
+            Addresses accounts registered on or signed in from, with the most accounts first. Session addresses go away when a session ends, registration addresses stay.
+          </p>
+        </div>
+      </div>
+      ${tabs}
+      <div class="row" style="margin-bottom:12px">
+        <label class="grow list-search"
+          >Find addresses<input id="ip-search" type="search" inputmode="text" placeholder="Start of an address, like 203.0.113." value="${ipsState.q}" aria-controls="ip-results"
+        /></label>
+      </div>
+      <div class="list-status muted" id="ip-status" role="status" aria-live="polite" hidden></div>
+      <div id="ip-results"><div class="spinner">Loading…</div></div>
+    `,
+  );
+  const results = $("#ip-results", view);
+  const requests = latestList(view, results, $("#ip-status", view));
+  const load = async () => {
+    const params = new URLSearchParams({ q: ipsState.q, limit: ipsState.limit, offset: ipsState.offset });
+    await requests.load(
+      `/admin/ips?${params}`,
+      ({ ips, total }) => {
+        mount(
+          results,
+          ips.length
+            ? html`<div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Address</th>
+                        <th>Accounts</th>
+                        <th class="hide-sm">Registered here</th>
+                        <th class="hide-sm">Last seen</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${ips.map(
+                        (row) => html`<tr data-ip="${row.ip}">
+                          <td><code>${row.ip}</code></td>
+                          <td class="num">${fmtNumber(row.accounts)}</td>
+                          <td class="hide-sm num">${fmtNumber(row.registrations)}</td>
+                          <td class="hide-sm">${fmtDate(row.last_seen)}</td>
+                          <td>${row.ban_id ? html`<span class="badge danger">Banned</span>` : html`<span class="muted">Allowed</span>`}</td>
+                        </tr>`,
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                ${pager(total, ipsState)}`
+            : ipsState.q
+              ? emptyCard("No addresses match. Search for the start of an address, like 203.0.113.", "Clear search")
+              : emptyCard("No addresses recorded yet. They appear when people register or sign in.", "Show accounts"),
+        );
+        $("[data-empty-action]", results)?.addEventListener("click", () => {
+          if (!ipsState.q) {
+            location.hash = "#/users";
+            return;
+          }
+          ipsState.q = "";
+          ipsState.offset = 0;
+          $("#ip-search", view).value = "";
+          load();
+          $("#ip-search", view).focus();
+        });
+        for (const row of $$("tr[data-ip]", results)) onRowOpen(row, () => openIp(row.dataset.ip, load));
+        bindPager(results, total, ipsState, load);
+      },
+      load,
+    );
+  };
+  const search = debounce(load);
+  $("#ip-search", view).addEventListener("input", (e) => {
+    requests.cancel();
+    ipsState.q = e.target.value.trim();
+    ipsState.offset = 0;
+    search();
+  });
+  await load();
+}
+
+async function renderIpBans(view, tabs) {
+  const moderate = state.overview.access.moderate;
+  mount(
+    view,
+    html`
+      <div class="page-head">
+        <div>
+          <h1>Users</h1>
+          <p class="muted">
+            Addresses that can't register or sign in. Staff set bans here, from an address or through a raid action. A spread ban came from another ban, names it and is lifted together with it. Staff accounts and people from other instances are never caught, and private, loopback and shared addresses can't be banned.
+          </p>
+        </div>
+      </div>
+      ${tabs}
+      ${
+        moderate
+          ? html`<form class="card row ip-ban-form" id="ip-ban-form" data-action-form>
+              <label class="grow">Address<input name="ip" required maxlength="64" inputmode="text" autocomplete="off" spellcheck="false" placeholder="203.0.113.7" /></label>
+              <label class="grow">Reason<input name="reason" maxlength="512" placeholder="Optional, shown in this list" /></label>
+              <button class="btn danger" type="submit">Ban address</button>
+            </form>`
+          : ""
+      }
+      <div class="row list-controls">
+        <label class="grow list-search"
+          >Find banned addresses<input id="ip-ban-search" type="search" inputmode="text" spellcheck="false" placeholder="Start of an address, like 203.0.113." value="${ipBansState.q}" aria-controls="ip-ban-results"
+        /></label>
+        <label class="list-filter">Show<select id="ip-ban-kind">${options(IP_BAN_KINDS, ipBansState.kind)}</select></label>
+      </div>
+      <form class="card bulk-bar" id="ip-ban-bulk" data-action-form hidden>
+        <div class="row bulk-summary">
+          <strong id="ip-ban-count" role="status" aria-live="polite"></strong>
+          <button class="btn small ghost" type="button" id="ip-ban-clear">Clear selection</button>
+          <span class="grow"></span>
+          <button class="btn danger" type="submit" id="ip-ban-lift-selected">Lift bans</button>
+        </div>
+      </form>
+      <div class="list-status muted" id="ip-ban-status" role="status" aria-live="polite" hidden></div>
+      <div id="ip-ban-results"><div class="spinner">Loading…</div></div>
+    `,
+  );
+  const results = $("#ip-ban-results", view);
+  const bulk = $("#ip-ban-bulk", view);
+  const requests = latestList(view, results, $("#ip-ban-status", view));
+  let shown = [];
+  const syncBulk = () => {
+    const count = ipBansState.selected.size;
+    bulk.hidden = !count;
+    $("#ip-ban-count", view).textContent = `${plural(count, "ban")} selected`;
+    $("#ip-ban-lift-selected", view).textContent = `Lift ${plural(count, "ban")}`;
+    const boxes = $$("[data-select-ban]", results);
+    for (const box of boxes) box.checked = ipBansState.selected.has(box.dataset.selectBan);
+    const all = $("#ip-ban-select-page", results);
+    if (all) {
+      const checked = boxes.filter((box) => box.checked).length;
+      all.checked = boxes.length > 0 && checked === boxes.length;
+      all.indeterminate = checked > 0 && checked < boxes.length;
+    }
+  };
+  const kindBadge = (ban) =>
+    ban.propagated ? html`<span class="badge warn">Spread</span>` : html`<span class="badge">Set by staff</span>`;
+  const source = (ban) => {
+    if (!ban.origin_ban_id) return html`<span class="muted">None</span>`;
+    if (!ban.origin) return html`<span class="muted">Lifted ban ${ban.origin_ban_id}</span>`;
+    return ban.origin.ip
+      ? html`<button class="link-button" type="button" data-open-ip="${ban.origin.ip}"><code>${ban.origin.ip}</code></button>`
+      : ban.origin.user_id
+        ? html`<button class="link-button" type="button" data-open-user="${ban.origin.user_id}">Account ban</button>`
+        : html`<span class="muted">${ban.origin.reason}</span>`;
+  };
+  const account = (ban) =>
+    ban.user?.username
+      ? html`<button class="link-button ident" type="button" data-open-user="${ban.user.id}">${avatar(ban.user)}<span><strong>${userName(ban.user)}</strong><span class="muted">${userTag(ban.user)}</span></span></button>`
+      : ban.user
+        ? html`<span class="muted">Deleted account ${ban.user.id}</span>`
+        : ban.spread_count
+          ? html`<span class="muted">Spread to ${plural(ban.spread_count, "ban")}</span>`
+          : html`<span class="muted">None</span>`;
+  const load = async () => {
+    const params = new URLSearchParams({ kind: ipBansState.kind, q: ipBansState.q, limit: ipBansState.limit, offset: ipBansState.offset });
+    await requests.load(
+      `/admin/ips/bans?${params}`,
+      ({ bans, total, counts }) => {
+        shown = bans;
+        const kindSelect = $("#ip-ban-kind", view);
+        for (const option of kindSelect.options) {
+          const [, label] = IP_BAN_KINDS.find(([value]) => value === option.value);
+          const count = option.value === "explicit" ? counts.explicit : option.value === "spread" ? counts.spread : counts.explicit + counts.spread;
+          option.textContent = `${label} (${fmtNumber(count)})`;
+        }
+        mount(
+          results,
+          bans.length
+            ? html`<div class="table-wrap">
+                  <table class="ip-ban-table">
+                    <thead>
+                      <tr>
+                        ${moderate ? html`<th style="width:1%"><input type="checkbox" id="ip-ban-select-page" aria-label="Select every ban on this page" /></th>` : ""}
+                        <th>Address</th>
+                        <th>Kind</th>
+                        <th class="hide-sm">Account</th>
+                        <th class="hide-sm">Spread from</th>
+                        <th class="hide-sm">Banned</th>
+                        ${moderate ? html`<th><span class="visually-hidden">Actions</span></th>` : ""}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${bans.map(
+                        (ban) => html`<tr data-ban="${ban.id}">
+                          ${moderate ? html`<td data-select><input type="checkbox" data-select-ban="${ban.id}" aria-label="Select the ban on ${ban.ip}" /></td>` : ""}
+                          <td>
+                            <button class="link-button" type="button" data-open-ip="${ban.ip}"><code>${ban.ip}</code></button>
+                            <div class="muted ip-ban-reason">${ban.reason}</div>
+                          </td>
+                          <td>${kindBadge(ban)}</td>
+                          <td class="hide-sm">${account(ban)}</td>
+                          <td class="hide-sm">${source(ban)}</td>
+                          <td class="hide-sm"><span title="${fmtDate(ban.created_at)}">${fmtDay(ban.created_at)}</span></td>
+                          ${moderate ? html`<td><button class="btn small" type="button" data-lift-ban="${ban.id}">Lift ban</button></td>` : ""}
+                        </tr>`,
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                ${pager(total, ipBansState)}`
+            : ipBansState.q || ipBansState.kind !== "all"
+              ? emptyCard("No address bans match this search and filter.", "Show all address bans")
+              : moderate
+                ? emptyCard("No addresses are banned. Ban one here, or from an address in the IP addresses tab.", "Ban an address")
+                : emptyCard("No addresses are banned. Bans that moderators set show up here.", "Show addresses"),
+        );
+        $("[data-empty-action]", results)?.addEventListener("click", () => {
+          if (ipBansState.q || ipBansState.kind !== "all") {
+            ipBansState.q = "";
+            ipBansState.kind = "all";
+            ipBansState.offset = 0;
+            $("#ip-ban-search", view).value = "";
+            $("#ip-ban-kind", view).value = "all";
+            load();
+            $("#ip-ban-search", view).focus();
+            return;
+          }
+          if (moderate) $("#ip-ban-form [name=ip]", view)?.focus();
+          else location.hash = "#/users/ips";
+        });
+        for (const button of $$("[data-open-ip]", results)) button.addEventListener("click", () => openIp(button.dataset.openIp, load));
+        bindUserLinks(results);
+        for (const box of $$("[data-select-ban]", results))
+          box.addEventListener("change", () => {
+            if (box.checked) ipBansState.selected.add(box.dataset.selectBan);
+            else ipBansState.selected.delete(box.dataset.selectBan);
+            syncBulk();
+          });
+        $("#ip-ban-select-page", results)?.addEventListener("change", (event) => {
+          for (const box of $$("[data-select-ban]", results)) {
+            if (event.target.checked) ipBansState.selected.add(box.dataset.selectBan);
+            else ipBansState.selected.delete(box.dataset.selectBan);
+          }
+          syncBulk();
+        });
+        for (const button of $$("[data-lift-ban]", results))
+          button.addEventListener("click", async () => {
+            const ban = shown.find((entry) => entry.id === button.dataset.liftBan);
+            if (!(await confirmDialog({ title: `Lift the ban on ${ban.ip}?`, message: IP_LIFT_EFFECT, confirm: "Lift ban" }))) return;
+            if (!(await liftIpBansWithUndo(button, [ban]))) return;
+            ipBansState.selected.delete(ban.id);
+            load();
+          });
+        bindPager(results, total, ipBansState, load);
+        syncBulk();
+      },
+      load,
+    );
+  };
+  ipBansState.reload = () => view.isConnected && load();
+  $("#ip-ban-form", view)?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const ip = form.ip.value.trim();
+    const reason = form.reason.value.trim();
+    if (!(await confirmDialog({ title: `Ban ${ip}?`, message: IP_BAN_EFFECT, confirm: "Ban address" }))) return;
+    const done = await act($("button[type=submit]", form), () => api("/admin/ips/bans", { method: "POST", body: { ip, ...(reason ? { reason } : {}) } }), `${ip} is banned`);
+    if (!done) return;
+    form.reset();
+    load();
+  });
+  $("#ip-ban-clear", view).addEventListener("click", () => {
+    ipBansState.selected.clear();
+    syncBulk();
+  });
+  bulk.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const ids = [...ipBansState.selected];
+    if (!ids.length) return;
+    if (
+      !(await confirmDialog({
+        title: `Lift ${plural(ids.length, "address ban")}?`,
+        message: "People can register and sign in from these addresses again, and the bans that spread from them are lifted too.",
+        confirm: `Lift ${plural(ids.length, "ban")}`,
+      }))
+    )
+      return;
+    const known = new Map(shown.map((ban) => [ban.id, ban]));
+    if (!(await liftIpBansWithUndo($("#ip-ban-lift-selected", view), ids.map((id) => known.get(id) ?? { id })))) return;
+    ipBansState.selected.clear();
+    load();
+  });
+  const search = debounce(load);
+  $("#ip-ban-search", view).addEventListener("input", (event) => {
+    requests.cancel();
+    ipBansState.q = event.target.value.trim();
+    ipBansState.offset = 0;
+    ipBansState.selected.clear();
+    search();
+  });
+  $("#ip-ban-kind", view).addEventListener("change", (event) => {
+    ipBansState.kind = event.target.value;
+    ipBansState.offset = 0;
+    ipBansState.selected.clear();
+    load();
+  });
+  await load();
+}
+
+async function openIp(ip, reload) {
+  const body = openDrawer(
+    ip,
+    html`
+      <div class="spinner">Loading…</div>
+    `,
+  );
+  if (!body) return;
+  let accounts, info;
+  const refresh = async () => {
+    [accounts, info] = await Promise.all([
+      api(`/admin/users?${new URLSearchParams({ ip, limit: 100 })}`),
+      api(`/admin/ips?${new URLSearchParams({ q: ip, limit: 100 })}`),
+    ]);
+  };
+  try {
+    await refresh();
+  } catch (e) {
+    if (!body.isConnected || $("#drawer").hidden || e.status === 401 || e.status === 499) return;
+    return mount(body, html`<p class="form-error">${e.message}</p>`);
+  }
+  if (!body.isConnected || $("#drawer").hidden) return;
+  const row = info.ips.find((entry) => entry.ip === ip);
+  const total = accounts.total;
+  mount(
+    body,
+    html`
+      <div class="card">
+        <div class="list">
+          <div class="list-item"><span class="grow muted">Address</span><code>${ip}</code></div>
+          <div class="list-item"><span class="grow muted">Accounts seen here</span><span class="num">${fmtNumber(total)}</span></div>
+          <div class="list-item"><span class="grow muted">Registered here</span><span class="num">${fmtNumber(row?.registrations ?? 0)}</span></div>
+          <div class="list-item"><span class="grow muted">Last seen</span><span>${fmtDate(row?.last_seen)}</span></div>
+          <div class="list-item"><span class="grow muted">Status</span>${row?.ban_id ? html`<span class="badge danger">Banned</span>` : html`<span>Allowed</span>`}</div>
+        </div>
+      </div>
+      ${
+        total && removalActions().length
+          ? html`<form class="card stack" id="ip-remove" data-action-form>
+              <h3>Remove every account on this address</h3>
+              ${removalOptions("ip-remove")}
+              ${row?.ban_id || !state.overview.access.moderate ? "" : html`<label class="toggle"><input type="checkbox" name="ban_ip" checked /><span>Ban this address<span class="hint">Nobody can register or sign in from it afterwards.</span></span></label>`}
+              <div class="form-actions"><button class="btn danger" type="submit">Remove ${plural(total, "account")}</button></div>
+            </form>`
+          : ""
+      }
+      <div class="row">
+        ${
+          !state.overview.access.moderate
+            ? ""
+            : row?.ban_id
+              ? html`<button class="btn" type="button" id="ip-lift">Lift the ban on this address</button>`
+              : html`<button class="btn danger" type="button" id="ip-ban">Ban this address</button>`
+        }
+        <a class="btn ghost" href="#/users" id="ip-accounts">Show these accounts in Users</a>
+      </div>
+      <section class="card stack">
+        <h3>Accounts (${fmtNumber(total)})</h3>
+        ${
+          accounts.users.length
+            ? html`<div class="list">
+                ${accounts.users.map(
+                  (u) => html`<div class="list-item">
+                    ${avatar(u)}
+                    <div class="grow"><strong>${userName(u)}</strong> <span class="muted">${userTag(u)} · joined ${fmtDay(u.created_at)}</span></div>
+                    ${userBadges(u)}
+                  </div>`,
+                )}
+              </div>
+              ${total > accounts.users.length ? html`<p class="muted">Showing the newest ${fmtNumber(accounts.users.length)} of ${fmtNumber(total)}.</p>` : ""}`
+            : html`<p class="muted" style="margin:0">No accounts use this address anymore.</p>`
+        }
+      </section>
+    `,
+  );
+  const reopen = () => {
+    reload?.();
+    closeDrawer({ discard: true });
+    openIp(ip, reload);
+  };
+  $("#ip-accounts", body).addEventListener("click", (event) => {
+    event.preventDefault();
+    usersState.q = ip;
+    usersState.offset = 0;
+    usersState.selected.clear();
+    closeDrawer({ discard: true });
+    if (location.hash === "#/users") route();
+    else location.hash = "#/users";
+  });
+  const removeForm = $("#ip-remove", body);
+  if (removeForm) {
+    const actionSelect = $("[name=action]", removeForm);
+    const syncAction = () => {
+      const box = $("[name=delete_messages]", removeForm);
+      if (!box) return;
+      box.disabled = actionSelect.value === "delete";
+      if (box.disabled) box.checked = true;
+    };
+    actionSelect.addEventListener("change", syncAction);
+    syncAction();
+    removeForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = $("button[type=submit]", removeForm);
+      const banIp = !!removeForm.ban_ip?.checked;
+      const choice = readRemovalOptions(removeForm);
+      const selection = await act(button, () => api(`/admin/users/bulk?${new URLSearchParams({ ip })}`));
+      if (!selection) return;
+      const ids = selection.ids.filter((id) => id !== state.me.id);
+      const skippedSelf = ids.length < selection.ids.length ? " Your own account is on this address and is skipped." : "";
+      if (!ids.length && !banIp) return toast("Only your own account is on this address.", "error");
+      if (!await confirmDialog({ title: removalTitle(choice, ids.length), message: `${describeRemoval(choice)}${banIp ? ` ${ip} is banned too.` : ""}${skippedSelf}`, confirm: removalLabel(choice, ids.length) })) return;
+      const label = button.textContent;
+      const totals = await act(button, async () => {
+        if (banIp) await api("/admin/ips/bans", { method: "POST", body: { ip } });
+        return ids.length
+          ? await runBulkRemoval(ids, choice, (done, all) => {
+              button.textContent = `Working… ${fmtNumber(done)} of ${fmtNumber(all)}`;
+            })
+          : { processed: 0, skipped: 0, messages: 0 };
+      });
+      button.textContent = label;
+      if (!totals) return;
+      toast(`${removalSummary(choice.action, totals)}${banIp ? `, ${ip} banned` : ""}`);
+      reopen();
+    });
+  }
+  $("#ip-ban", body)?.addEventListener("click", async (event) => {
+    if (!(await confirmDialog({ title: `Ban ${ip}?`, message: IP_BAN_EFFECT, confirm: "Ban address" }))) return;
+    const done = await act(event.currentTarget, () => api("/admin/ips/bans", { method: "POST", body: { ip } }), `${ip} is banned`);
+    if (done) reopen();
+  });
+  $("#ip-lift", body)?.addEventListener("click", async (event) => {
+    if (!(await confirmDialog({ title: `Lift the ban on ${ip}?`, message: IP_LIFT_EFFECT, confirm: "Lift ban" }))) return;
+    if (await liftIpBansWithUndo(event.currentTarget, [{ id: row.ban_id }])) reopen();
+  });
+}
+
+function userBadges(u) {
+  const badges = [];
+  if (hasRight(u.rights, 0))
+    badges.push(
+      html`
+        <span class="badge accent">Operator</span>
+      `,
+    );
+  else if ([2, 7, 51, 52, 53, 54, 55, 56].some((bit) => hasRight(u.rights, bit)))
+    badges.push(
+      html`
+        <span class="badge accent">Staff</span>
+      `,
+    );
+  if (u.disabled)
+    badges.push(
+      html`
+        <span class="badge danger">Disabled</span>
+      `,
+    );
+  if (u.deleted)
+    badges.push(
+      html`
+        <span class="badge danger">Deleted</span>
+      `,
+    );
+  if (u.bot)
+    badges.push(
+      html`
+        <span class="badge info">Bot</span>
+      `,
+    );
+  if (u.suspended_until && new Date(u.suspended_until) > new Date())
+    badges.push(html`<span class="badge danger" title="Until ${fmtDate(u.suspended_until)}">Suspended</span>`);
+  if (u.join_status === "pending") badges.push(html`<span class="badge warn">Waiting for approval</span>`);
+  if (u.join_status === "rejected") badges.push(html`<span class="badge danger">Rejected</span>`);
+  if (u.tag && u.tag !== "none") badges.push(nameTag(u.tag, u.bot));
+  if (u.federated_instance) badges.push(html`<span class="badge info">From ${u.federated_instance}</span>`);
+  else if (!u.verified && !u.bot)
+    badges.push(
+      html`
+        <span class="badge warn">Unverified</span>
+      `,
+    );
+  return html`<div class="badges">${badges}</div>`;
+}
+
+function pager(total, st) {
+  if (total <= st.limit)
+    return html`<div class="pager"><span class="muted">${fmtNumber(total)} total</span></div>`;
+  const from = st.offset + 1;
+  const to = Math.min(st.offset + st.limit, total);
+  return html`<div class="pager">
+        <span class="muted num">${fmtNumber(from)} to ${fmtNumber(to)} of ${fmtNumber(total)}</span>
+        <div class="row">
+            <button class="btn small" type="button" data-page="prev" ${st.offset === 0 ? raw("disabled") : ""}>Previous</button>
+            <button class="btn small" type="button" data-page="next" ${to >= total ? raw("disabled") : ""}>Next</button>
+        </div>
+    </div>`;
+}
+
+const pageCursors = new WeakMap();
+function pageQuery(st, params) {
+  const signature = params.toString();
+  const known = pageCursors.get(st);
+  const cursors = known?.signature === signature ? known.at : new Map();
+  pageCursors.set(st, { signature, at: cursors });
+  const offset = st.offset;
+  const after = offset ? cursors.get(offset) : undefined;
+  if (after) params.set("after", after);
+  else params.set("offset", offset);
+  return (next) => {
+    if (next) cursors.set(offset + st.limit, next);
+  };
+}
+
+function bindPager(root, total, st, load) {
+  const turn = async (direction) => {
+    await load();
+    const target = $(`[data-page="${direction}"]:not(:disabled)`, root) ?? $("[data-page]:not(:disabled)", root);
+    target?.focus();
+  };
+  $(`[data-page="prev"]`, root)?.addEventListener("click", () => {
+    st.offset = Math.max(0, st.offset - st.limit);
+    turn("prev");
+  });
+  $(`[data-page="next"]`, root)?.addEventListener("click", () => {
+    if (st.offset + st.limit < total) st.offset += st.limit;
+    turn("next");
+  });
+}
+
+const imageField = (field, label, current) =>
+  html`<label>${label}<input type="file" name="${field}_file" accept="image/png,image/jpeg,image/webp,image/gif" /></label>
+        ${current ? html`<label class="toggle"><input type="checkbox" name="${field}_remove" /><span>Remove ${label.toLowerCase()}</span></label>` : ""}`;
+const imagePatch = async (form, fields, patch) => {
+  for (const field of fields) {
+    const file = form.elements[`${field}_file`]?.files[0];
+    if (file) {
+      if (file.size > 7 * 1024 * 1024) throw new Error("Choose an image smaller than 7 MB.");
+      patch[field] = await readAsDataUrl(file);
+    } else if (form.elements[`${field}_remove`]?.checked) patch[field] = null;
+  }
+  if (JSON.stringify(patch).length > 9 * 1024 * 1024)
+    throw new Error("These images exceed the upload limit. Save one image at a time.");
+};
+const hexColor = (value) =>
+  `#${Number(value ?? 0x5865f2)
+    .toString(16)
+    .padStart(6, "0")}`;
+
+let profileCatalog;
+const getProfileCatalog = async () => {
+  if (!profileCatalog || Date.now() >= profileCatalog.expires) {
+    const entry = { expires: Date.now() + 30000, promise: api("/admin/store/catalog") };
+    profileCatalog = entry;
+    entry.promise.catch(() => {
+      if (profileCatalog === entry) profileCatalog = null;
+    });
+  }
+  return profileCatalog.promise;
+};
+
+async function openUser(id, reload) {
+  const body = openDrawer(
+    "User",
+    html`
+      <div class="spinner">Loading…</div>
+    `,
+  );
+  if (!body) return;
+  let u, badges, standing, catalog;
+  try {
+    [u, badges, standing, catalog] = await Promise.all([
+      api(`/admin/users/${id}`),
+      api("/admin/badges"),
+      state.overview.access.reports ? api(`/admin/users/${id}/violations`) : null,
+      getProfileCatalog(),
+    ]);
+  } catch (e) {
+    if (!body.isConnected || $("#drawer").hidden || e.status === 401 || e.status === 499) return;
+    return mount(body, html`<p class="form-error">${e.message}</p>`);
+  }
+  if (!body.isConnected || $("#drawer").hidden) return;
+  const cosmeticOf = (type) =>
+    u.profile_collectibles?.find((item) => item.type === type)?.sku_id ?? "";
+  const choicesFor = (type, selected, query = "") => {
+    const matching = catalog.items
+      .filter(
+        (item) =>
+          item.type === type &&
+          `${item.pack} ${item.name}`.toLowerCase().includes(query.toLowerCase()),
+      )
+      .slice(0, 100);
+    const current = catalog.items.find((item) => item.sku_id === selected);
+    if (selected && !matching.some((item) => item.sku_id === selected))
+      matching.unshift(current ?? { sku_id: selected, name: "Current item", pack: "Profile" });
+    return [["", "None"], ...matching.map((item) => [item.sku_id, `${item.pack} · ${item.name}`])];
+  };
+  const cosmeticField = (type, field, label, selected) =>
+    html`<div class="stack" style="gap:6px">
+            <label>Find ${label.toLowerCase()}<input type="search" data-cosmetic-search="${field}" data-cosmetic-type="${type}" placeholder="Search names and packs" /></label
+            ><label
+                >${label}<select name="${field}">
+                    ${options(choicesFor(type, selected), selected ?? "")}
+                </select></label
+            ><span class="hint">Showing up to 100 matching items.</span>
+        </div>`;
+  const access = state.overview.access;
+  const isOperator = access.operator;
+  const isSelf = u.id === state.me.id;
+  const home = u.federated_instance;
+  const federationLink = isOperator
+    ? html`<a href="#/federation">Federation page</a>`
+    : "Federation page, which needs the operator right";
+  const editsAccount = !home && (access.manage_users || access.support || (access.moderate && !isSelf) || isOperator);
+
+  mount(
+    body,
+    html`
+            <div class="ident">
+                ${avatar(u, "large")}
+                <div>
+                    <h2>${userName(u)}</h2>
+                    <span class="muted">${userTag(u)}</span>
+                    <code class="muted">${u.id}</code>
+                </div>
+            </div>
+            ${userBadges(u)}
+            <div class="row">
+              ${isOperator && !u.bot && !u.system && !home ? html`<a class="btn" href="#/official/${u.id}">Message as Official</a>` : ""}
+              ${access.audit ? html`<a class="btn ghost" href="#/audit" id="user-audit">Staff actions on this account</a>` : ""}
+            </div>
+            ${
+              home
+                ? html`<div class="card stack" id="user-home">
+                      <h3>Account on ${home}</h3>
+                      <p class="muted" style="margin:0">
+                          This person's account lives on ${home}, and this instance keeps a copy because they share a server or a DM with someone here. ${home} owns their profile and
+                          account, so their name, avatar, bio, badges and settings can only change there and are read-only here. You can disable or suspend the copy on this
+                          instance, or block them or ${home} on the ${federationLink}.
+                      </p>
+                      <div class="list">
+                          <div class="list-item"><span class="grow muted">Home instance</span><span>${home}</span></div>
+                          <div class="list-item"><span class="grow muted">Federated ID</span>${u.canonical ? html`<code>${u.canonical}</code>` : html`<span class="muted">Unknown</span>`}</div>
+                          <div class="list-item"><span class="grow muted">Created on ${home}</span><span>${fmtDate(u.created_at)}</span></div>
+                          <div class="list-item"><span class="grow muted">Display name</span><span>${u.global_name || "Not set"}</span></div>
+                          <div class="list-item"><span class="grow muted">Pronouns</span><span>${u.pronouns || "Not set"}</span></div>
+                      </div>
+                      ${u.bio ? html`<p style="margin:0;white-space:pre-wrap">${u.bio}</p>` : ""}
+                  </div>
+                  <form id="shadow-form" class="card stack">
+                      <h3>On this instance</h3>
+                      <label class="toggle"
+                          ><input type="checkbox" name="disabled" ${u.disabled ? raw("checked") : ""} /><span
+                              >Disabled here<span class="hint">Refuses what they send through federation to servers and DMs hosted here, such as messages and reactions. Their account on ${home} is not affected.</span></span
+                          ></label
+                      >
+                      <div class="form-actions"><button class="btn primary" type="submit">Save</button></div>
+                  </form>`
+                : ""
+            }
+            <div class="card" ${home ? raw("hidden") : ""}>
+                <div class="list">
+                    <div class="list-item"><span class="grow muted">Email</span><span>${u.email || "—"}</span></div>
+                    <div class="list-item"><span class="grow muted">Registered</span><span>${fmtDate(u.created_at)}</span></div>
+                    <div class="list-item"><span class="grow muted">Active sessions</span><span>${fmtNumber(u.session_count)}</span></div>
+                    <div class="list-item"><span class="grow muted">Registration IP</span>${u.registration_ip ? html`<code>${u.registration_ip}</code>` : html`<span class="muted">Not recorded</span>`}</div>
+                </div>
+            </div>
+            <section class="card stack" id="ips-card" ${home ? raw("hidden") : ""}>
+                <h3>IP addresses (${fmtNumber(u.ips?.length ?? 0)})</h3>
+                ${
+                  u.ips?.length
+                    ? html`<div class="list">
+                          ${u.ips.map(
+                            (entry) => html`<div class="list-item">
+                                <div class="grow">
+                                    <code>${entry.ip}</code>
+                                    ${entry.ban_id ? html` <span class="badge danger">Banned</span>` : ""}
+                                    <div class="muted">
+                                        ${[
+                                          entry.registration ? "Registered here" : "",
+                                          entry.sessions ? plural(entry.sessions, "session") : "",
+                                          `last seen ${fmtDate(entry.last_seen)}`,
+                                          plural(entry.accounts, "account"),
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" · ")}
+                                    </div>
+                                </div>
+                                <button class="btn small" type="button" data-open-ip="${entry.ip}">Open address</button>
+                            </div>`,
+                          )}
+                      </div>`
+                    : html`<p class="muted" style="margin:0">No addresses recorded. Accounts made before addresses were recorded only show the addresses of their current sessions.</p>`
+                }
+            </section>
+            ${
+              !home && (u.join_reason || u.join_status)
+                ? html`<div class="card stack" id="user-join">
+                      <h3>Why they want to join</h3>
+                      ${u.join_reason ? html`<p class="automod-reason" style="margin:0;white-space:pre-wrap">${u.join_reason}</p>` : html`<p class="muted" style="margin:0">No reason given.</p>`}
+                      ${
+                        access.moderate && (u.join_status === "pending" || u.join_status === "rejected")
+                          ? html`<div class="row">
+                                <button class="btn small primary" type="button" data-join="approved">Approve account</button>
+                                ${u.join_status === "pending" ? html`<button class="btn small danger" type="button" data-join="rejected">Reject account</button>` : ""}
+                            </div>`
+                          : ""
+                      }
+                  </div>`
+                : ""
+            }
+            ${
+              u.suspended_until && new Date(u.suspended_until) > new Date()
+                ? html`<div class="card stack" id="user-suspension">
+                      <h3>Suspended</h3>
+                      <p class="muted" style="margin:0">${home ? "Can't act on this instance" : "Can't sign in"} until ${fmtDate(u.suspended_until)}. The suspension lifts by itself then.</p>
+                      ${access.moderate ? html`<div class="row"><button class="btn small" type="button" data-lift ${isSelf ? raw("disabled") : ""}>Lift suspension now</button></div>` : ""}
+                  </div>`
+                : ""
+            }
+
+            ${
+              home || access.manage_users
+                ? ""
+                : html`<div class="card">
+                      <h3>Profile</h3>
+                      <div class="list">
+                          <div class="list-item"><span class="grow muted">Display name</span><span>${u.global_name || html`<span class="muted">Not set</span>`}</span></div>
+                          <div class="list-item"><span class="grow muted">Pronouns</span><span>${u.pronouns || html`<span class="muted">Not set</span>`}</span></div>
+                          <div class="list-item"><span class="grow muted">Bio</span><span style="white-space:pre-wrap;text-align:right">${u.bio || html`<span class="muted">Not set</span>`}</span></div>
+                      </div>
+                  </div>`
+            }
+            ${
+              editsAccount
+                ? html`<form id="user-form" class="card stack">
+                <h3>${access.manage_users ? "Profile & account" : "Account"}</h3>
+                ${
+                  access.manage_users
+                    ? html`<label>Username<input name="username" value="${u.username}" minlength="2" maxlength="32" required /></label>
+                <label>Pronouns<input name="pronouns" value="${u.pronouns ?? ""}" maxlength="40" /></label>
+                <div class="form-grid">
+                    ${imageField("avatar", "Avatar", u.avatar)} ${imageField("banner", "Profile banner", u.banner)}
+                    <label>Accent color<input type="color" name="accent_color" value="${hexColor(u.accent_color)}" /></label>
+                    <label class="toggle"
+                        ><input type="checkbox" name="accent_default" ${u.accent_color == null ? raw("checked") : ""} /><span>Use automatic accent color</span></label
+                    >
+                    <label>Primary profile color<input type="color" name="theme_primary" value="${hexColor(u.theme_colors?.[0])}" /></label>
+                    <label>Secondary profile color<input type="color" name="theme_secondary" value="${hexColor(u.theme_colors?.[1])}" /></label>
+                    <label class="toggle"><input type="checkbox" name="theme_default" ${!u.theme_colors ? raw("checked") : ""} /><span>Use default profile theme</span></label>
+                </div>
+                <label>Display name<input name="global_name" value="${u.global_name ?? ""}" maxlength="32" placeholder="${u.username}" /></label>
+                <label>Bio<textarea name="bio" maxlength="1024">${u.bio ?? ""}</textarea></label>
+                <div class="form-grid">
+                    ${cosmeticField(0, "avatar_decoration_sku_id", "Avatar decoration", u.avatar_decoration_sku_id)}
+                    ${cosmeticField(2, "nameplate_sku_id", "Nameplate", u.nameplate_sku_id)} ${cosmeticField(1, "profile_effect_sku_id", "Profile effect", cosmeticOf(1))}
+                    ${cosmeticField(3, "profile_frame_sku_id", "Profile frame", cosmeticOf(3))}
+                </div>
+                <div class="stack">
+                    <h3>Name tag</h3>
+                    <div class="row">
+                        <select name="tag" class="grow" style="max-width:260px">
+                            ${options(USER_TAGS, u.tag ?? "none")}
+                        </select>
+                        <span class="row" style="gap:6px"><span class="muted">Preview</span><strong>${userName(u)}</strong><span id="tag-preview"></span></span>
+                    </div>
+                    <span class="hint muted" id="tag-hint"></span>
+                </div>
+                <div class="stack">
+                    <div class="row" style="justify-content:space-between">
+                        <h3>Profile badges</h3>
+                        ${
+                          isOperator
+                            ? html`
+                                <a class="btn small ghost" href="#/badges">Manage badges</a>
+                              `
+                            : ""
+                        }
+                    </div>
+                    ${
+                      badges.length
+                        ? html`<div class="checks">
+                                  ${badges.map(
+                                    (b) =>
+                                      html`<label class="toggle"
+                                              ><input type="checkbox" name="badge" value="${b.id}" ${u.badge_ids?.includes(b.id) ? raw("checked") : ""} /><span
+                                                  class="row"
+                                                  style="gap:8px"
+                                                  >${badgeIcon(b)}${b.description}</span
+                                              ></label
+                                          >`,
+                                  )}
+                              </div>`
+                        : html`<p class="muted" style="margin:0">No badges yet.${
+                            isOperator
+                              ? html`
+                                  <a href="#/badges">Create one</a>.
+                                `
+                              : ""
+                          }</p>`
+                    }
+                </div>`
+                    : ""
+                }
+                ${access.support ? html`<label class="toggle"><input type="checkbox" name="verified" ${u.verified ? raw("checked") : ""} /><span>Email verified</span></label>` : ""}
+                ${
+                  access.moderate
+                    ? html`<label class="toggle"
+                    ><input type="checkbox" name="disabled" ${u.disabled ? raw("checked") : ""} ${isSelf ? raw("disabled") : ""} /><span
+                        >Account disabled<span class="hint">Blocks sign-in and API access and ends their sessions. Reversible.</span></span
+                    ></label
+                >`
+                    : ""
+                }
+                ${
+                  isOperator
+                    ? html`
+                              <div class="stack">
+                                  <h3>Instance rights</h3>
+                                  <div class="checks">
+                                      ${RIGHTS.map(
+                                        ([name, bit, hint]) =>
+                                          html`<label class="toggle"
+                                                  ><input
+                                                      type="checkbox"
+                                                      data-right="${bit}"
+                                                      ${hasRight(u.rights, bit) ? raw("checked") : ""}
+                                                      ${isSelf && bit === 0 ? raw("disabled") : ""}
+                                                  /><span><code>${name}</code><span class="hint">${hint}</span></span></label
+                                              >`,
+                                      )}
+                                  </div>
+                              </div>
+                          `
+                    : ""
+                }
+                <div class="form-actions"><button class="btn primary" type="submit">Save user</button></div>
+            </form>`
+                : ""
+            }
+
+            ${
+              home
+                ? ""
+                : html`<div class="card stack" id="staff-roles-card"></div>
+                      ${access.reports ? html`<div class="card stack" id="standing-card"></div>` : ""}
+                      <div class="card stack" id="security-card"></div>
+                      <div class="card stack" id="sessions-card"></div>
+                      <div class="card stack" id="invites-card"></div>`
+            }
+
+            ${
+              u.guilds.length
+                ? html`<div class="card">
+                          <h3>Servers (${u.guilds.length})</h3>
+                          <div class="list">
+                              ${u.guilds.map(
+                                (g) =>
+                                  html`<div class="list-item">
+                                          ${guildIcon(g)}<span class="grow">${g.name}</span>${
+                                            g.owner
+                                              ? html`
+                                                  <span class="badge accent">Owner</span>
+                                                `
+                                              : ""
+                                          }
+                                          ${state.overview.access.guilds ? html`<button class="btn small ghost" data-guild="${g.id}" type="button">Open</button>` : ""}
+                                      </div>`,
+                              )}
+                          </div>
+                      </div>`
+                : ""
+            }
+            ${
+              u.instance_bans.length
+                ? html`<div class="card">
+                          <h3>Instance bans</h3>
+                          <div class="list">
+                              ${u.instance_bans.map(
+                                (b) =>
+                                    html`<div class="list-item"><span class="grow">${b.reason}${b.spread ? html`<span class="muted"> · spread automatically</span>` : ""}</span><span class="muted">${fmtDay(b.created_at)}</span>${access.moderate ? html`<button class="btn small ghost" data-lift-ban="${b.id}" type="button">Lift ban</button>` : ""}</div>`,
+                            )}
+                          </div>
+                      </div>`
+                : ""
+            }
+            ${
+              home && access.manage_users
+                ? html`<div class="card danger-zone stack">
+                      <h3>Danger zone</h3>
+                      <p class="muted" style="margin:0">
+                          Deletes this instance's copy of the account with its messages, DMs and memberships here. Their account on ${home} stays. The copy comes back if they
+                          talk to someone here again, so block them on the ${federationLink} to keep them out.
+                      </p>
+                      <div><button class="btn danger" id="ban-user" type="button">Delete this copy</button></div>
+                  </div>`
+                : !home && !isSelf && access.manage_users
+                ? html`
+                    <div class="card danger-zone stack">
+                      <h3>Danger zone</h3>
+                      <p class="muted" style="margin: 0">
+                        Permanently deletes the account, its DMs and memberships, and hands owned servers to the
+                        next-highest member. This can't be undone.
+                      </p>
+                      <label class="toggle"
+                        ><input type="checkbox" id="ban-persist" checked /><span
+                          >Ban them from registering again<span class="hint"
+                            >Adds them to the instance ban list with the reason below.</span
+                          ></span
+                        ></label
+                      >
+                      <label>Reason<input id="ban-reason" placeholder="Shown in the instance ban list" /></label>
+                      <div><button class="btn danger" id="ban-user" type="button">Delete & ban user</button></div>
+                    </div>
+                  `
+                : ""
+            }
+        `,
+  );
+
+  if (!home)
+    import("/admin/user-customization.js")
+      .then(({ mountUserCustomization }) => {
+        if (body.isConnected && !$("#drawer").hidden) mountUserCustomization(body, u, { api, toast, editable: access.manage_users });
+      })
+      .catch(() => toast("Could not load account customization", "error"));
+  $("#user-audit", body)?.addEventListener("click", (event) => {
+    event.preventDefault();
+    for (const key of Object.keys(staffAuditState)) staffAuditState[key] = "";
+    if (!closeDrawer()) return;
+    staffAuditState.target_id = u.id;
+    if (location.hash === "#/audit") route();
+    else location.hash = "#/audit";
+  });
+  $("#shadow-form", body)?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const saved = await act(
+      $("button[type=submit]", form),
+      () => api(`/admin/users/${u.id}`, { method: "PATCH", body: { disabled: form.disabled.checked } }),
+      form.disabled.checked ? "Disabled on this instance" : "Enabled on this instance",
+    );
+    if (saved && form.isConnected && !$("#drawer").hidden && !form.dataset.dirty) {
+      reload?.();
+      openUser(u.id, reload);
+    }
+  });
+  for (const button of $$("[data-join]", body))
+    button.addEventListener("click", async () => {
+      const join_status = button.dataset.join;
+      if (join_status === "rejected" && !await confirmDialog({ title: "Reject this account?", message: "It can't sign in until you approve it.", confirm: "Reject account" })) return;
+      const done = await act(
+        button,
+        () => api(`/admin/users/${u.id}`, { method: "PATCH", body: { join_status } }),
+        join_status === "approved" ? "Account approved" : "Account rejected",
+      );
+      if (done === undefined) return;
+      reload?.();
+      openUser(u.id, reload);
+    });
+  for (const button of $$("[data-lift-ban]", body))
+    button.addEventListener("click", async () => {
+      if (
+        !(await confirmDialog({
+          title: `Lift this ban on ${userName(u)}?`,
+          message: "They can sign in and register again, and the bans that spread from this one are lifted too. Lifting can't be undone from here.",
+          confirm: "Lift ban",
+        }))
+      )
+        return;
+      const done = await act(button, () => api(`/admin/users/${u.id}/instance-bans/${button.dataset.liftBan}`, { method: "DELETE" }), "Ban lifted");
+      if (done === undefined) return;
+      reload?.();
+      openUser(u.id, reload);
+    });
+  $("[data-lift]", body)?.addEventListener("click", async (e) => {
+    const until = u.suspended_until;
+    const done = await act(e.currentTarget, () => api(`/admin/users/${u.id}`, { method: "PATCH", body: { suspended_until: null } }));
+    if (done === undefined) return;
+    toast(`${userName(u)} can sign in again`, "ok", {
+      action: {
+        label: "Undo",
+        run: async () => {
+          if (new Date(until) <= new Date()) return toast("The suspension would already have ended, so it wasn't restored.", "error");
+          const restored = await act(null, () => api(`/admin/users/${u.id}`, { method: "PATCH", body: { suspended_until: until } }), `Suspended until ${fmtDate(until)} again`);
+          if (restored === undefined) return;
+          reload?.();
+          if (!$("#drawer").hidden && $("#drawer-body .ident code")?.textContent === u.id) openUser(u.id, reload);
+        },
+      },
+    });
+    reload?.();
+    openUser(u.id, reload);
+  });
+  $("#user-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const patch = {};
+    if (access.support) patch.verified = form.verified.checked;
+    if (access.moderate && !isSelf) patch.disabled = form.disabled.checked;
+    if (access.manage_users) Object.assign(patch, {
+      username: form.username.value,
+      pronouns: form.pronouns.value,
+      accent_color: form.accent_default.checked
+        ? null
+        : parseInt(form.accent_color.value.slice(1), 16),
+      theme_colors: form.theme_default.checked
+        ? null
+        : [form.theme_primary, form.theme_secondary].map((input) =>
+            parseInt(input.value.slice(1), 16),
+          ),
+      global_name: form.global_name.value,
+      bio: form.bio.value,
+      tag: form.tag.value,
+    });
+    // keep the order badges were originally given in, appending new ones
+    if (access.manage_users) {
+    for (const field of ["avatar_decoration_sku_id", "nameplate_sku_id"]) {
+      if (form.elements[field].value !== (u[field] ?? ""))
+        patch[field] = form.elements[field].value || null;
+    }
+    if (
+      form.profile_effect_sku_id.value !== cosmeticOf(1) ||
+      form.profile_frame_sku_id.value !== cosmeticOf(3)
+    )
+      patch.collectibles_sku_ids = [
+        form.profile_effect_sku_id.value,
+        form.profile_frame_sku_id.value,
+      ].filter(Boolean);
+    const checked = $$("input[name=badge]:checked", form).map((x) => x.value);
+    const nextBadges = [
+      ...(u.badge_ids ?? []).filter((b) => checked.includes(b)),
+      ...checked.filter((b) => !(u.badge_ids ?? []).includes(b)),
+    ];
+    if (JSON.stringify(nextBadges) !== JSON.stringify(u.badge_ids ?? []))
+      patch.badge_ids = nextBadges;
+    }
+    if (isOperator) {
+      let rights = BigInt(u.rights || 0);
+      for (const box of $$("[data-right]", form)) {
+        const bit = 1n << BigInt(box.dataset.right);
+        rights = box.checked ? rights | bit : rights & ~bit;
+      }
+      if (rights.toString() !== String(u.rights)) patch.rights = rights.toString();
+    }
+    const saved = await act(
+      $("button[type=submit]", form),
+      async () => {
+        if (access.manage_users) await imagePatch(form, ["avatar", "banner"], patch);
+        return api(`/admin/users/${u.id}`, { method: "PATCH", body: patch });
+      },
+      "User updated",
+    );
+    if (saved && form.isConnected && !$("#drawer").hidden && !form.dataset.dirty) {
+      reload?.();
+      openUser(u.id, reload);
+    }
+  });
+
+  for (const input of $$("[data-cosmetic-search]", body))
+    input.addEventListener(
+      "input",
+      debounce(() => {
+        const select = $("#user-form", body).elements[input.dataset.cosmeticSearch];
+        mount(
+          select,
+          options(
+            choicesFor(Number(input.dataset.cosmeticType), select.value, input.value),
+            select.value,
+          ),
+        );
+      }, 150),
+    );
+
+  const syncTag = () => {
+    const tag = $("#user-form")?.tag?.value;
+    if (!tag) return;
+    mount($("#tag-preview"), nameTag(tag, u.bot));
+    $("#tag-hint").textContent =
+      tag === "verified_bot" && !u.bot
+        ? "Verified Bot only shows on bot accounts. This is a regular user, so their name will show no tag."
+        : (USER_TAGS.find(([k]) => k === tag)?.[2] ?? "");
+  };
+  $("#user-form")?.tag?.addEventListener("change", syncTag);
+  syncTag();
+
+  for (const btn of $$("[data-guild]", body))
+    btn.addEventListener("click", () => openGuild(btn.dataset.guild));
+
+  const renderStanding = () => {
+    const [, label, tone] = standingOf(standing.standing.state);
+    const card = $("#standing-card");
+    mount(
+      card,
+      html`
+                <div class="row" style="justify-content:space-between">
+                    <h3>Account standing</h3>
+                    <span class="badge ${tone}" style="font-size:12px;padding:3px 10px"><span class="dot"></span>${label}</span>
+                </div>
+                ${
+                  access.moderate
+                    ? html`<label
+                    >Standing<span class="hint"
+                        >What the user sees on their Account Standing page. Automatic goes down one step per active violation (suspended for disabled accounts).</span
+                    ><select name="standing">
+                        <option value="">Automatic (${standingOf(standing.standing.automatic)[1].toLowerCase()})</option>
+                        ${options(STANDINGS, standing.standing.override ?? "")}
+                    </select></label
+                >`
+                    : ""
+                }
+                <div class="stack">
+                    <h3>Violations (${standing.violations.length})</h3>
+                    ${
+                      standing.violations.length
+                        ? standing.violations.map(
+                            (v) =>
+                              html`<div class="violation ${v.active ? "" : "inactive"}" data-violation="${v.id}">
+                                          <div class="row">
+                                              <strong class="grow">${violationType(v.classification_type)}</strong>
+                                              ${
+                                                v.appeal_status === 1
+                                                  ? html`
+                                                      <span class="badge warn">Appeal pending</span>
+                                                    `
+                                                  : ""
+                                              }
+                                              ${
+                                                v.appeal_status === 2
+                                                  ? html`
+                                                      <span class="badge">Appeal denied</span>
+                                                    `
+                                                  : ""
+                                              }
+                                              ${
+                                                v.appeal_status === 3
+                                                  ? html`
+                                                      <span class="badge ok">Overturned</span>
+                                                    `
+                                                  : ""
+                                              }
+                                              ${
+                                                v.active
+                                                  ? html`
+                                                      <span class="badge danger">Active</span>
+                                                    `
+                                                  : v.appeal_status !== 3
+                                                    ? html`
+                                                        <span class="badge">Expired</span>
+                                                      `
+                                                    : ""
+                                              }
+                                          </div>
+                                          <p>${v.description}</p>
+                                          ${
+                                            v.appeal_status
+                                              ? html`<div class="appeal-note">
+                                                        <strong>Appeal</strong> · ${APPEAL_REASONS[v.appeal_signal ?? 3]}${v.appealed_at ? html` · ${fmtDate(v.appealed_at)}` : ""}
+                                                        ${v.appeal_user_input ? html`<p>${v.appeal_user_input}</p>` : ""}
+                                                    </div>`
+                                              : ""
+                                          }
+                                          ${v.actions.length ? html`<div class="badges">${v.actions.map((a) => html`<span class="badge">${violationAction(a.action_type)}</span>`)}</div>` : ""}
+                                          <div class="muted">
+                                              Issued ${fmtDate(v.created_at)}${v.issued_by ? html` by ${userName(v.issued_by)}` : ""} ·
+                                              ${v.permanent ? "Permanent" : html`${v.active || new Date(v.expires_at) > new Date() ? "Expires" : "Expired"} ${fmtDate(v.expires_at)}`}
+                                          </div>
+                                          ${
+                                            access.moderate
+                                              ? html`<div class="row" style="justify-content:flex-end">
+                                              ${
+                                                v.appeal_status === 1
+                                                  ? html`
+                                                      <button class="btn small" type="button" data-appeal="2">Deny appeal</button
+                                                      ><button class="btn small primary" type="button" data-appeal="3">Overturn</button>
+                                                    `
+                                                  : ""
+                                              }
+                                              <button class="btn small ghost" type="button" data-remove-violation>Remove</button>
+                                          </div>`
+                                              : ""
+                                          }
+                                      </div>`,
+                          )
+                        : html`
+                            <p class="muted" style="margin: 0">No violations.</p>
+                          `
+                    }
+                </div>
+                ${
+                  access.moderate
+                    ? html`<details class="stack">
+                    <summary class="btn small" style="width:max-content">Add violation</summary>
+                    <form id="violation-form" class="stack" style="margin-top:12px">
+                        <label
+                            >Type<select name="classification_type">
+                                ${options(VIOLATION_TYPES, 3030)}
+                            </select></label
+                        >
+                        <label
+                            >Message to the user<span class="hint">Shown on their Account Standing page.</span
+                            ><textarea name="description" required maxlength="2000" placeholder="You sent unsolicited advertisements to other members."></textarea>
+                        </label>
+                        <div class="stack">
+                            <span class="muted">Actions taken</span>
+                            <div class="checks">
+                                ${VIOLATION_ACTIONS.map(
+                                  ([id, label]) =>
+                                    html`<label class="toggle"
+                                            ><input type="checkbox" name="action" value="${id}" ${id === 4 ? raw("checked") : ""} /><span>${label}</span></label
+                                        >`,
+                                )}
+                            </div>
+                        </div>
+                        <label
+                            >Counts against them for<select name="duration">
+                                ${options(VIOLATION_DURATIONS, 90)}
+                            </select></label
+                        >
+                        <p class="muted" style="margin:0">This records the violation and its effect on their standing. To actually restrict the account, disable it above.</p>
+                        <div class="form-actions"><button class="btn danger" type="submit">Add violation</button></div>
+                    </form>
+                </details>`
+                    : ""
+                }
+            `,
+    );
+
+    card.querySelector("[name=standing]")?.addEventListener("change", async (e) => {
+      const value = e.target.value === "" ? null : Number(e.target.value);
+      const saved = await act(
+        e.target,
+        () => api(`/admin/users/${u.id}`, { method: "PATCH", body: { account_standing: value } }),
+        "Standing updated",
+      );
+      if (saved) {
+        standing = await api(`/admin/users/${u.id}/violations`);
+        renderStanding();
+      }
+    });
+
+    for (const row of $$("[data-violation]", card)) {
+      const vid = row.dataset.violation;
+      for (const btn of $$("[data-appeal]", row))
+        btn.addEventListener("click", async () => {
+          const next = await act(
+            btn,
+            () =>
+              api(`/admin/users/${u.id}/violations/${vid}`, {
+                method: "PATCH",
+                body: { appeal_status: Number(btn.dataset.appeal) },
+              }),
+            btn.dataset.appeal === "3" ? "Violation overturned" : "Appeal denied",
+          );
+          if (next) {
+            standing = next;
+            renderStanding();
+          }
+        });
+      $("[data-remove-violation]", row)?.addEventListener("click", async (e) => {
+        if (
+          !await confirmDialog({ title: "Remove this violation?", message: "It's deleted with no record left. Use Overturn instead to keep a record of it.", confirm: "Remove violation" })
+        )
+          return;
+        const next = await act(
+          e.currentTarget,
+          () => api(`/admin/users/${u.id}/violations/${vid}`, { method: "DELETE" }),
+          "Violation removed",
+        );
+        if (next) {
+          standing = next;
+          renderStanding();
+        }
+      });
+    }
+
+    $("#violation-form", card)?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const payload = {
+        classification_type: Number(form.classification_type.value),
+        description: form.description.value,
+        actions: $$("input[name=action]:checked", form).map((x) => ({
+          action_type: Number(x.value),
+        })),
+        expires_in_days: form.duration.value ? Number(form.duration.value) : null,
+      };
+      const next = await act(
+        $("button[type=submit]", form),
+        () => api(`/admin/users/${u.id}/violations`, { method: "POST", body: payload }),
+        "Violation added",
+      );
+      if (next) {
+        standing = next;
+        renderStanding();
+      }
+    });
+  };
+  if (!home) {
+    if (standing) renderStanding();
+    renderUserStaffRoles(u);
+    renderUserSecurity(u);
+    renderUserSessions(u);
+    renderUserInvites(u);
+  }
+  for (const button of $$("[data-open-ip]", body)) button.addEventListener("click", () => openIp(button.dataset.openIp, reload));
+
+  $("#ban-persist")?.addEventListener("change", (e) => {
+    $("#ban-user").textContent = e.target.checked ? "Delete & ban user" : "Delete user";
+  });
+  $("#ban-user")?.addEventListener("click", async (e) => {
+    const ban = !home && $("#ban-persist").checked;
+    if (
+      !await confirmDialog({ title: home ? `Delete this copy of ${userName(u)}?` : `Delete ${userName(u)}${ban ? " and ban them" : ""}?`, message: home ? `Their messages, DMs and memberships here go with it. Their account on ${home} stays.` : `The account, its messages, DMs and memberships are deleted and owned servers go to the next-highest member.${ban ? " They can't register again." : ""} This can't be undone.`, confirm: home ? "Delete copy" : ban ? "Delete and ban" : "Delete user" })
+    )
+      return;
+    const reason =
+      $("#ban-reason")?.value.trim() ||
+      `${ban ? "Banned" : "Deleted"} from the admin dashboard by ${state.me.username}`;
+    const done = await act(
+      e.currentTarget,
+      () =>
+        api(`/users/${u.id}/delete`, { method: "POST", body: { reason, persistInstanceBan: ban } }),
+      `${userName(u)} was deleted${ban ? " and banned" : ""}`,
+    );
+    if (done !== undefined) {
+      closeDrawer();
+      reload?.();
+    }
+  });
+}
+
+async function renderUserStaffRoles(u) {
+  const card = $("#staff-roles-card");
+  if (!card) return;
+  if (!state.overview.access.users) return card.remove();
+  let held, catalog;
+  try {
+    [held, catalog] = await Promise.all([
+      api(`/admin/users/${u.id}/staff-roles`),
+      state.overview.access.staff ? api("/admin/staff/roles") : null,
+    ]);
+  } catch (e) {
+    if (e.status === 401 || e.status === 499) return;
+    return mount(card, html`<h3>Staff roles</h3><p class="form-error">${e.message}</p>`);
+  }
+  if (!card.isConnected) return;
+  const heldIds = new Set(held.roles.map((role) => role.id));
+  const locked = (role) => catalog.level != null && role.position >= catalog.level;
+  mount(
+    card,
+    html`
+      <h3>Staff roles</h3>
+      ${held.roles.length ? html`<div class="badges">${held.roles.map(staffRoleBadge)}</div>` : html`<p class="muted" style="margin:0">No staff roles</p>`}
+      ${
+        catalog?.roles.length
+          ? html`<form id="staff-roles-form" class="stack">
+              <div class="checks">
+                ${catalog.roles.map(
+                  (role) => html`<label class="toggle"
+                    ><input type="checkbox" name="role" value="${role.id}" ${heldIds.has(role.id) ? raw("checked") : ""} ${locked(role) ? raw("disabled") : ""} /><span
+                      >${role.name}${locked(role) ? html`<span class="hint">At or above your own role</span>` : ""}</span
+                    ></label
+                  >`,
+                )}
+              </div>
+              <div class="form-actions"><button class="btn primary" type="submit">Save staff roles</button></div>
+            </form>`
+          : ""
+      }
+    `,
+  );
+  const form = $("#staff-roles-form", card);
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const role_ids = $$("input[name=role]:checked", form).map((box) => box.value);
+    const saved = await act(
+      $("button[type=submit]", form),
+      () => api(`/admin/users/${u.id}/staff-roles`, { method: "PUT", body: { role_ids } }),
+      "Staff roles saved",
+    );
+    if (saved) renderUserStaffRoles(u);
+  });
+}
+
+const describeClient = (session) => {
+  const info = session.client_info ?? {};
+  const parts = [info.browser ?? info.client ?? info.platform, info.os].filter(Boolean);
+  return parts.length ? parts.join(" on ") : "Unknown client";
+};
+
+async function renderUserSecurity(u) {
+  const card = $("#security-card");
+  if (!card) return;
+  const isSelf = u.id === state.me.id;
+  let mfa;
+  try {
+    mfa = await api(`/admin/users/${u.id}/mfa`);
+  } catch (e) {
+    return mount(
+      card,
+      html`<h3>Sign-in & security</h3>
+                <p class="form-error">${e.message}</p>`,
+    );
+  }
+  const methods = [
+    mfa.totp ? "an authenticator app" : null,
+    mfa.security_keys
+      ? `${mfa.security_keys} security ${mfa.security_keys === 1 ? "key" : "keys"}`
+      : null,
+  ].filter(Boolean);
+  mount(
+    card,
+    html`
+            <h3>Sign-in & security</h3>
+            <div class="list">
+                <div class="list-item">
+                    <div class="grow">
+                        <strong>Two-factor authentication</strong>
+                        <div class="muted">
+                            ${
+                              mfa.mfa_enabled
+                                ? html`On with
+                                      ${methods.join(" and ") || "a method this page can't name"}${mfa.backup_codes ? html`, ${fmtNumber(mfa.backup_codes)} backup codes left` : ""}`
+                                : "Off"
+                            }
+                        </div>
+                    </div>
+                    ${
+                      mfa.mfa_enabled && !isSelf && state.overview.access.support
+                        ? html`
+                            <button class="btn small" id="mfa-reset" type="button">Turn off 2FA</button>
+                          `
+                        : ""
+                    }
+                </div>
+                ${
+                  state.overview.access.support
+                    ? html`<div class="list-item">
+                    <div class="grow">
+                        <strong>Password</strong>
+                        <div class="muted">
+                            Make a reset link that works for one hour. ${u.email ? "It can also be emailed to them." : "They have no email, so send them the link yourself."}
+                        </div>
+                    </div>
+                    ${
+                      !isSelf
+                        ? html`
+                            <button class="btn small" id="password-reset" type="button">Make reset link</button>
+                          `
+                        : ""
+                    }
+                </div>`
+                    : ""
+                }
+            </div>
+            <div id="reset-result" hidden></div>
+        `,
+  );
+
+  $("#mfa-reset", card)?.addEventListener("click", async (e) => {
+    if (
+      !await confirmDialog({ title: `Turn off two-factor for ${userName(u)}?`, message: "Their authenticator app, security keys and backup codes stop working, and they can sign in with only their password.", confirm: "Turn off two-factor" })
+    )
+      return;
+    const done = await act(
+      e.currentTarget,
+      () => api(`/admin/users/${u.id}/mfa`, { method: "DELETE" }),
+      "Two-factor turned off",
+    );
+    if (done !== undefined) renderUserSecurity(u);
+  });
+  $("#password-reset", card)?.addEventListener("click", (e) => {
+    e.currentTarget.hidden = true;
+    const result = $("#reset-result", card);
+    result.hidden = false;
+    mount(
+      result,
+      html`<form id="reset-form" class="stack" style="gap:10px">
+                ${
+                  u.email
+                    ? html`<label class="toggle"
+                              ><input type="checkbox" name="send_email" checked /><span
+                                  >Email the link to ${u.email}<span class="hint">Only sent when the instance has email set up.</span></span
+                              ></label
+                          >`
+                    : ""
+                }
+                <label class="toggle"
+                    ><input type="checkbox" name="revoke_sessions" /><span
+                        >Sign them out everywhere<span class="hint">Use this when the account might be compromised.</span></span
+                    ></label
+                >
+                <div class="form-actions" style="margin-top:0"><button class="btn primary small" type="submit">Make reset link</button></div>
+            </form>`,
+    );
+    $("#reset-form", result).addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const body = {
+        send_email: !!form.send_email?.checked,
+        revoke_sessions: form.revoke_sessions.checked,
+      };
+      const out = await act($("button[type=submit]", form), () =>
+        api(`/admin/users/${u.id}/password-reset`, { method: "POST", body }),
+      );
+      if (!out) return;
+      mount(
+        result,
+        html`<div class="stack" style="gap:8px">
+                    <label
+                        >Reset link<span class="hint">Works once, for one hour, and stops working if they change their password another way.</span
+                        ><input id="reset-link" readonly value="${out.link}"
+                    /></label>
+                    <div class="row">
+                        <button class="btn small" id="copy-reset" type="button">Copy link</button>
+                        <span class="muted"
+                            >${out.emailed ? `Also emailed to ${u.email}.` : body.send_email ? "Email isn't set up on this instance, so nothing was sent." : ""}${
+                              body.revoke_sessions ? " Their sessions were ended." : ""
+                            }</span
+                        >
+                    </div>
+                </div>`,
+      );
+      $("#copy-reset", result).addEventListener("click", () =>
+        navigator.clipboard.writeText(out.link).then(
+          () => toast("Link copied"),
+          () => $("#reset-link", result).select(),
+        ),
+      );
+      if (body.revoke_sessions) renderUserSessions(u);
+    });
+  });
+}
+
+const invitesState = { state: "all", q: "", offset: 0, limit: 50 };
+const INVITE_STATES = {
+  active: html`<span class="badge ok">Working</span>`,
+  revoked: html`<span class="badge danger">Revoked</span>`,
+  expired: html`<span class="badge">Expired</span>`,
+  used_up: html`<span class="badge">Used up</span>`,
+};
+const INVITE_DURATIONS = [
+  [0, "Never"],
+  [3600, "1 hour"],
+  [86400, "1 day"],
+  [604800, "7 days"],
+  [2592000, "30 days"],
+  [7776000, "90 days"],
+];
+const inviteLink = (code) => `${location.origin}/register?instance_invite=${encodeURIComponent(code)}`;
+const inviteUses = (invite) =>
+  `${fmtNumber(invite.uses)} of ${invite.max_uses ? fmtNumber(invite.max_uses) : "unlimited"}`;
+const inviteUserLink = (u) =>
+  u?.username
+    ? html`<button class="btn small ghost" type="button" data-open-user="${u.id}">${userName(u)}</button>${u.disabled ? html` <span class="badge danger">Disabled</span>` : ""}`
+    : html`<span class="muted">${u?.id ?? "Deleted account"}</span>`;
+const bindUserLinks = (root) => {
+  for (const button of $$("[data-open-user]", root))
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openUser(button.dataset.openUser);
+    });
+};
+
+async function renderInstanceInvites(view) {
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Instance invites</h1>
+                    <p class="muted" id="invites-intro">Codes that let people make an account. Members make their own from User Settings, and staff invites don't count against anyone.</p>
+                </div>
+                ${state.overview.access.manage_users ? html`<button class="btn primary" id="new-instance-invite" type="button">Create invite</button>` : ""}
+            </div>
+            <div class="row" style="margin-bottom:12px">
+                <label class="grow list-search">Find invites<input id="invite-search" type="search" placeholder="Exact code or note text" value="${invitesState.q}" aria-controls="invite-results" /></label>
+                <label class="list-filter"
+                    >Show<select id="invite-state">
+                        ${options(
+                          [
+                            ["all", "All invites"],
+                            ["active", "Working"],
+                            ["inactive", "Revoked, expired or used up"],
+                          ],
+                          invitesState.state,
+                        )}
+                    </select></label
+                >
+            </div>
+            <div class="list-status muted" id="invite-status" role="status" aria-live="polite" hidden></div>
+            <div id="invite-results"><div class="spinner">Loading…</div></div>
+        `,
+  );
+  const results = $("#invite-results", view);
+  const requests = latestList(view, results, $("#invite-status", view));
+  const load = async () => {
+    const params = new URLSearchParams({
+      state: invitesState.state,
+      q: invitesState.q,
+      offset: invitesState.offset,
+      limit: invitesState.limit,
+    });
+    await requests.load(
+      `/admin/instance-invites?${params}`,
+      ({ invites, total, invite_only }) => {
+        $("#invites-intro", view).textContent = invite_only
+          ? "The instance is invite-only, so every new account needs one of these codes. Members make their own from User Settings, and staff invites don't count against anyone."
+          : "Registration is open, so these codes only record who brought each person in. Turn on invite-only in Settings to require them.";
+        mount(
+          results,
+          invites.length
+            ? html`<div class="table-wrap">
+                      <table>
+                          <thead>
+                              <tr>
+                                  <th>Code</th>
+                                  <th>Made by</th>
+                                  <th>Uses</th>
+                                  <th class="hide-sm">Expires</th>
+                                  <th>State</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              ${invites.map(
+                                (invite) =>
+                                  html`<tr data-invite="${invite.code}">
+                                          <td>
+                                              <strong>${invite.code}</strong>
+                                              ${invite.note ? html`<div class="muted">${invite.note}</div>` : ""}
+                                          </td>
+                                          <td>${invite.staff ? html`<span class="badge accent">Staff</span> ` : ""}${inviteUserLink(invite.creator)}</td>
+                                          <td class="num">${inviteUses(invite)}</td>
+                                          <td class="hide-sm">${invite.expires_at ? fmtDate(invite.expires_at) : "Never"}</td>
+                                          <td>${INVITE_STATES[invite.state]}</td>
+                                      </tr>`,
+                              )}
+                          </tbody>
+                      </table>
+                  </div>
+                  ${pager(total, invitesState)}`
+            : invitesState.q || invitesState.state !== "all"
+              ? emptyCard("No invites match this search and filter.", "Show all invites")
+              : state.overview.access.manage_users
+                ? emptyCard("No invites yet. An invite is a code that lets someone make an account here.", "Create invite")
+                : emptyCard("No invites yet. Invites that members and staff make show up here.", null),
+        );
+        $("[data-empty-action]", results)?.addEventListener("click", () => {
+          if (!invitesState.q && invitesState.state === "all") {
+            openNewInstanceInvite(load);
+            return;
+          }
+          invitesState.q = "";
+          invitesState.state = "all";
+          invitesState.offset = 0;
+          $("#invite-search", view).value = "";
+          $("#invite-state", view).value = "all";
+          load();
+          $("#invite-search", view).focus();
+        });
+        bindUserLinks(results);
+        for (const row of $$("tr[data-invite]", results))
+          onRowOpen(row, () => openInstanceInvite(row.dataset.invite, load));
+        bindPager(results, total, invitesState, load);
+      },
+      load,
+    );
+  };
+  const search = debounce(load);
+  $("#invite-search", view).addEventListener("input", (event) => {
+    requests.cancel();
+    invitesState.q = event.target.value.trim();
+    invitesState.offset = 0;
+    search();
+  });
+  $("#invite-state", view).addEventListener("change", (event) => {
+    invitesState.state = event.target.value;
+    invitesState.offset = 0;
+    load();
+  });
+  $("#new-instance-invite", view)?.addEventListener("click", () => openNewInstanceInvite(load));
+  await load();
+}
+
+function openNewInstanceInvite(reload) {
+  const body = openDrawer(
+    "Create invite",
+    html`
+            <form id="instance-invite-form" class="stack">
+                <label>People who can join<span class="hint">0 means no limit.</span><input name="max_uses" type="number" inputmode="numeric" min="0" max="10000" step="1" value="1" required /></label>
+                <label
+                    >Expires after<select name="max_age_seconds">
+                        ${options(INVITE_DURATIONS, 604800)}
+                    </select></label
+                >
+                <label>Note<span class="hint">Only staff see it, for example who the invite is for.</span><input name="note" maxlength="200" /></label>
+                <div class="form-actions"><button class="btn primary" type="submit">Create invite</button></div>
+            </form>
+        `,
+  );
+  if (!body) return;
+  const form = $("#instance-invite-form", body);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const created = await act(
+      $("button[type=submit]", form),
+      () =>
+        api("/admin/instance-invites", {
+          method: "POST",
+          body: {
+            max_uses: Number(form.max_uses.value),
+            max_age_seconds: Number(form.max_age_seconds.value),
+            note: form.note.value.trim() || undefined,
+          },
+        }),
+      "Invite created",
+    );
+    if (!created) return;
+    closeDrawer({ discard: true });
+    reload?.();
+    openInstanceInvite(created.code, reload);
+  });
+}
+
+async function openInstanceInvite(code, reload) {
+  const body = openDrawer("Invite", html`<div class="spinner">Loading…</div>`);
+  if (!body) return;
+  let invite;
+  try {
+    invite = await api(`/admin/instance-invites/${encodeURIComponent(code)}`);
+  } catch (e) {
+    if (body.isConnected) mount(body, html`<p class="form-error">${e.message}</p>`);
+    return;
+  }
+  if (!body.isConnected || $("#drawer").hidden) return;
+  const joinedCount = invite.joined_users.length;
+  mount(
+    body,
+    html`
+            <div class="stack">
+                <div class="row" style="justify-content:space-between">
+                    <h2 style="margin:0">${invite.code}</h2>
+                    ${INVITE_STATES[invite.state]}
+                </div>
+                <div class="row" style="align-items:flex-end">
+                    <label class="grow">Invite link<input id="invite-link" readonly value="${inviteLink(invite.code)}" /></label>
+                    <button class="btn" id="invite-copy" type="button">Copy link</button>
+                </div>
+                <div class="list">
+                    <div class="list-item"><span class="grow muted">Made by</span><span>${invite.staff ? "Staff, " : ""}${inviteUserLink(invite.creator)}</span></div>
+                    <div class="list-item"><span class="grow muted">Created</span><span>${fmtDate(invite.created_at)}</span></div>
+                    <div class="list-item"><span class="grow muted">Expires</span><span>${invite.expires_at ? fmtDate(invite.expires_at) : "Never"}</span></div>
+                    <div class="list-item"><span class="grow muted">Uses</span><span>${inviteUses(invite)}</span></div>
+                    <div class="list-item"><span class="grow muted">Accounts below it in the invite tree</span><span>${fmtNumber(invite.branch_size)}</span></div>
+                    ${invite.note ? html`<div class="list-item"><span class="grow muted">Note</span><span>${invite.note}</span></div>` : ""}
+                </div>
+                <h3>Joined with this invite</h3>
+                ${
+                  joinedCount
+                    ? html`<div class="list">
+                              ${invite.joined_users.map(
+                                (row) =>
+                                  html`<div class="list-item">
+                                          <span class="grow">${inviteUserLink(row.user)}</span><span class="muted">${fmtDay(row.joined_at)}</span>
+                                      </div>`,
+                              )}
+                          </div>`
+                    : html`<p class="muted" style="margin:0">Nobody has joined with it yet.</p>`
+                }
+                ${
+                  state.overview.access.manage_users
+                    ? html`<form id="invite-revoke" class="card stack">
+                    <h3>${invite.state === "revoked" ? "Disable accounts" : "Revoke invite"}</h3>
+                    <p class="muted" style="margin:0">Revoking stops the code from working. Accounts with staff rights are never disabled.</p>
+                    <label
+                        >Also disable<select name="disable">
+                            ${options(
+                              [
+                                ["none", "Nobody, only revoke the code"],
+                                ["joined", `The ${fmtNumber(joinedCount)} ${joinedCount === 1 ? "account" : "accounts"} that joined with it`],
+                                ["branch", `Everyone below it in the invite tree (${fmtNumber(invite.branch_size)})`],
+                              ],
+                              "none",
+                            )}
+                        </select></label
+                    >
+                    <div class="form-actions"><button class="btn danger" type="submit">${invite.state === "revoked" ? "Disable accounts" : "Revoke invite"}</button></div>
+                </form>`
+                    : ""
+                }
+            </div>
+        `,
+  );
+  bindUserLinks(body);
+  $("#invite-copy", body).addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLink(invite.code));
+      toast("Invite link copied");
+    } catch {
+      $("#invite-link", body).select();
+      toast("Couldn't copy the link. It's selected, so press Ctrl+C or Cmd+C.", "error");
+    }
+  });
+  const form = $("#invite-revoke", body);
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const disable = form.disable.value;
+    const count = disable === "branch" ? invite.branch_size : disable === "joined" ? joinedCount : 0;
+    if (count && !await confirmDialog({ title: `Revoke ${invite.code}?`, message: `${plural(count, "account")} ${count === 1 ? "is" : "are"} disabled and signed out right away.`, confirm: `Revoke and disable ${plural(count, "account")}` })) return;
+    const result = await act($("button[type=submit]", form), () =>
+      api(`/admin/instance-invites/${encodeURIComponent(invite.code)}/revoke`, { method: "POST", body: { disable } }),
+    );
+    if (!result) return;
+    toast(
+      result.disabled || result.skipped
+        ? `Invite revoked and ${fmtNumber(result.disabled)} ${result.disabled === 1 ? "account" : "accounts"} disabled${result.skipped ? `. Skipped ${fmtNumber(result.skipped)} staff` : ""}`
+        : "Invite revoked",
+    );
+    delete form.dataset.dirty;
+    closeDrawer({ discard: true });
+    reload?.();
+    openInstanceInvite(invite.code, reload);
+  });
+}
+
+const inviteTreeList = (nodes) =>
+  html`<ul class="invite-tree">
+        ${nodes.map(
+          (node) =>
+            html`<li>
+                    ${inviteUserLink(node.user)} <span class="muted">joined ${fmtDay(node.joined_at)}${node.invite_code ? ` with ${node.invite_code}` : ""}</span>
+                    ${node.children.length ? inviteTreeList(node.children) : ""}
+                </li>`,
+        )}
+    </ul>`;
+
+async function renderUserInvites(u) {
+  const card = $("#invites-card");
+  if (!card) return;
+  let data;
+  try {
+    data = await api(`/admin/users/${u.id}/invites`);
+  } catch (e) {
+    return mount(card, html`<h3>Invites</h3><p class="form-error">${e.message}</p>`);
+  }
+  if (!card.isConnected) return;
+  const { quota } = data;
+  const accounts = (n) => `${fmtNumber(n)} ${n === 1 ? "account" : "accounts"}`;
+  mount(
+    card,
+    html`
+            <h3>Invites</h3>
+            <div class="list">
+                <div class="list-item">
+                    <span class="grow muted">Invited by</span>
+                    <span
+                        >${
+                          data.invited_by
+                            ? html`${data.invited_by.inviter ? inviteUserLink(data.invited_by.inviter) : "a deleted account"}${data.invited_by.invite_code ? html` <span class="muted">with ${data.invited_by.invite_code}</span>` : ""}`
+                            : "Nobody, they joined without an invite"
+                        }</span
+                    >
+                </div>
+                ${data.chain.length > 1 ? html`<div class="list-item"><span class="grow muted">Invite chain, closest first</span><span>${data.chain.map((link) => userName(link)).join(", ")}</span></div>` : ""}
+                <div class="list-item">
+                    <span class="grow muted">Invites left</span>
+                    <span class="num">${fmtNumber(quota.available)} of ${fmtNumber(quota.total)}</span>
+                </div>
+                ${quota.eligible ? "" : html`<div class="list-item"><span class="grow muted">Can make invites from</span><span>${fmtDate(quota.eligible_at)}</span></div>`}
+            </div>
+            ${
+              state.overview.access.manage_users
+                ? html`<form id="invite-bonus" class="row" style="align-items:flex-end">
+                <label class="grow"
+                    >Extra invites<span class="hint">Added to the instance default. A negative number takes some away.</span
+                    ><input name="bonus_invites" type="number" inputmode="numeric" min="-1000" max="10000" step="1" value="${quota.bonus}" required
+                /></label>
+                <button class="btn" type="submit">Save extra invites</button>
+            </form>`
+                : ""
+            }
+            <h3>Brought in ${accounts(data.branch_size)}</h3>
+            ${
+              data.tree.length
+                ? html`${inviteTreeList(data.tree)}${data.tree_shown < data.branch_size ? html`<p class="muted">Showing the first ${fmtNumber(data.tree_shown)}.</p>` : ""}`
+                : html`<p class="muted" style="margin:0">Nobody has joined through this account.</p>`
+            }
+            ${
+              data.branch_size && state.overview.access.moderate
+                ? html`<form id="invite-branch" class="stack">
+                          <label class="toggle"><input type="checkbox" name="include_user" /><span>Also disable this account</span></label>
+                          <div class="form-actions"><button class="btn danger" type="submit">Disable everyone they brought in</button></div>
+                      </form>`
+                : ""
+            }
+            ${
+              data.invites.length
+                ? html`<details>
+                          <summary>Invite links they made (${fmtNumber(data.invites.length)})</summary>
+                          <div class="list">
+                              ${data.invites.map(
+                                (invite) =>
+                                  html`<div class="list-item">
+                                          <span class="grow"><button class="btn small ghost" type="button" data-invite-code="${invite.code}">${invite.code}</button> ${INVITE_STATES[invite.state]}</span>
+                                          <span class="muted num">${inviteUses(invite)}</span>
+                                      </div>`,
+                              )}
+                          </div>
+                      </details>`
+                : ""
+            }
+        `,
+  );
+  bindUserLinks(card);
+  for (const button of $$("[data-invite-code]", card))
+    button.addEventListener("click", () => openInstanceInvite(button.dataset.inviteCode));
+  const bonus = $("#invite-bonus", card);
+  bonus?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const saved = await act(
+      $("button", bonus),
+      () => api(`/admin/users/${u.id}/invites`, { method: "PATCH", body: { bonus_invites: Number(bonus.bonus_invites.value) } }),
+      "Extra invites saved",
+    );
+    if (saved) renderUserInvites(u);
+  });
+  const branch = $("#invite-branch", card);
+  branch?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const includeUser = branch.include_user.checked;
+    if (!await confirmDialog({ title: `Disable ${accounts(data.branch_size)}${includeUser ? ` and ${userName(u)}` : ""}?`, message: "Their invites are revoked and they're signed out right away.", confirm: "Disable accounts" })) return;
+    const result = await act($("button[type=submit]", branch), () =>
+      api(`/admin/users/${u.id}/invites/disable-branch`, { method: "POST", body: { include_user: includeUser } }),
+    );
+    if (!result) return;
+    toast(`${accounts(result.disabled)} disabled${result.skipped ? `. Skipped ${fmtNumber(result.skipped)} staff or your own account` : ""}`);
+    delete branch.dataset.dirty;
+    renderUserInvites(u);
+  });
+}
+
+async function renderUserSessions(u) {
+  const card = $("#sessions-card");
+  if (!card) return;
+  let sessions;
+  try {
+    sessions = await api(`/admin/users/${u.id}/sessions`);
+  } catch (e) {
+    return mount(
+      card,
+      html`<h3>Sessions</h3>
+                <p class="form-error">${e.message}</p>`,
+    );
+  }
+  mount(
+    card,
+    html`
+            <div class="row" style="justify-content:space-between">
+                <h3>Sessions (${sessions.length})</h3>
+                ${
+                  sessions.length && state.overview.access.support
+                    ? html`
+                        <button class="btn small" id="sessions-end-all" type="button">Sign out everywhere</button>
+                      `
+                    : ""
+                }
+            </div>
+            ${
+              sessions.length
+                ? html`<div class="list">
+                          ${sessions.map(
+                            (s) =>
+                              html`<div class="list-item" data-session="${s.id}">
+                                      <div class="grow">
+                                          <strong>${describeClient(s)}</strong>
+                                          <div class="muted">
+                                              Last active
+                                              ${fmtDate(s.last_seen ?? s.created_at)}${s.last_seen_location ? html` · ${s.last_seen_location}` : ""}${
+                                                s.last_seen_ip
+                                                  ? html` · <code>${s.last_seen_ip}</code>`
+                                                  : ""
+                                              }
+                                              · signed in ${fmtDay(s.created_at)}
+                                          </div>
+                                      </div>
+                                      ${state.overview.access.support ? html`<button class="btn small ghost" type="button" data-end>Sign out</button>` : ""}
+                                  </div>`,
+                          )}
+                      </div>`
+                : html`
+                    <p class="muted" style="margin: 0">Not signed in anywhere.</p>
+                  `
+            }
+        `,
+  );
+  const end = async (button, sessionIds) => {
+    const done = await act(
+      button,
+      () =>
+        api(`/admin/users/${u.id}/sessions/logout`, {
+          method: "POST",
+          body: sessionIds ? { session_ids: sessionIds } : {},
+        }),
+      sessionIds ? "Session ended" : "Signed out everywhere",
+    );
+    if (done !== undefined) renderUserSessions(u);
+  };
+  for (const row of $$("[data-session]", card))
+    $("[data-end]", row)?.addEventListener("click", (e) =>
+      end(e.currentTarget, [row.dataset.session]),
+    );
+  $("#sessions-end-all", card)?.addEventListener("click", async (e) => {
+    const button = e.currentTarget;
+    if (
+      await confirmDialog({ title: `Sign ${userName(u)} out everywhere?`, message: "Every session ends and they have to sign in again on each device.", confirm: "Sign out everywhere" })
+    )
+      end(button);
+  });
+}
+
+/* ---------- reports ---------- */
+
+const REPORT_TYPES = {
+  message: "Message",
+  first_dm: "First DM",
+  user: "User",
+  guild: "Server",
+  guild_discovery: "Server in Discovery",
+  guild_directory_entry: "Directory entry",
+  guild_scheduled_event: "Event",
+  stage_channel: "Stage",
+  application: "App",
+  widget: "Profile widget",
+  federated_automod: "Automod on another instance",
+};
+const REPORT_STATUSES = [
+  ["open", "Open", "warn"],
+  ["resolved", "Resolved", "ok"],
+  ["dismissed", "Dismissed", ""],
+];
+const reportStatus = (key) => REPORT_STATUSES.find(([k]) => k === key) ?? REPORT_STATUSES[0];
+
+const guessViolationType = (reason) => {
+  const text = (reason ?? "").toLowerCase();
+  const rules = [
+    ["spam", 3030],
+    ["scam", 4010],
+    ["fraud", 4010],
+    ["impersonat", 711],
+    ["hate", 320],
+    ["harass", 290],
+    ["abuse", 290],
+    ["violence", 210],
+    ["self-harm", 5090],
+    ["self harm", 5090],
+    ["minor", 280],
+    ["private identifying", 5305],
+    ["sexual", 100],
+    ["porn", 100],
+    ["illegal goods", 240],
+    ["drugs", 240],
+    ["stolen accounts", 230],
+    ["too young", 5411],
+  ];
+  return rules.find(([needle]) => text.includes(needle))?.[1] ?? 1;
+};
+
+const reportsState = { status: "open", offset: 0, limit: 50 };
+
+async function renderReports(view) {
+  mount(
+    view,
+    html`
+      <div class="page-head">
+        <div>
+          <h1>Reports</h1>
+          <p class="muted">
+            Everything people reported from the client's Report menus. Click a report to review it and act
+            on it.
+          </p>
+        </div>
+      </div>
+      <div class="row" id="report-tabs" style="margin-bottom: 12px"></div>
+      <div id="report-results"><div class="spinner">Loading…</div></div>
+    `,
+  );
+
+  const load = async () => {
+    const params = new URLSearchParams({
+      status: reportsState.status,
+      limit: reportsState.limit,
+      offset: reportsState.offset,
+      ...(reportsState.user_id ? { user_id: reportsState.user_id } : {}),
+    });
+    const { reports, total, counts } = await api(`/admin/reports?${params}`);
+    const tabs = $("#report-tabs");
+    const results = $("#report-results");
+    if (!results) return;
+    mount(
+      tabs,
+      [...REPORT_STATUSES, ["all", "All"]].map(
+        ([key, label]) =>
+          html`<button class="btn small ${reportsState.status === key ? "primary" : ""}" type="button" data-status="${key}">
+                        ${label}${key !== "all" ? html` <span class="muted" style="${reportsState.status === key ? "color:inherit" : ""}">${fmtNumber(counts[key])}</span>` : ""}
+                    </button>`,
+      ).concat(
+        reportsState.user_id
+          ? [html`<button class="btn small ghost" type="button" data-clear-user>Only reports against <code>${reportsState.user_id}</code>, show everyone</button>`]
+          : [],
+      ),
+    );
+    $("[data-clear-user]", tabs)?.addEventListener("click", () => {
+      reportsState.user_id = undefined;
+      reportsState.offset = 0;
+      load();
+    });
+    mount(
+      results,
+      reports.length
+        ? html`
+                      <div class="table-wrap">
+                          <table>
+                              <thead>
+                                  <tr>
+                                      <th>Report</th>
+                                      <th>Reported</th>
+                                      <th class="hide-sm">By</th>
+                                      <th class="hide-sm">When</th>
+                                      <th>Status</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  ${reports.map(
+                                    (r) => html`
+                                          <tr data-id="${r.id}">
+                                              <td>
+                                                  <strong>${REPORT_TYPES[r.type] ?? r.type}</strong>
+                                                  <div class="muted">${r.reason || "No reason picked"}</div>
+                                              </td>
+                                              <td>
+                                                  ${reportTarget(r)}
+                                                  ${r.related?.open > 1 ? html`<span class="badge warn" title="${fmtNumber(r.related.open)} open reports from ${fmtNumber(r.related.reporters)} people">${fmtNumber(r.related.open)} reports</span>` : ""}
+                                              </td>
+                                              <td class="hide-sm">
+                                                  ${r.reporter ? html`<div class="ident">${avatar(r.reporter)}<span>${userName(r.reporter)}</span></div>` : "—"}
+                                              </td>
+                                              <td class="hide-sm">${fmtDate(r.created_at)}</td>
+                                              <td><span class="badge ${reportStatus(r.status)[2]}">${reportStatus(r.status)[1]}</span></td>
+                                          </tr>
+                                      `,
+                                  )}
+                              </tbody>
+                          </table>
+                      </div>
+                      ${pager(total, reportsState)}
+                  `
+        : reportsState.user_id
+          ? emptyCard("No reports against this person have this status.", "Show reports against everyone")
+          : reportsState.status === "all"
+            ? emptyCard("Nobody has reported anything yet. Reports people send from the client's Report menus show up here.", "Open the client")
+            : reportsState.status === "open"
+              ? emptyCard("No open reports. Reports people send from the client's Report menus show up here.", "Show all reports")
+              : emptyCard(`No reports are ${reportStatus(reportsState.status)[1].toLowerCase()}.`, "Show open reports"),
+    );
+    $("[data-empty-action]", results)?.addEventListener("click", () => {
+      reportsState.offset = 0;
+      if (reportsState.user_id) reportsState.user_id = undefined;
+      else if (reportsState.status === "all") {
+        location.href = "/app";
+        return;
+      } else reportsState.status = reportsState.status === "open" ? "all" : "open";
+      load();
+    });
+    for (const btn of $$("[data-status]", tabs))
+      btn.addEventListener("click", () => {
+        reportsState.status = btn.dataset.status;
+        reportsState.offset = 0;
+        load();
+      });
+    for (const row of $$("tbody tr", results))
+      onRowOpen(row, () =>
+        openReport(
+          reports.find((r) => r.id === row.dataset.id),
+          load,
+        ),
+      );
+    bindPager(results, total, reportsState, load);
+  };
+  await load();
+}
+
+const reportTarget = (r) => {
+  if (r.reported_user)
+    return html`<div class="ident">${avatar(r.reported_user)}<span>${userName(r.reported_user)}</span></div>`;
+  if (r.guild)
+    return html`<div class="ident">${guildIcon(r.guild)}<span>${r.guild.name ?? r.guild.id}</span></div>`;
+  if (r.application_id)
+    return html`<span class="muted">App <code>${r.application_id}</code></span>`;
+  return html`
+    <span class="muted">—</span>
+  `;
+};
+
+function openReport(r, reload) {
+  const access = state.overview.access;
+  const snap = r.snapshot ?? {};
+  const answers = Object.entries(r.elements ?? {}).filter(([, v]) =>
+    Array.isArray(v) ? v.length : v,
+  );
+  const isImage = (a) =>
+    /^image\//.test(a.content_type ?? "") || /\.(png|jpe?g|gif|webp|avif)$/i.test(a.filename);
+  const images = (snap.attachments ?? []).filter(isImage);
+  const files = (snap.attachments ?? []).filter((a) => !isImage(a));
+  const lastReason = r.reason ? r.reason.split(" › ").pop() : "";
+  const body = openDrawer(
+    `${REPORT_TYPES[r.type] ?? r.type} report`,
+    html`
+            <div class="row" style="justify-content:space-between">
+                <div>
+                    <h2>${r.reason || "No reason picked"}</h2>
+                    <span class="muted">Reported ${fmtDate(r.created_at)}</span>
+                </div>
+                <span class="badge ${reportStatus(r.status)[2]}" style="font-size:12px;padding:3px 10px"><span class="dot"></span>${reportStatus(r.status)[1]}</span>
+            </div>
+
+            ${
+              snap.content !== undefined
+                ? html`<div class="card stack" style="gap:8px">
+                          <div class="row" style="justify-content:space-between">
+                              <h3 style="margin:0">${r.type === "widget" ? `Reported widget${snap.name ? `: ${snap.name}` : ""}` : "Reported message"}</h3>
+                              <span class="row" style="gap:6px">
+                              ${snap.encrypted ? (snap.encrypted.verified ? html`<span class="badge ok">Verified encrypted text</span>` : html`<span class="badge warn">Encrypted, not verified</span>`) : ""}
+                              ${
+                                r.type === "widget"
+                                  ? ""
+                                  : r.message_exists
+                                    ? html`
+                                        <span class="badge">Still posted</span>
+                                      `
+                                    : html`
+                                        <span class="badge danger">Deleted</span>
+                                      `
+                              }
+                              </span>
+                          </div>
+                          ${
+                            snap.author
+                              ? html`<div class="ident">
+                                        ${avatar(snap.author)}
+                                        <div><strong>${userName(snap.author)}</strong><span class="muted">${fmtDate(snap.sent_at)}</span></div>
+                                    </div>`
+                              : ""
+                          }
+                          <p style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere">${
+                            snap.content ||
+                            html`
+                              <span class="muted">No text</span>
+                            `
+                          }</p>
+                          ${
+                            images.length
+                              ? html`<div class="report-attachments">
+                                        ${images.map((a) => html`<a href="${a.url}" target="_blank" rel="noopener"><img src="${a.url}" alt="Attachment ${a.filename}" loading="lazy" /></a>`)}
+                                    </div>`
+                              : ""
+                          }
+                          ${
+                            files.length
+                              ? html`<div class="list">
+                                        ${files.map((a) => html`<div class="list-item"><a href="${a.url}" target="_blank" rel="noopener" class="grow">${a.filename}</a><span class="muted">${a.content_type ?? ""}</span></div>`)}
+                                    </div>`
+                              : ""
+                          }
+                          ${
+                            snap.encrypted?.files?.length
+                              ? html`<span class="muted">Encrypted ${snap.encrypted.files.length === 1 ? "file" : "files"} not shown: ${snap.encrypted.files.join(", ")}</span>`
+                              : ""
+                          }
+                          ${snap.embeds ? html`<span class="muted">${fmtNumber(snap.embeds)} ${snap.embeds === 1 ? "embed" : "embeds"} not shown</span>` : ""}
+                          ${
+                            snap.encrypted
+                              ? snap.encrypted.verified
+                                ? html`<span class="muted">This message was end-to-end encrypted. The reporter's client shared its key, and the server checked the sender's signature, so this is the text the sender sent.</span>`
+                                : html`<span class="muted">This message is end-to-end encrypted and its text couldn't be checked. ${snap.encrypted.reason ?? ""}</span>`
+                              : html`<span class="muted">This is how the message looked when it was reported.</span>`
+                          }
+                      </div>`
+                : ""
+            }
+
+            ${
+              r.related?.open > 1
+                ? html`<div class="card"><strong>${fmtNumber(r.related.open)} open reports</strong> <span class="muted">from ${fmtNumber(r.related.reporters)} ${r.related.reporters === 1 ? "person" : "different people"} about this ${r.related.scope === "message" ? "message" : "user"}.</span></div>`
+                : ""
+            }
+
+            ${
+              snap.context?.length
+                ? html`<details class="card report-context" open>
+                          <summary><h3 style="display:inline">Conversation around it</h3> <span class="muted">${fmtNumber(snap.context.length)} messages, saved when it was reported</span></summary>
+                          <div class="report-context-list">
+                              ${[...snap.context.filter((m) => !m.after), { reported: true }, ...snap.context.filter((m) => m.after)].map((m) =>
+                                m.reported
+                                  ? html`<div class="report-context-item reported">
+                                            <strong>${snap.author ? userName(snap.author) : "Reported message"}</strong>
+                                            <span class="muted">Reported message</span>
+                                            <p>${snap.content || html`<span class="muted">No text</span>`}</p>
+                                        </div>`
+                                  : html`<div class="report-context-item ${m.author?.id === r.reported_user?.id ? "same-author" : ""}">
+                                            <strong>${m.author ? userName(m.author) : "Unknown"}</strong>
+                                            <span class="muted">${fmtDate(m.sent_at)}</span>
+                                            ${m.encrypted && !m.encrypted.verified ? html`<span class="badge">Encrypted, not shared</span>` : ""}
+                                            <p>${
+                                              m.content ||
+                                              html`<span class="muted">${m.encrypted && !m.encrypted.verified ? "The reporter couldn't read this one" : m.type && m.type !== 0 && m.type !== 19 ? "System message" : "No text"}</span>`
+                                            }</p>
+                                            ${m.files || m.embeds ? html`<span class="muted">${[m.files ? `${fmtNumber(m.files)} ${m.files === 1 ? "file" : "files"}` : "", m.embeds ? `${fmtNumber(m.embeds)} ${m.embeds === 1 ? "embed" : "embeds"}` : ""].filter(Boolean).join(", ")}</span>` : ""}
+                                        </div>`,
+                              )}
+                          </div>
+                      </details>`
+                : ""
+            }
+
+            <div class="card">
+                <div class="list">
+                    ${
+                      r.reported_user
+                        ? html`<div class="list-item">
+                                  <span class="grow muted">Reported user</span>
+                                  <span class="ident">${avatar(r.reported_user)}<span>${userName(r.reported_user)}</span></span>
+                                  ${
+                                    r.reported_user.disabled
+                                      ? html`
+                                          <span class="badge danger">Disabled</span>
+                                        `
+                                      : ""
+                                  }
+                                  ${access.users ? html`<button class="btn small ghost" type="button" data-open-user="${r.reported_user.id}">Open</button>` : ""}
+                              </div>`
+                        : ""
+                    }
+                    ${
+                      r.guild
+                        ? html`<div class="list-item">
+                                  <span class="grow muted">Server</span>
+                                  <span class="ident">${guildIcon(r.guild)}<span>${r.guild.name ?? r.guild.id}</span></span>
+                                  ${access.guilds && r.guild.name ? html`<button class="btn small ghost" type="button" data-open-guild="${r.guild.id}">Open</button>` : ""}
+                              </div>`
+                        : ""
+                    }
+                    ${
+                      r.channel
+                        ? html`<div class="list-item"><span class="grow muted">Channel</span><span>${(() => {
+                            const people = (r.channel.recipients ?? []).map(userName);
+                            const listed = people.length > 4 ? `${people.slice(0, 4).join(", ")} and ${people.length - 4} more` : people.join(", ").replace(/, ([^,]*)$/, " and $1");
+                            if (r.channel.type === 1) return people.length ? `DM between ${listed}` : "DM";
+                            if (r.channel.type === 3) return r.channel.name || (people.length ? `Group DM with ${listed}` : "Group DM");
+                            return r.channel.name ? `#${r.channel.name}` : html`<code>${r.channel.id}</code>`;
+                          })()}</span></div>`
+                        : ""
+                    }
+                    ${
+                      r.reported_user_history
+                        ? html`<div class="list-item">
+                                  <span class="grow muted">Their history</span>
+                                  <span style="text-align:right">
+                                      ${r.reported_user_history.created_at ? html`Joined ${fmtDate(r.reported_user_history.created_at)}<br />` : ""}
+                                      ${fmtNumber(r.reported_user_history.violations.active)} active of ${fmtNumber(r.reported_user_history.violations.total)} ${r.reported_user_history.violations.total === 1 ? "violation" : "violations"}<br />
+                                      Reported ${fmtNumber(r.reported_user_history.reports.open + r.reported_user_history.reports.resolved + r.reported_user_history.reports.dismissed)} times, ${fmtNumber(r.reported_user_history.reports.resolved)} upheld
+                                  </span>
+                                  ${access.reports ? html`<button class="btn small ghost" type="button" data-filter-user="${r.reported_user.id}">All reports</button>` : ""}
+                              </div>`
+                        : ""
+                    }
+                    ${r.application_id ? html`<div class="list-item"><span class="grow muted">App</span><code>${r.application_id}</code></div>` : ""}
+                    ${r.guild_scheduled_event_id ? html`<div class="list-item"><span class="grow muted">Event</span><code>${r.guild_scheduled_event_id}</code></div>` : ""}
+                    <div class="list-item">
+                        <span class="grow muted">Reported by</span>
+                        ${r.reporter ? html`<span class="ident">${avatar(r.reporter)}<span>${userName(r.reporter)}</span></span>` : "—"}
+                        ${r.reporter && access.users ? html`<button class="btn small ghost" type="button" data-open-user="${r.reporter.id}">Open</button>` : ""}
+                    </div>
+                    ${
+                      r.reporter_record
+                        ? html`<div class="list-item">
+                                  <span class="grow muted">Their past reports</span>
+                                  <span>${fmtNumber(r.reporter_record.resolved)} upheld, ${fmtNumber(r.reporter_record.dismissed)} dismissed, ${fmtNumber(r.reporter_record.open)} open</span>
+                                  ${r.reporter_record.dismissed >= 5 && r.reporter_record.dismissed > r.reporter_record.resolved * 3 ? html`<span class="badge warn">Mostly dismissed</span>` : ""}
+                              </div>`
+                        : ""
+                    }
+                    ${answers.map(
+                      ([key, value]) =>
+                        html`<div class="list-item">
+                                <span class="grow muted">${key.replace(/_/g, " ")}</span
+                                ><span style="white-space:pre-wrap;text-align:right">${Array.isArray(value) ? value.join(", ") : value}</span>
+                            </div>`,
+                    )}
+                </div>
+            </div>
+
+            ${
+              r.status !== "open"
+                ? html`<div class="card">
+                          <div class="list">
+                              <div class="list-item">
+                                  <span class="grow muted">${reportStatus(r.status)[1]} by</span><span>${r.resolved_by ? userName(r.resolved_by) : "—"}</span>
+                              </div>
+                              <div class="list-item"><span class="grow muted">On</span><span>${fmtDate(r.resolved_at)}</span></div>
+                              ${r.resolution_note ? html`<div class="list-item"><span class="grow muted">Note</span><span style="white-space:pre-wrap">${r.resolution_note}</span></div>` : ""}
+                              ${r.violation_id ? html`<div class="list-item"><span class="grow muted">Violation</span><code>${r.violation_id}</code></div>` : ""}
+                          </div>
+                      </div>`
+                : ""
+            }
+            ${
+              r.status === "open" && r.reported_user && access.moderate
+                ? html`<form id="report-violation" class="card stack">
+                          <h3>Issue a violation</h3>
+                          <label
+                              >Type<select name="classification_type">
+                                  ${options(VIOLATION_TYPES, guessViolationType(r.reason))}
+                              </select></label
+                          >
+                          <label
+                              >Message to the user<span class="hint"
+                                  >Shown on their Account Standing page${snap.content !== undefined ? ", with the reported message attached" : ""}.</span
+                              ><textarea name="description" required maxlength="2000">${lastReason ? `Reported for: ${lastReason}` : ""}</textarea>
+                          </label>
+                          <div class="stack">
+                              <span class="muted">Actions taken</span>
+                              <div class="checks">
+                                  ${VIOLATION_ACTIONS.map(
+                                    ([id, label]) =>
+                                      html`<label class="toggle"
+                                              ><input type="checkbox" name="action" value="${id}" ${id === 4 ? raw("checked") : ""} /><span>${label}</span></label
+                                          >`,
+                                  )}
+                              </div>
+                          </div>
+                          <label
+                              >Counts against them for<select name="duration">
+                                  ${options(VIOLATION_DURATIONS, 90)}
+                              </select></label
+                          >
+                          <div class="form-actions">
+                              <button class="btn danger" type="submit">Issue violation</button>
+                          </div>
+                      </form>`
+                : ""
+            }
+
+            ${
+              access.moderate
+                ? html`<form id="report-form" class="card stack">
+                <h3>${r.status === "open" ? "Close this report" : "Change the outcome"}</h3>
+                <label>Note<span class="hint">For staff only. The reporter isn't told.</span><textarea name="note" maxlength="2000">${r.resolution_note ?? ""}</textarea></label>
+                ${
+                  r.message_exists && access.messages
+                    ? html`
+                        <label class="toggle"
+                          ><input type="checkbox" name="delete_message" /><span
+                            >Delete the reported message<span class="hint">Removes it for everyone.</span></span
+                          ></label
+                        >
+                      `
+                    : ""
+                }
+                ${
+                  r.related?.open > 1
+                    ? html`
+                        <label class="toggle"
+                          ><input type="checkbox" name="include_related" checked /><span
+                            >Apply to all ${fmtNumber(r.related.open)} open reports<span class="hint">Every open report on this ${r.related.scope === "message" ? "message" : "user"} gets the same outcome and note.</span></span
+                          ></label
+                        >
+                      `
+                    : ""
+                }
+                <div class="form-actions">
+                    ${
+                      r.status !== "open"
+                        ? html`
+                            <button class="btn" type="submit" value="open">Reopen</button>
+                          `
+                        : ""
+                    }
+                    ${
+                      r.status !== "dismissed"
+                        ? html`
+                            <button class="btn" type="submit" value="dismissed">Dismiss</button>
+                          `
+                        : ""
+                    }
+                    ${
+                      r.status !== "resolved"
+                        ? html`
+                            <button class="btn primary" type="submit" value="resolved">Mark resolved</button>
+                          `
+                        : ""
+                    }
+                </div>
+            </form>`
+                : ""
+            }
+        `,
+  );
+  if (!body) return;
+
+  for (const btn of $$("[data-open-user]", body))
+    btn.addEventListener("click", () => openUser(btn.dataset.openUser, reload));
+  for (const btn of $$("[data-open-guild]", body))
+    btn.addEventListener("click", () => openGuild(btn.dataset.openGuild, reload));
+  const reportedInContext = $(".report-context-item.reported", body);
+  if (reportedInContext) reportedInContext.parentElement.scrollTop = reportedInContext.offsetTop - reportedInContext.parentElement.offsetTop - 120;
+  for (const btn of $$("[data-filter-user]", body))
+    btn.addEventListener("click", () => {
+      reportsState.status = "all";
+      reportsState.user_id = btn.dataset.filterUser;
+      reportsState.offset = 0;
+      closeDrawer();
+      location.hash = "#/reports";
+      reload?.();
+    });
+
+  $("#report-violation", body)?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const payload = {
+      classification_type: Number(form.classification_type.value),
+      description: form.description.value,
+      actions: $$("input[name=action]:checked", form).map((x) => ({
+        action_type: Number(x.value),
+      })),
+      expires_in_days: form.duration.value ? Number(form.duration.value) : null,
+    };
+    const next = await act(
+      $("button[type=submit]", form),
+      () => api(`/admin/reports/${r.id}/violation`, { method: "POST", body: payload }),
+      "Violation issued",
+    );
+    if (next) {
+      reload?.();
+      refreshOverviewCounts();
+      openReport(next, reload);
+    }
+  });
+
+  $("#report-form", body)?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const status = e.submitter?.value ?? "resolved";
+    const deleting = !!form.delete_message?.checked;
+    if (deleting && !await confirmDialog({ title: "Delete the reported message?", message: "It's deleted for everyone and can't be restored.", confirm: "Delete message" })) return;
+    const next = await act(
+      e.submitter,
+      () =>
+        api(`/admin/reports/${r.id}`, {
+          method: "PATCH",
+          body: {
+            status,
+            resolution_note: form.note.value,
+            ...(deleting ? { delete_message: true } : {}),
+            ...(form.include_related?.checked ? { include_related: true } : {}),
+          },
+        }),
+      { open: "Report reopened", dismissed: "Report dismissed", resolved: "Report resolved" }[
+        status
+      ],
+    );
+    if (next) {
+      reload?.();
+      refreshOverviewCounts();
+      openReport(next, reload);
+    }
+  });
+}
+
+async function refreshOverviewCounts() {
+  state.overview = await api("/admin").catch(() => state.overview);
+  syncNavCounts();
+}
+
+function syncNavCounts() {
+  const link = $('#nav a[data-tab="reports"]');
+  if (!link) return;
+  const open = state.overview?.counts?.open_reports ?? 0;
+  mount(link, html`Reports${open ? html`<span class="nav-count">${fmtNumber(open)}</span>` : ""}`);
+}
+
+/* ---------- announcements ---------- */
+
+function announcementProgress(announcement) {
+  const d = announcement.delivery;
+  if (!d) return "Legacy announcement: delivery progress was not recorded.";
+  return `${fmtNumber(d.delivered)} delivered · ${fmtNumber(d.queued)} queued · ${fmtNumber(d.delivering)} sending · ${fmtNumber(d.failed)} failed`;
+}
+
+async function renderAnnouncements(view) {
+  const { official, announcements } = await api("/admin/announcements");
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Announcements</h1>
+                    <p class="muted">
+                        Sent as an encrypted direct message from <strong>${official.global_name || official.username}</strong>, the instance's official system account. Recipients without encryption keys wait until their account is ready.
+                    </p>
+                </div>
+            </div>
+            <div class="stack">
+                <div class="card row" id="official-card">
+                    <div class="ident grow">
+                        ${avatar(official, "large")}
+                        <div><strong>${official.global_name || official.username}</strong><span class="muted">${userTag(official)} · official account</span></div>
+                    </div>
+                    <label class="btn small">Change picture<input id="official-avatar" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden /></label>
+                    ${
+                      official.avatar
+                        ? html`
+                            <button class="btn small" id="official-avatar-remove" type="button">Remove</button>
+                          `
+                        : ""
+                    }
+                </div>
+                <form id="announce-form" class="card stack">
+                    <h2>New announcement</h2>
+                    <label
+                        >Message<span class="hint">Markdown works: **bold**, *italics*, links, lists.</span
+                        ><textarea name="body" required maxlength="4000" rows="6" placeholder="We'll be upgrading the database at 23:00 UTC…"></textarea>
+                    </label>
+                    <label
+                        >Attachments<span class="hint">Optional. Images, videos or any other files, sent along with the message.</span><input name="files" type="file" multiple
+                    /></label>
+                    <label
+                        >Send to<select name="audience" style="max-width:320px">
+                            ${options(
+                              [
+                                ["everyone", "Everyone on the instance"],
+                                ["staff", "Staff only (admin panel access)"],
+                                ["selected", "Selected users"],
+                              ],
+                              "everyone",
+                            )}
+                        </select></label
+                    >
+                    <label id="announce-selected" hidden>Recipient user IDs<span class="hint">1–100 unique user IDs, separated by commas or spaces.</span><textarea name="recipient_ids" rows="2" placeholder="123456789012345678, 234567890123456789"></textarea></label>
+                    <p class="hint">Attachments have a combined 10 MiB limit. Delivery progress is retained across server restarts.</p>
+                    <div class="form-actions"><button class="btn primary" type="submit">Send announcement</button></div>
+                </form>
+                <div class="stack">
+                    <h2>Delivery history</h2>
+                    ${
+                      announcements.length
+                        ? announcements.map(
+                            (a) =>
+                              html`<div class="card stack" style="gap:6px" data-id="${a.id}">
+                                          <div class="row">
+                                              <span class="grow muted">${fmtDate(a.created_at)}</span>
+                                              <span class="badge">${a.audience === "staff" ? "Staff" : a.audience === "selected" ? "Selected" : "Everyone"} · ${fmtNumber(a.recipient_count)}</span>
+                                              <button class="btn danger small announcement-delete" type="button">Delete</button>
+                                          </div>
+                                          <p class="muted announcement-progress" aria-live="polite">${announcementProgress(a)}</p>
+                                          ${a.title ? html`<strong>${a.title}</strong>` : ""}
+                                          <p style="margin:0;white-space:pre-wrap">${a.body}</p>
+                                      </div>`,
+                          )
+                        : emptyCard("No announcements yet. Write one above and it reaches everyone you pick as an encrypted message.", "Write announcement")
+                    }
+                </div>
+            </div>
+        `,
+  );
+
+  const currentForm = $("#announce-form", view);
+  $("[data-empty-action]", view)?.addEventListener("click", () => $("[name=body]", currentForm).focus());
+  const selectedInput = $("#announce-selected", view);
+  currentForm.audience.addEventListener("change", () => {
+    selectedInput.hidden = currentForm.audience.value !== "selected";
+    currentForm.recipient_ids.required = currentForm.audience.value === "selected";
+  });
+  const refreshProgress = async () => {
+    if (!view.isConnected || $("#announce-form", view) !== currentForm) return;
+    try {
+      const result = await api("/admin/announcements");
+      for (const entry of result.announcements) {
+        const status = $(`[data-id="${entry.id}"] .announcement-progress`, view);
+        if (status) status.textContent = announcementProgress(entry);
+      }
+    } catch {}
+    if (view.isConnected && $("#announce-form", view) === currentForm)
+      setTimeout(refreshProgress, 10_000);
+  };
+  setTimeout(refreshProgress, 10_000);
+
+  $("#announce-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const audience = form.audience.value;
+    if (
+      audience === "everyone" &&
+      !await confirmDialog({ title: "Send this announcement to everyone?", message: "Every account on this instance receives it.", confirm: "Send to everyone", danger: false })
+    )
+      return;
+    const payload = { body: form.body.value, audience };
+    if (audience === "selected")
+      payload.recipient_ids = form.recipient_ids.value
+        .trim()
+        .split(/[\s,]+/)
+        .filter(Boolean);
+    const files = [...form.files.files];
+    if (files.reduce((total, file) => total + file.size, 0) > 10 * 1024 * 1024) {
+      toast("Attachments exceed the combined 10 MiB limit", "error");
+      return;
+    }
+    let body = payload;
+    if (files.length) {
+      body = new FormData();
+      body.append("payload_json", JSON.stringify(payload));
+      files.forEach((file, i) => body.append(`files[${i}]`, file, file.name));
+    }
+    const sent = await act($("button[type=submit]", form), () =>
+      api("/admin/announcements", { method: "POST", body }),
+    );
+    if (sent) {
+      toast(
+        `Queued for ${fmtNumber(sent.recipient_count)} ${sent.recipient_count === 1 ? "user" : "users"}`,
+      );
+      renderAnnouncements(view);
+    }
+  });
+
+  const setOfficialAvatar = async (trigger, avatarData, success) => {
+    const updated = await act(
+      trigger,
+      () => api("/admin/announcements/official", { method: "PATCH", body: { avatar: avatarData } }),
+      success,
+    );
+    if (updated) renderAnnouncements(view);
+  };
+  $("#official-avatar").addEventListener("change", async (e) => {
+    const file = e.currentTarget.files[0];
+    if (file)
+      await setOfficialAvatar(
+        e.currentTarget.closest("label"),
+        await readAsDataUrl(file),
+        "Profile picture updated",
+      );
+  });
+  $("#official-avatar-remove")?.addEventListener("click", (e) =>
+    setOfficialAvatar(e.currentTarget, null, "Profile picture removed"),
+  );
+
+  for (const button of $$(".announcement-delete", view))
+    button.addEventListener("click", async (e) => {
+      const id = e.currentTarget.closest("[data-id]").dataset.id;
+      if (
+        !await confirmDialog({ title: "Delete this announcement?", message: "Its message and any attachments are removed from every user's DMs.", confirm: "Delete announcement" })
+      )
+        return;
+      const done = await act(
+        e.currentTarget,
+        () => api(`/admin/announcements/${id}`, { method: "DELETE" }),
+        "Announcement deleted",
+      );
+      if (done !== undefined) renderAnnouncements(view);
+    });
+}
+
+/* ---------- badges ---------- */
+
+// discord's own badge art; the CDN proxies any icon hash it doesn't store from discord's CDN
+const BADGE_PRESETS = [
+  ["5e74e9b61934fc1f67c65515d1f7e60d", "Staff"],
+  ["3f9748e53446a137a052f3454e2de41e", "Partnered Server Owner"],
+  ["fee1624003e2fee35cb398e125dc479b", "Moderator Programs Alumni"],
+  ["bf01d1073931f921909045f3a39fd264", "HypeSquad Events"],
+  ["8a88d63823d8a71cd5e390baa45efa02", "HypeSquad Bravery"],
+  ["011940fd013da3f7fb926e4a1cd2e618", "HypeSquad Brilliance"],
+  ["3aa41de486fa12454c3761e8e223442e", "HypeSquad Balance"],
+  ["2717692c7dca7289b35297368a940dd0", "Bug Hunter"],
+  ["848f79194d4be5ff5f81505cbd0ce1e6", "Gold Bug Hunter"],
+  ["6df5892e0f35b051f8b61eace34f4967", "Early Verified Bot Developer"],
+  ["6bdc42827a38498929a4920da12695d9", "Active Developer"],
+  ["7060786766c9c840eb3019e725d2b358", "Early Supporter"],
+  ["2ba85e8026a8614b640c2837bcdfe21b", "Subscriber"],
+  ["7d9ae358c8c5e118768335dbe68b4fb8", "Completed a Quest"],
+  ["83d8a1eb09a8d64e59233eec5d4d5c2d", "Orbs Apprentice"],
+];
+
+const readAsDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+async function renderBadges(view) {
+  const badges = await api("/admin/badges");
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Badges</h1>
+                    <p class="muted">Badges shown on user profiles. Create them here, then give them to people from their user page.</p>
+                </div>
+                <button class="btn primary" id="new-badge" type="button">Create badge</button>
+            </div>
+            ${
+              badges.length
+                ? html`<div class="table-wrap">
+                          <table>
+                              <thead>
+                                  <tr>
+                                      <th>Badge</th>
+                                      <th class="hide-sm">Link</th>
+                                      <th>Given to</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  ${badges.map(
+                                    (b) =>
+                                      html`<tr data-id="${b.id}">
+                                              <td>
+                                                  <div class="ident">${badgeIcon(b)}<strong>${b.description}</strong></div>
+                                              </td>
+                                              <td class="hide-sm">${
+                                                b.link
+                                                  ? html`<span class="muted">${b.link}</span>`
+                                                  : html`
+                                                      <span class="muted">—</span>
+                                                    `
+                                              }</td>
+                                              <td>${fmtNumber(b.holders)} ${b.holders === 1 ? "user" : "users"}</td>
+                                          </tr>`,
+                                  )}
+                              </tbody>
+                          </table>
+                      </div>`
+                : emptyCard("No badges yet. Create one with your own icon or a preset, then give it out from a user's page.", "Create badge")
+            }
+        `,
+  );
+  const refresh = () => renderBadges(view);
+  $("#new-badge").addEventListener("click", () => openBadge(null, refresh));
+  $("[data-empty-action]", view)?.addEventListener("click", () => openBadge(null, refresh));
+  for (const row of $$("tbody tr", view))
+    onRowOpen(row, () =>
+      openBadge(
+        badges.find((b) => b.id === row.dataset.id),
+        refresh,
+      ),
+    );
+}
+
+function openBadge(badge, refresh) {
+  let icon = badge?.icon ?? null;
+  let iconData = null;
+  const body = openDrawer(
+    badge ? "Edit badge" : "Create badge",
+    html`
+            <form id="badge-form" class="stack">
+                <div class="card row" style="gap:12px">
+                    <span id="badge-preview" class="badge-preview"></span>
+                    <div class="grow">
+                        <strong id="badge-preview-text">${badge?.description ?? "Badge name"}</strong>
+                        <div class="muted">Shown as a tooltip when hovering the badge on a profile.</div>
+                    </div>
+                </div>
+                <label>Tooltip text<input name="description" required maxlength="120" value="${badge?.description ?? ""}" placeholder="Early Tester" /></label>
+                <label
+                    >Link<span class="hint">Optional. Opens when the badge is clicked.</span><input name="link" type="url" maxlength="2048" value="${badge?.link ?? ""}" placeholder="https://…"
+                /></label>
+                <div class="stack">
+                    <h3>Icon</h3>
+                    <label
+                        >Upload an image<span class="hint">Square PNG, WebP or GIF. Shown at about 22px.</span
+                        ><input name="file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"
+                    /></label>
+                    <span class="muted">or pick a preset</span>
+                    <div class="preset-grid">
+                        ${BADGE_PRESETS.map(
+                          ([hash, name]) =>
+                            html`<button type="button" class="preset ${hash === icon ? "active" : ""}" data-preset="${hash}" data-name="${name}" title="${name}">
+                                    <img src="/badge-icons/${hash}.png" alt="${name}" />
+                                </button>`,
+                        )}
+                    </div>
+                </div>
+                <div class="form-actions">
+                    ${
+                      badge
+                        ? html`
+                            <button class="btn danger" id="badge-delete" type="button" style="margin-right: auto">
+                              Delete badge
+                            </button>
+                          `
+                        : ""
+                    }
+                    <button class="btn primary" type="submit">${badge ? "Save badge" : "Create badge"}</button>
+                </div>
+            </form>
+        `,
+  );
+  if (!body) return;
+  const form = $("#badge-form", body);
+  const preview = () => {
+    const src = iconData ?? (icon ? `/badge-icons/${icon}.png` : null);
+    mount(
+      $("#badge-preview"),
+      src
+        ? html`<img class="badge-icon large" src="${src}" alt="" />`
+        : html`
+            <span class="muted">?</span>
+          `,
+    );
+    $("#badge-preview-text").textContent = form.description.value || "Badge name";
+    for (const b of $$("[data-preset]", form))
+      b.classList.toggle("active", !iconData && b.dataset.preset === icon);
+  };
+  preview();
+
+  form.description.addEventListener("input", preview);
+  form.file.addEventListener("change", async () => {
+    const file = form.file.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      form.file.value = "";
+      return toast("Badge icons have to be under 2 MB.", "error");
+    }
+    iconData = await readAsDataUrl(file);
+    preview();
+  });
+  for (const btn of $$("[data-preset]", form))
+    btn.addEventListener("click", () => {
+      icon = btn.dataset.preset;
+      iconData = null;
+      form.file.value = "";
+      if (!form.description.value) form.description.value = btn.dataset.name;
+      preview();
+    });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!icon && !iconData) return toast("Pick a preset or upload an icon first.", "error");
+    const payload = { description: form.description.value, link: form.link.value || null };
+    if (iconData) payload.icon_data = iconData;
+    else if (icon !== badge?.icon) payload.icon = icon;
+    const done = await act(
+      $("button[type=submit]", form),
+      () =>
+        badge
+          ? api(`/admin/badges/${badge.id}`, { method: "PATCH", body: payload })
+          : api("/admin/badges", { method: "POST", body: payload }),
+      badge ? "Badge saved" : "Badge created",
+    );
+    if (done) {
+      closeDrawer();
+      refresh();
+    }
+  });
+
+  $("#badge-delete", body)?.addEventListener("click", async (e) => {
+    const who = badge.holders
+      ? ` It's taken off the ${badge.holders} ${badge.holders === 1 ? "user" : "users"} who have it.`
+      : "";
+    if (!await confirmDialog({ title: `Delete the "${badge.description}" badge?`, message: who.trim(), confirm: "Delete badge" })) return;
+    const done = await act(
+      e.currentTarget,
+      () => api(`/admin/badges/${badge.id}`, { method: "DELETE" }),
+      "Badge deleted",
+    );
+    if (done !== undefined) {
+      closeDrawer();
+      refresh();
+    }
+  });
+}
+
+async function renderExperiments(view) {
+  const [data, catalog] = await Promise.all([
+    api("/admin/experiments"),
+    api("/admin/experiments/catalog"),
+  ]);
+  const whoOf = async (kind, id) => {
+    try {
+      const r = await api(`/admin/${kind === "user" ? "users" : "guilds"}/${id}`);
+      return kind === "user" ? userName(r.user ?? r) : r.name || id;
+    } catch {
+      return id;
+    }
+  };
+  const rolloutRows = Object.entries(data.rollouts ?? {});
+  const stat = (label, value) =>
+    html`<div class="card stat"><div class="muted">${label}</div><div class="value">${value}</div></div>`;
+  const rows = [
+    ...Object.entries(data.global).map(([name, variant]) => ({
+      kind: "global",
+      id: "",
+      name,
+      variant,
+    })),
+    ...Object.entries(data.users).flatMap(([id, g]) =>
+      Object.entries(g).map(([name, variant]) => ({ kind: "user", id, name, variant })),
+    ),
+    ...Object.entries(data.guilds).flatMap(([id, g]) =>
+      Object.entries(g).map(([name, variant]) => ({ kind: "guild", id, name, variant })),
+    ),
+  ];
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Experiments</h1>
+                    <p class="muted">Turn Discord client features on for some of your users. People get changes after reloading the app.</p>
+                </div>
+                <div class="row" style="gap:8px">
+                    <button class="btn" id="new-rollout" type="button">Roll out to a percentage</button>
+                    <button class="btn primary" id="new-grant" type="button">Grant experiments</button>
+                </div>
+            </div>
+            <div class="stats" style="margin-bottom:24px">
+                ${stat("Active rollouts", fmtNumber(rolloutRows.length))} ${stat("Direct grants", fmtNumber(rows.length))} ${stat("Experiments in the client", fmtNumber(catalog.length))}
+            </div>
+            <div class="section-head">
+                <h2>Gradual rollouts</h2>
+                <p class="muted">A share of all users gets the experiment. Raising the share only adds people, nobody who already has it loses it.</p>
+            </div>
+            ${
+              rolloutRows.length
+                ? html`<div class="rollouts">
+                      ${rolloutRows.map(([name, r]) => {
+                        const reach = Math.round(((data.users_total ?? 0) * r.percent) / 100);
+                        return html`<div class="card rollout">
+                              <div class="rollout-name">${name}</div>
+                              <div class="rollout-top">
+                                  <div class="rollout-pct">${r.percent}%</div>
+                                  <span class="badge info">Variant ${r.variant}</span>
+                              </div>
+                              <div class="rollout-bar"><span style="width:${r.percent}%"></span></div>
+                              <div class="rollout-foot">
+                                  <span class="muted">About ${fmtNumber(reach)} of ${fmtNumber(data.users_total ?? 0)} users</span>
+                                  <span class="row rollout-actions">
+                                      <button class="btn small" data-roll-users="${name}" type="button">Who got it</button>
+                                      <button class="btn small" data-roll-edit="${name}" type="button">Change</button>
+                                      <button class="btn small danger" data-roll-stop="${name}" type="button">Stop</button>
+                                  </span>
+                              </div>
+                          </div>`;
+                      })}
+                  </div>`
+                : html`
+                    <div class="card empty">
+                      <p>No rollouts yet.</p>
+                      <button class="btn primary" data-roll-new type="button">Roll out an experiment</button>
+                    </div>
+                  `
+            }
+            <div class="section-head" style="margin-top:32px">
+                <h2>Direct grants</h2>
+                <p class="muted">Experiments turned on for everyone, for one person, or for one server.</p>
+            </div>
+            ${
+              rows.length
+                ? html`<div class="table-wrap">
+                      <table>
+                          <thead>
+                              <tr>
+                                  <th>Experiment</th>
+                                  <th>Given to</th>
+                                  <th>Variant</th>
+                                  <th></th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              ${rows.map(
+                                (r, i) =>
+                                  html`<tr data-i="${i}">
+                                          <td><strong>${r.name}</strong></td>
+                                          <td>
+                                              ${
+                                                r.kind === "global"
+                                                  ? html`
+                                                      <span class="badge accent">Everyone</span>
+                                                    `
+                                                  : html`<span class="badge info">${r.kind === "user" ? "User" : "Server"}</span> <span class="who muted" data-kind="${r.kind}" data-id="${r.id}">${r.id}</span>`
+                                              }
+                                          </td>
+                                          <td>${r.variant}</td>
+                                          <td><button class="btn small danger" data-revoke="${i}" type="button">Revoke</button></td>
+                                      </tr>`,
+                              )}
+                          </tbody>
+                      </table>
+                  </div>`
+                : emptyCard("Nothing granted yet. Experiments in the built-in defaults still apply.", "Grant experiments")
+            }
+        `,
+  );
+  const refresh = () => renderExperiments(view);
+  for (const el of $$(".who", view))
+    whoOf(el.dataset.kind, el.dataset.id).then((n) => (el.textContent = `${n} (${el.dataset.id})`));
+  for (const btn of $$("[data-revoke]", view))
+    btn.addEventListener("click", async () => {
+      const r = rows[btn.dataset.revoke];
+      const done = await act(
+        btn,
+        () =>
+          api("/admin/experiments", {
+            method: "PUT",
+            body: { target: r.kind, id: r.id || undefined, name: r.name, variant: 0 },
+          }),
+        "Revoked",
+      );
+      if (done) refresh();
+    });
+  $("#new-grant").addEventListener("click", () => openGrant(catalog, refresh));
+  $("[data-empty-action]", view)?.addEventListener("click", () => openGrant(catalog, refresh));
+  $("#new-rollout").addEventListener("click", () =>
+    openRollout(catalog, refresh, undefined, undefined, data.users_total),
+  );
+  $("[data-roll-new]", view)?.addEventListener("click", () =>
+    openRollout(catalog, refresh, undefined, undefined, data.users_total),
+  );
+  for (const btn of $$("[data-roll-users]", view))
+    btn.addEventListener("click", () => openRolloutUsers(btn.dataset.rollUsers));
+  for (const btn of $$("[data-roll-edit]", view))
+    btn.addEventListener("click", () =>
+      openRollout(
+        catalog,
+        refresh,
+        btn.dataset.rollEdit,
+        data.rollouts[btn.dataset.rollEdit],
+        data.users_total,
+      ),
+    );
+  for (const btn of $$("[data-roll-stop]", view))
+    btn.addEventListener("click", async () => {
+      const done = await act(
+        btn,
+        () =>
+          api("/admin/experiments/rollout", {
+            method: "PUT",
+            body: { name: btn.dataset.rollStop, percent: 0 },
+          }),
+        "Rollout stopped",
+      );
+      if (done) refresh();
+    });
+}
+
+function openRollout(catalog, refresh, presetName, preset, usersTotal = 0) {
+  let name = presetName ?? "";
+  const body = openDrawer(
+    presetName ? "Change rollout" : "Roll out to a percentage",
+    html`
+            <form id="rollout-form" class="stack">
+                ${
+                  presetName
+                    ? html`<div class="card"><div class="muted">Experiment</div><div class="mono" style="margin-top:4px">${presetName}</div></div>`
+                    : html`
+                        <div class="stack" style="gap: 8px">
+                          <label
+                            >Experiment<input name="search" autocomplete="off" placeholder="Search, or type a full name"
+                          /></label>
+                          <div class="picker" id="rollout-picker"></div>
+                        </div>
+                      `
+                }
+                <div class="stack" style="gap:8px">
+                    <label>Share of users</label>
+                    <div class="pct-row">
+                        <input name="slider" type="range" min="0" max="100" step="0.1" aria-label="Share of users" />
+                        <input name="percent" type="number" min="0" max="100" step="0.01" aria-label="Percent" />
+                        <span>%</span>
+                    </div>
+                    <div class="pct-presets">${[0.1, 1, 5, 10, 25, 50, 100].map((v) => html`<button type="button" class="btn small" data-pct="${v}">${v}%</button>`)}</div>
+                    <p class="hint" id="rollout-estimate"></p>
+                </div>
+                <label>Variant<span class="hint">1 is on for most. Some experiments have more.</span><input name="variant" type="number" min="1" max="1000" value="${preset?.variant ?? 1}" /></label>
+                <div class="form-actions"><button class="btn primary" type="submit">${presetName ? "Save" : "Start rollout"}</button></div>
+            </form>
+        `,
+  );
+  if (!body) return;
+  const form = $("#rollout-form", body);
+
+  const setPercent = (value, from) => {
+    const pct = Math.min(100, Math.max(0, Math.round(Number(value) * 100) / 100 || 0));
+    if (from !== "number") form.percent.value = pct;
+    if (from !== "slider") form.slider.value = Math.sqrt(pct * 100);
+    const reach = Math.round((usersTotal * pct) / 100);
+    $("#rollout-estimate").textContent = usersTotal
+      ? `About ${fmtNumber(reach)} of ${fmtNumber(usersTotal)} users.`
+      : "";
+  };
+  form.slider.addEventListener("input", () => {
+    form.percent.value = Math.round((Number(form.slider.value) ** 2 / 100) * 100) / 100;
+    setPercent(form.percent.value, "slider");
+  });
+  form.percent.addEventListener("input", () => setPercent(form.percent.value, "number"));
+  for (const b of $$("[data-pct]", body))
+    b.addEventListener("click", () => setPercent(b.dataset.pct));
+  setPercent(preset?.percent ?? 1);
+
+  if (!presetName) {
+    const picker = $("#rollout-picker", body);
+    const list = () => {
+      const q = form.search.value.trim().toLowerCase();
+      const shown = catalog.filter((n) => n.includes(q)).slice(0, 80);
+      if (q && /^[\w.-]{3,128}$/.test(q) && !catalog.includes(q)) shown.unshift(q);
+      mount(
+        picker,
+        shown.length
+          ? html`${shown.map((n) => html`<button type="button"  data-name="${n}" aria-pressed="${n === name}">${n}</button>`)}`
+          : html`
+              <p class="muted" style="padding: 12px">No match.</p>
+            `,
+      );
+      for (const b of $$("[data-name]", picker))
+        b.addEventListener("click", () => {
+          name = b.dataset.name;
+          list();
+        });
+    };
+    form.search.addEventListener("input", list);
+    list();
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!name) return toast("Pick an experiment.", "error");
+    const done = await act(
+      $("button[type=submit]", form),
+      () =>
+        api("/admin/experiments/rollout", {
+          method: "PUT",
+          body: {
+            name,
+            percent: Number(form.percent.value),
+            variant: Number(form.variant.value) || 1,
+          },
+        }),
+      "Rollout saved",
+    );
+    if (done) {
+      closeDrawer();
+      refresh();
+    }
+  });
+}
+
+async function openRolloutUsers(name) {
+  const body = openDrawer(
+    `Who got it`,
+    html`
+      <p class="muted">Loading…</p>
+    `,
+  );
+  if (!body) return;
+  const shown = [];
+  let filter = "";
+  let nextCursor = "";
+  let loading = false;
+  const draw = (r) => {
+    const q = filter.toLowerCase();
+    const rows = shown.filter(
+      (u) => !q || `${userName(u)} ${u.username} ${u.id}`.toLowerCase().includes(q),
+    );
+    mount(
+      body,
+      html`
+                <div class="card">
+                    <div class="mono" style="word-break:break-all">${name}</div>
+                    <div class="muted" style="margin-top:4px">${fmtNumber(shown.length)} users loaded at ${r.percent}%, variant ${r.variant}</div>
+                </div>
+                ${shown.length > 8 ? html`<label>Filter users<input id="who-filter" placeholder="Name or ID" value="${filter}" autocomplete="off" /></label>` : ""}
+                ${
+                  rows.length
+                    ? html`<div>
+                          ${rows.map(
+                            (u) => html`<div class="list-item">
+                                  ${avatar(u)}
+                                  <div class="grow"><strong>${userName(u)}</strong><div class="muted">${userTag(u)}</div></div>
+                                  <span class="mono muted">${u.id}</span>
+                              </div>`,
+                          )}
+                      </div>`
+                    : html`<div class="card empty">${shown.length ? "No match." : "Nobody has it yet."}</div>`
+                }
+                ${
+                  nextCursor
+                    ? html`
+                        <button class="btn" id="more-users" type="button">Show more</button>
+                      `
+                    : ""
+                }
+            `,
+    );
+    const input = $("#who-filter", body);
+    input?.addEventListener("input", () => {
+      filter = input.value;
+      draw(r);
+      const again = $("#who-filter", body);
+      again.focus();
+      again.setSelectionRange(filter.length, filter.length);
+    });
+    $("#more-users", body)?.addEventListener("click", load);
+  };
+  const load = async () => {
+    if (loading) return;
+    loading = true;
+    const button = $("#more-users", body);
+    if (button) button.disabled = true;
+    try {
+      const r = await api(
+        `/admin/experiments/rollout/${encodeURIComponent(name)}/users?${new URLSearchParams(nextCursor ? { after: nextCursor } : {})}`,
+      ).catch((e) => ({ error: e }));
+      if (r.error)
+        return mount(
+          body,
+          html`
+            <p class="err">Couldn't load the list.</p>
+          `,
+        );
+      shown.push(...r.users);
+      nextCursor = r.next_cursor;
+      draw(r);
+    } finally {
+      loading = false;
+    }
+  };
+  load();
+}
+
+function openGrant(catalog, refresh) {
+  const picked = new Set();
+  let target = { kind: "user", id: "@me", label: "Me" };
+  const body = openDrawer(
+    "Grant experiments",
+    html`
+      <form id="grant-form" class="stack">
+        <label
+          >Give to
+          <select name="kind">
+            <option value="user">A user</option>
+            <option value="guild">A server</option>
+            <option value="global">Everyone</option>
+          </select></label
+        >
+        <div id="target-box" class="stack">
+          <label
+            >Find <span id="target-noun">user</span
+            ><span class="hint">Search by name, or leave it on yourself.</span
+            ><input name="search" autocomplete="off" placeholder="Search…"
+          /></label>
+          <div id="target-results" class="stack"></div>
+          <div class="card row" style="gap: 12px">
+            <strong>Selected:</strong> <span id="target-label"></span>
+            <button class="btn small ghost" id="target-me" type="button">Me</button>
+          </div>
+          <label class="row" style="gap: 8px" id="owned-row"
+            ><input name="owned" type="checkbox" checked /> Also give it to every server they own</label
+          >
+        </div>
+        <label
+          >Variant<span class="hint">1 is on for most. Some experiments have more.</span
+          ><input name="variant" type="number" min="1" max="1000" value="1"
+        /></label>
+        <label
+          >Experiments<input name="filter" autocomplete="off" placeholder="Filter, for example profile"
+        /></label>
+        <div class="row" style="gap: 8px">
+          <span id="picked-count" class="muted"></span
+          ><button class="btn small ghost" id="picked-clear" type="button" style="margin-left: auto">
+            Clear
+          </button>
+        </div>
+        <div id="exp-list" style="max-height: 320px; overflow: auto" class="stack"></div>
+        <div class="form-actions"><button class="btn primary" type="submit">Grant</button></div>
+      </form>
+    `,
+  );
+  if (!body) return;
+  const form = $("#grant-form", body);
+  const label = () => {
+    $("#target-label").textContent = target.label;
+    $("#picked-count").textContent = `${picked.size} selected`;
+    $("#target-box").hidden = form.kind.value === "global";
+    $("#target-noun").textContent = form.kind.value === "user" ? "user" : "server";
+    $("#owned-row").hidden = form.kind.value !== "user";
+  };
+  const list = () => {
+    const q = form.filter.value.toLowerCase();
+    const shown = catalog.filter((n) => n.includes(q) || picked.has(n)).slice(0, 200);
+    mount(
+      $("#exp-list"),
+      shown.length
+        ? html`${shown.map((n) => html`<label class="row" style="gap:8px"><input type="checkbox" data-name="${n}" ${picked.has(n) ? "checked" : ""} /> ${n}</label>`)}`
+        : html`
+            <p class="muted">No match. You can type a name exactly and press Enter.</p>
+          `,
+    );
+    for (const c of $$("[data-name]", body))
+      c.addEventListener("change", () => {
+        if (c.checked) picked.add(c.dataset.name);
+        else picked.delete(c.dataset.name);
+        label();
+      });
+  };
+  form.filter.addEventListener("input", list);
+  form.filter.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && /^[\w.-]{3,128}$/.test(form.filter.value)) {
+      e.preventDefault();
+      picked.add(form.filter.value);
+      label();
+      list();
+    }
+  });
+  $("#picked-clear").addEventListener("click", () => {
+    picked.clear();
+    label();
+    list();
+  });
+  const search = debounce(async () => {
+    const q = form.search.value.trim();
+    const kind = form.kind.value;
+    if (!q)
+      return mount(
+        $("#target-results"),
+        html`
+          
+        `,
+      );
+    const res = await api(
+      `/admin/${kind === "user" ? "users" : "guilds"}?${new URLSearchParams({ q, limit: 6 })}`,
+    ).catch(() => ({}));
+    const found = kind === "user" ? (res.users ?? []) : (res.guilds ?? []);
+    const nameOf = (f) => (kind === "user" ? userName(f) : f.name);
+    mount(
+      $("#target-results"),
+      html`${found.map((f) => html`<button type="button" class="btn ghost" data-pick="${f.id}" data-label="${nameOf(f)}">${nameOf(f)} <span class="muted">${f.id}</span></button>`)}`,
+    );
+    for (const b of $$("[data-pick]", body))
+      b.addEventListener("click", () => {
+        target = { kind, id: b.dataset.pick, label: `${b.dataset.label} (${b.dataset.pick})` };
+        label();
+      });
+  });
+  form.search.addEventListener("input", search);
+  form.kind.addEventListener("change", () => {
+    target =
+      form.kind.value === "user"
+        ? { kind: "user", id: "@me", label: "Me" }
+        : { kind: form.kind.value, id: "", label: "Search for a server" };
+    form.search.value = "";
+    mount(
+      $("#target-results"),
+      html`
+        
+      `,
+    );
+    label();
+  });
+  $("#target-me").addEventListener("click", () => {
+    form.kind.value = "user";
+    target = { kind: "user", id: "@me", label: "Me" };
+    label();
+  });
+  label();
+  list();
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const kind = form.kind.value;
+    if (!picked.size) return toast("Pick at least one experiment.", "error");
+    if (kind !== "global" && !target.id) return toast("Choose who to give it to.", "error");
+    const done = await act(
+      $("button[type=submit]", form),
+      async () => {
+        for (const name of picked)
+          await api("/admin/experiments", {
+            method: "PUT",
+            body: {
+              target: kind,
+              id: kind === "global" ? undefined : target.id,
+              name,
+              variant: Number(form.variant.value) || 1,
+              include_owned_guilds: kind === "user" && form.owned.checked,
+            },
+          });
+        return true;
+      },
+      `Granted ${picked.size} ${picked.size === 1 ? "experiment" : "experiments"}`,
+    );
+    if (done) {
+      closeDrawer();
+      refresh();
+    }
+  });
+}
+
+/* ---------- games ---------- */
+
+// art lives where the client looks for game art: app-icons/<game id>/<hash>
+const gameArt = (g, hash, cls = "") =>
+  hash
+    ? html`<img class="avatar square ${cls}" src="/app-icons/${g.id}/${hash}.png?size=128" alt="" loading="lazy" />`
+    : html`<span class="avatar square ${cls}">${initials(g.name)}</span>`;
+
+async function renderGames(view) {
+  const games = await api("/admin/games");
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Games</h1>
+                    <p class="muted">
+                        Games you add here show up next to the built-in game list wherever people pick games, such as the games on their profile or their server's profile. Open
+                        clients see new games in search right away; their full game list refreshes within a few hours.
+                    </p>
+                </div>
+                <button class="btn primary" id="new-game" type="button">Add game</button>
+            </div>
+            ${
+              games.length
+                ? html`<div class="table-wrap">
+                          <table>
+                              <thead>
+                                  <tr>
+                                      <th>Game</th>
+                                      <th class="hide-sm">Also found by</th>
+                                      <th class="hide-sm">Added</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  ${games.map(
+                                    (g) =>
+                                      html`<tr data-id="${g.id}">
+                                              <td>
+                                                  <div class="ident">${gameArt(g, g.icon_hash)}<strong>${g.name}</strong></div>
+                                              </td>
+                                              <td class="hide-sm">
+                                                  ${
+                                                    g.aliases.length
+                                                      ? html`<span class="muted">${g.aliases.join(", ")}</span>`
+                                                      : html`
+                                                          <span class="muted">—</span>
+                                                        `
+                                                  }
+                                              </td>
+                                              <td class="hide-sm"><span class="muted">${fmtDate(g.created_at)}</span></td>
+                                          </tr>`,
+                                  )}
+                              </tbody>
+                          </table>
+                      </div>`
+                : emptyCard("No custom games yet. Add one so people can put it on their profile or server.", "Add game")
+            }
+        `,
+  );
+  const refresh = () => renderGames(view);
+  $("#new-game").addEventListener("click", () => openGame(null, refresh));
+  $("[data-empty-action]", view)?.addEventListener("click", () => openGame(null, refresh));
+  for (const row of $$("tbody tr", view))
+    onRowOpen(row, () =>
+      openGame(
+        games.find((g) => g.id === row.dataset.id),
+        refresh,
+      ),
+    );
+}
+
+function openGame(game, refresh) {
+  // undefined keeps the saved art, null removes it, a data: URI replaces it
+  const art = { icon: undefined, cover: undefined };
+  const body = openDrawer(
+    game ? "Edit game" : "Add game",
+    html`
+            <form id="game-form" class="stack">
+                <div class="card row" style="gap:12px">
+                    <span id="game-preview"></span>
+                    <div class="grow">
+                        <strong id="game-preview-name">${game?.name ?? "Game name"}</strong>
+                        <div class="muted">How it looks in game pickers and on profiles.</div>
+                    </div>
+                </div>
+                <label>Name<input name="name" required maxlength="100" value="${game?.name ?? ""}" placeholder="My Game" /></label>
+                <label
+                    >Also found by<span class="hint">Optional. Other names people might search for, separated by commas. Up to 20, each up to 100 characters.</span
+                    ><input name="aliases" value="${(game?.aliases ?? []).join(", ")}" placeholder="MG, My Game Remastered"
+                /></label>
+                <div class="form-grid">
+                    <div class="stack">
+                        <label
+                            >Icon<span class="hint">Square image, at least 256×256.</span
+                            ><input name="icon" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                        /></label>
+                        ${
+                          game?.icon_hash
+                            ? html`
+                                <button class="btn small" type="button" data-remove="icon">Remove icon</button>
+                              `
+                            : ""
+                        }
+                    </div>
+                    <div class="stack">
+                        <label
+                            >Cover art<span class="hint">Optional. A tall box-art style image, like 600×800.</span
+                            ><input name="cover" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                        /></label>
+                        ${
+                          game?.cover_image_hash
+                            ? html`
+                                <button class="btn small" type="button" data-remove="cover">Remove cover art</button>
+                              `
+                            : ""
+                        }
+                    </div>
+                </div>
+                <div class="form-actions">
+                    ${
+                      game
+                        ? html`
+                            <button class="btn danger" id="game-delete" type="button" style="margin-right: auto">
+                              Delete game
+                            </button>
+                          `
+                        : ""
+                    }
+                    <button class="btn primary" type="submit">${game ? "Save game" : "Add game"}</button>
+                </div>
+            </form>
+        `,
+  );
+  if (!body) return;
+  const form = $("#game-form", body);
+  const preview = () => {
+    const icon =
+      art.icon === undefined
+        ? game?.icon_hash
+          ? `/app-icons/${game.id}/${game.icon_hash}.png?size=128`
+          : null
+        : art.icon;
+    const name = form.name.value || "Game name";
+    mount(
+      $("#game-preview"),
+      icon
+        ? html`<img class="avatar square large" src="${icon}" alt="" />`
+        : html`<span class="avatar square large">${initials(name)}</span>`,
+    );
+    $("#game-preview-name").textContent = name;
+  };
+  preview();
+  form.name.addEventListener("input", preview);
+
+  for (const key of ["icon", "cover"]) {
+    form[key].addEventListener("change", async () => {
+      const file = form[key].files[0];
+      if (!file) return;
+      if (file.size > 8 * 1024 * 1024) {
+        form[key].value = "";
+        return toast("Game art has to be under 8 MB.", "error");
+      }
+      art[key] = await readAsDataUrl(file);
+      preview();
+    });
+  }
+  for (const btn of $$("[data-remove]", form))
+    btn.addEventListener("click", () => {
+      art[btn.dataset.remove] = null;
+      form[btn.dataset.remove].value = "";
+      btn.remove();
+      preview();
+    });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      name: form.name.value,
+      aliases: form.aliases.value
+        .split(",")
+        .map((alias) => alias.trim())
+        .filter(Boolean),
+    };
+    if (art.icon !== undefined && (game || art.icon)) payload.icon_data = art.icon;
+    if (art.cover !== undefined && (game || art.cover)) payload.cover_data = art.cover;
+    const done = await act(
+      $("button[type=submit]", form),
+      () =>
+        game
+          ? api(`/admin/games/${game.id}`, { method: "PATCH", body: payload })
+          : api("/admin/games", { method: "POST", body: payload }),
+      game ? "Game saved" : "Game added",
+    );
+    if (done) {
+      closeDrawer();
+      refresh();
+    }
+  });
+
+  $("#game-delete", body)?.addEventListener("click", async (e) => {
+    if (!await confirmDialog({ title: `Delete "${game.name}"?`, message: "Profiles and servers that list it stop showing it.", confirm: "Delete game" }))
+      return;
+    const done = await act(
+      e.currentTarget,
+      () => api(`/admin/games/${game.id}`, { method: "DELETE" }),
+      "Game deleted",
+    );
+    if (done !== undefined) {
+      closeDrawer();
+      refresh();
+    }
+  });
+}
+
+/* ---------- store ---------- */
+
+const STORE_TYPES = [
+  [0, "Avatar decoration", "Drawn around the avatar."],
+  [2, "Nameplate", "Shown behind the name in member lists and DMs."],
+  [1, "Profile effect", "Plays over the profile card."],
+  [3, "Profile frame", "Wraps the profile card."],
+];
+const storeTypeName = (type) => STORE_TYPES.find(([t]) => t === type)?.[1] ?? "Item";
+const IMAGE_TYPES = "image/png,image/apng,image/gif,image/webp,image/jpeg,image/avif";
+// art goes up as JSON, and the API takes bodies up to 10 MB
+const MAX_ART_BYTES = 7 * 1024 * 1024;
+
+const storeState = { data: null };
+
+async function renderStore(view) {
+  const data = (storeState.data = await api("/admin/store"));
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Store</h1>
+                    <p class="muted">
+                        Packs of avatar decorations, nameplates, profile effects and profile frames people can pick up for free in the shop. Your packs come first, then the ones
+                        mirrored from Discord. Edit pack details and artwork, or hide packs from the shop. Your edits affect this instance’s shop.
+                    </p>
+                </div>
+                <button class="btn primary" id="new-pack" type="button">Add pack</button>
+            </div>
+            <div class="stack">
+                <h2>Your packs</h2>
+                ${
+                  data.packs.length
+                    ? html`<div class="table-wrap">
+                              <table>
+                                  <thead>
+                                      <tr>
+                                          <th>Pack</th>
+                                          <th class="hide-sm">Items</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      ${data.packs.map(
+                                        (p) =>
+                                          html`<tr data-pack="${p.id}">
+                                                  <td>
+                                                      <div class="ident">
+                                                          ${
+                                                            p.logo || p.banner
+                                                              ? html`<img class="avatar square" src="${p.logo || p.banner}" alt="" loading="lazy" style="object-fit:cover" />`
+                                                              : html`<span class="avatar square">${initials(p.name)}</span>`
+                                                          }
+                                                          <div>
+                                                              <button class="btn small" type="button" aria-label="Edit ${p.name}">${p.name}</button
+                                                              ><span class="muted">${p.summary || "No summary"}</span>
+                                                          </div>
+                                                      </div>
+                                                  </td>
+                                                  <td class="hide-sm">
+                                                      <span class="badges"
+                                                          >${STORE_TYPES.map(([type, name]) => {
+                                                            const count = p.items.filter(
+                                                              (i) => i.type === type,
+                                                            ).length;
+                                                            return count
+                                                              ? html`<span class="badge">${count} ${name.toLowerCase()}${count === 1 ? "" : "s"}</span>`
+                                                              : "";
+                                                          })}${
+                                                            p.items.length
+                                                              ? ""
+                                                              : html`
+                                                                  <span class="muted">Empty</span>
+                                                                `
+                                                          }</span
+                                                      >
+                                                  </td>
+                                              </tr>`,
+                                      )}
+                                  </tbody>
+                              </table>
+                          </div>`
+                    : emptyCard("No packs yet. Add one, then fill it with decorations, nameplates, effects and frames.", "Add pack")
+                }
+                <h2>Packs from Discord</h2>
+                <p class="muted" style="margin:0">Turn a pack off to take it out of the shop. People who already have its items keep them.</p>
+                <div class="card stack" style="gap:0;padding:0">
+                    ${data.builtin.map(
+                      (b) =>
+                        html`<div class="list-item" style="padding:10px 16px">
+                                <label class="toggle grow"
+                                    ><input type="checkbox" data-builtin="${b.sku_id}" ${b.hidden ? "" : raw("checked")} /><span
+                                        ><strong>${b.name}</strong
+                                        ><span class="hint">${b.items} ${b.items === 1 ? "item" : "items"}${b.customized ? " · Customized" : ""}</span></span
+                                    ></label
+                                >
+                                <button class="btn small" type="button" data-edit-builtin="${b.sku_id}" aria-label="Edit ${b.name}">Edit pack</button>
+                            </div>`,
+                    )}
+                </div>
+            </div>
+        `,
+  );
+  const refresh = () => renderStore(view);
+  $("#new-pack").addEventListener("click", () => openPack(null, refresh));
+  $("[data-empty-action]", view)?.addEventListener("click", () => openPack(null, refresh));
+  for (const row of $$("tr[data-pack]", view))
+    onRowOpen(row, () => openPack(row.dataset.pack, refresh));
+  for (const button of $$("[data-edit-builtin]", view))
+    button.addEventListener("click", () => openBuiltinPack(button.dataset.editBuiltin, refresh));
+  for (const box of $$("[data-builtin]", view))
+    box.addEventListener("change", async () => {
+      const done = await act(
+        null,
+        () =>
+          api(`/admin/store/builtin/${box.dataset.builtin}`, {
+            method: "PATCH",
+            body: { hidden: !box.checked },
+          }),
+        box.checked ? "Back in the shop" : "Taken out of the shop",
+      );
+      if (!done) box.checked = !box.checked;
+    });
+}
+
+// reads a picked file as a data: URI, refusing ones too big to send
+async function pickArt(input) {
+  const file = input.files[0];
+  if (!file) return undefined;
+  if (file.size > MAX_ART_BYTES) {
+    input.value = "";
+    toast("Files have to be under 7 MB.", "error");
+    return undefined;
+  }
+  return readAsDataUrl(file);
+}
+
+function artField(name, label, hint, current, { accept = IMAGE_TYPES, removable = true } = {}) {
+  const isVideo = current && /\/video\?/.test(current);
+  return html`<div class="stack" style="gap:6px">
+        <label>${label}${hint ? html`<span class="hint">${hint}</span>` : ""}<input type="file" data-art="${name}" accept="${accept}" /></label>
+        <div class="row" style="gap:8px" data-art-preview="${name}">
+            ${
+              current
+                ? html`${
+                    isVideo
+                      ? html`<video src="${current}" autoplay loop muted playsinline style="max-height:64px;max-width:220px;border-radius:6px"></video>`
+                      : html`<img src="${current}" alt="" style="max-height:64px;max-width:220px;border-radius:6px" />`
+                  }
+                      ${removable ? html`<button class="btn small" type="button" data-art-remove="${name}">Remove</button>` : ""}`
+                : html`
+                    <span class="muted">Nothing uploaded</span>
+                  `
+            }
+        </div>
+    </div>`;
+}
+
+function openBuiltinPack(skuId, refresh) {
+  const pack = storeState.data.builtin.find((item) => item.sku_id === skuId);
+  if (!pack) return;
+  const art = {};
+  const body = openDrawer(
+    `Edit ${pack.name}`,
+    html`<form class="stack" id="builtin-pack-form">
+            <p class="muted">
+                Customize this pack for your instance. Restore defaults to use its original details and artwork again. Existing owners keep their items when you hide the pack.
+            </p>
+            <label>Name<input name="name" value="${pack.name}" required maxlength="100" /></label>
+            <label>Summary<textarea name="summary" maxlength="500" rows="2">${pack.summary ?? ""}</textarea></label>
+            <label
+                >Order<input name="position" type="number" step="1" min="-2147483648" max="2147483647" value="${pack.position ?? 0}" /><span class="hint"
+                    >Lower numbers appear first among packs from Discord.</span
+                ></label
+            >
+            <label class="toggle"><input name="visible" type="checkbox" ${pack.hidden ? "" : raw("checked")} /><span>Show in the shop</span></label>
+            ${artField("banner", "Banner", "Upload artwork to replace the original banner on this instance.", pack.banner)}
+            ${artField("logo", "Logo", "Upload artwork to replace the original logo on this instance.", pack.logo)}
+            <div class="form-actions">
+                <button class="btn" data-reset-builtin type="button">Restore defaults</button><button class="btn primary" type="submit">Save pack</button>
+            </div>
+        </form>`,
+  );
+  if (!body) return;
+  const form = $("form", body);
+  for (const input of $$("[data-art]", form))
+    input.addEventListener("change", async () => (art[input.dataset.art] = await pickArt(input)));
+  for (const button of $$("[data-art-remove]", form)) {
+    button.textContent = "Restore original";
+    button.addEventListener("click", () => {
+      art[button.dataset.artRemove] = null;
+      form.dataset.dirty = "true";
+      mount(
+        button.parentElement,
+        html`
+          <span class="muted">Original artwork restored when you save</span>
+        `,
+      );
+    });
+  }
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const fields = form.elements;
+    const payload = {
+      name: fields.namedItem("name").value,
+      summary: fields.namedItem("summary").value,
+      position: Number(fields.namedItem("position").value),
+      hidden: !fields.namedItem("visible").checked,
+    };
+    for (const slot of ["banner", "logo"])
+      if (art[slot] !== undefined) payload[`${slot}_data`] = art[slot];
+    const saved = await act(
+      $("button[type=submit]", form),
+      () => api(`/admin/store/builtin/${skuId}`, { method: "PATCH", body: payload }),
+      "Pack saved",
+    );
+    if (saved) {
+      await refresh();
+      if (!body.isConnected || $("#drawer").hidden) return;
+      openBuiltinPack(skuId, refresh);
+    }
+  });
+  $("[data-reset-builtin]", form).addEventListener("click", async (event) => {
+    if (!await confirmDialog({ title: `Restore "${pack.name}"?`, message: "Its original details and artwork come back, and your local changes to them are removed.", confirm: "Restore original" })) return;
+    const saved = await act(
+      event.currentTarget,
+      () => api(`/admin/store/builtin/${skuId}`, { method: "PATCH", body: { reset: true } }),
+      "Pack defaults restored",
+    );
+    if (saved) {
+      await refresh();
+      if (!body.isConnected || $("#drawer").hidden) return;
+      openBuiltinPack(skuId, refresh);
+    }
+  });
+}
+
+async function openPack(packId, refresh) {
+  const pack = packId ? storeState.data.packs.find((p) => p.id === packId) : null;
+  const art = {};
+  const body = openDrawer(
+    pack ? pack.name : "Add pack",
+    html`
+            <form id="pack-form" class="stack">
+                <label>Name<input name="name" required maxlength="100" value="${pack?.name ?? ""}" placeholder="Spooky Season" /></label>
+                <label
+                    >Summary<span class="hint">Optional. Shown under the name in the shop.</span><textarea name="summary" maxlength="500" rows="2">${pack?.summary ?? ""}</textarea>
+                </label>
+                <label
+                    >Order<span class="hint">Lower numbers come first in the shop. The first pack is the big one at the top.</span
+                    ><input name="position" type="number" step="1" min="-2147483648" max="2147483647" value="${pack?.position ?? 0}"
+                /></label>
+                ${artField("banner", "Banner", "A wide image across the top of the pack, around 1280×300.", pack?.banner)}
+                ${artField("logo", "Logo", "Optional. Shown on the banner.", pack?.logo)}
+                <div class="form-actions">
+                    ${
+                      pack
+                        ? html`
+                            <button class="btn danger" id="pack-delete" type="button" style="margin-right: auto">
+                              Delete pack
+                            </button>
+                          `
+                        : ""
+                    }
+                    <button class="btn primary" type="submit">${pack ? "Save pack" : "Add pack"}</button>
+                </div>
+            </form>
+            ${
+              pack
+                ? html`<div class="stack" style="margin-top:20px">
+                          <div class="row" style="justify-content:space-between">
+                              <h3 style="margin:0">Items</h3>
+                              <button class="btn small primary" id="item-new" type="button">Add item</button>
+                          </div>
+                          ${
+                            pack.items.length
+                              ? html`<div class="card stack" style="gap:0;padding:0">
+                                        ${pack.items.map(
+                                          (item) =>
+                                            html`<div class="list-item" style="padding:10px 16px;cursor:pointer" data-item="${item.id}">
+                                                    <div class="ident grow">
+                                                        ${itemThumb(item)}
+                                                        <div><strong>${item.name}</strong><span class="muted">${storeTypeName(item.type)}</span></div>
+                                                    </div>
+                                                </div>`,
+                                        )}
+                                    </div>`
+                              : html`
+                                  <p class="muted" style="margin: 0">No items yet.</p>
+                                `
+                          }
+                      </div>`
+                : ""
+            }
+        `,
+  );
+  if (!body) return;
+  const form = $("#pack-form", body);
+  for (const input of $$("[data-art]", form))
+    input.addEventListener("change", async () => (art[input.dataset.art] = await pickArt(input)));
+  for (const btn of $$("[data-art-remove]", form))
+    btn.addEventListener("click", () => {
+      art[btn.dataset.artRemove] = null;
+      form.dataset.dirty = "true";
+      mount(
+        btn.parentElement,
+        html`
+          <span class="muted">Removed when you save</span>
+        `,
+      );
+    });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      name: form.name.value,
+      summary: form.summary.value,
+      position: Number(form.position.value) || 0,
+    };
+    for (const slot of ["banner", "logo"])
+      if (art[slot] !== undefined && (pack || art[slot])) payload[`${slot}_data`] = art[slot];
+    const saved = await act(
+      $("button[type=submit]", form),
+      () =>
+        pack
+          ? api(`/admin/store/packs/${pack.id}`, { method: "PATCH", body: payload })
+          : api("/admin/store/packs", { method: "POST", body: payload }),
+      pack ? "Pack saved" : "Pack added",
+    );
+    if (saved) {
+      await refresh();
+      if (!body.isConnected || $("#drawer").hidden) return;
+      openPack(saved.id, refresh);
+    }
+  });
+  $("#pack-delete", body)?.addEventListener("click", async (e) => {
+    if (
+      !await confirmDialog({ title: `Delete "${pack.name}"?`, message: `Its ${plural(pack.items.length, "item")} ${pack.items.length === 1 ? "is" : "are"} deleted too, and people who have them stop seeing them.`, confirm: "Delete pack" })
+    )
+      return;
+    const done = await act(
+      e.currentTarget,
+      () => api(`/admin/store/packs/${pack.id}`, { method: "DELETE" }),
+      "Pack deleted",
+    );
+    if (done !== undefined) {
+      closeDrawer();
+      refresh();
+    }
+  });
+  $("#item-new", body)?.addEventListener("click", () => openStoreItem(pack, null, refresh));
+  for (const row of $$("[data-item]", body))
+    onRowOpen(row, () =>
+      openStoreItem(
+        pack,
+        pack.items.find((i) => i.id === row.dataset.item),
+        refresh,
+      ),
+    );
+}
+
+const itemThumb = (item) => {
+  const src =
+    item.art.image ??
+    item.art.static ??
+    item.art.thumbnail ??
+    item.art.effect ??
+    item.art.front_top ??
+    item.art.front_bottom ??
+    item.art.back_top;
+  return src
+    ? html`<img class="avatar square" src="${src}" alt="" loading="lazy" style="object-fit:contain;background:var(--bg-2, #111)" />`
+    : html`
+        <span class="avatar square">?</span>
+      `;
+};
+
+function storeItemFields(type, item) {
+  const { palettes, sizes } = storeState.data;
+  const a = item?.art ?? {};
+  switch (type) {
+    case 0:
+      return artField(
+        "image",
+        "Decoration",
+        "A square PNG, APNG, GIF or WebP, 288×288. It's drawn over the avatar, so leave the middle transparent.",
+        a.image,
+        {
+          removable: false,
+        },
+      );
+    case 2:
+      return html`<label
+                    >Color<span class="hint">The background behind the name.</span
+                    ><select name="palette">
+                        ${options(
+                          palettes.map((p) => [p, p.replace("_", " ")]),
+                          item?.palette ?? "violet",
+                        )}
+                    </select></label
+                >
+                ${artField("static", "Still image", "A wide PNG, 448×84. Shown when it isn't animating.", a.static, { accept: "image/png,image/webp,image/jpeg,image/avif", removable: false })}
+                ${artField("motion", "Animation", "Optional. A WebM video, or an animated PNG or GIF, the same size.", a.motion, { accept: `video/webm,video/mp4,${IMAGE_TYPES}` })}`;
+    case 1:
+      return html`${artField("effect", "Effect", `An animated PNG, GIF or WebP, ${sizes.effect.width}×${sizes.effect.height}, drawn over the whole profile card.`, a.effect, { removable: false })}
+                ${artField("thumbnail", "Thumbnail", "Optional. The preview in the shop and the effect picker. The effect itself is used otherwise.", a.thumbnail)}
+                ${artField("reduced", "Reduced motion", "Optional. A still image shown to people who turned animations off.", a.reduced)}
+                <div class="form-grid">
+                    <label
+                        >Length<span class="hint">One play of the animation, in milliseconds.</span
+                        ><input name="duration" type="number" min="100" max="60000" step="1" value="${item?.duration ?? 3000}"
+                    /></label>
+                    <label class="toggle"><input type="checkbox" name="loop" ${item?.loop === false ? "" : raw("checked")} /><span>Play on repeat</span></label>
+                </div>`;
+    case 3:
+      return html`<p class="muted" style="margin:0">
+                    Layers are ${sizes.frame.width}px wide: the ${sizes.frame.inner_width}px profile card plus the art past its sides. Top layers sit at the top of the card and
+                    bottom layers at the bottom; front layers go over the card and back layers behind it. At least one layer is needed.
+                </p>
+                <div class="form-grid">
+                    <label
+                        >Reaches above the card<span class="hint">How many pixels of the top layers stick out above the card.</span
+                        ><input name="overflow_top" type="number" min="0" max="2000" step="1" value="${item?.overflow_top ?? 280}"
+                    /></label>
+                    <label
+                        >Reaches below the card<span class="hint">How many pixels of the bottom layers stick out below it.</span
+                        ><input name="overflow_bottom" type="number" min="0" max="2000" step="1" value="${item?.overflow_bottom ?? 190}"
+                    /></label>
+                </div>
+                ${artField("front_top", "Front, top", "", a.front_top)} ${artField("front_bottom", "Front, bottom", "", a.front_bottom)}
+                ${artField("back_top", "Back, top", "", a.back_top)} ${artField("back_bottom", "Back, bottom", "", a.back_bottom)}`;
+    default:
+      return "";
+  }
+}
+
+function openStoreItem(pack, item, refresh) {
+  let type = item?.type ?? 0;
+  const art = {};
+  const body = openDrawer(
+    item ? `Edit ${storeTypeName(item.type).toLowerCase()}` : `Add to ${pack.name}`,
+    html`
+            <form id="store-item-form" class="stack">
+                ${
+                  item
+                    ? html`<label
+                              >Pack<select name="pack_id">
+                                  ${options(
+                                    storeState.data.packs.map((entry) => [entry.id, entry.name]),
+                                    item.pack_id,
+                                  )}</select
+                              ><span class="hint">Moving keeps the item and its artwork.</span></label
+                          >`
+                    : ""
+                }
+                ${
+                  item
+                    ? ""
+                    : html`<label
+                              >Type<select name="type">
+                                  ${options(
+                                    STORE_TYPES.map(([t, name]) => [String(t), name]),
+                                    "0",
+                                  )}</select
+                              ><span class="hint" id="store-type-hint">${STORE_TYPES[0][2]}</span></label
+                          >`
+                }
+                <label>Name<input name="name" required maxlength="100" value="${item?.name ?? ""}" placeholder="Pumpkin Crown" /></label>
+                <label
+                    >Summary<span class="hint">Optional. Shown in the shop; each type has a default.</span><input name="summary" maxlength="500" value="${item?.summary ?? ""}"
+                /></label>
+                <label
+                    >Description for screen readers<span class="hint">What it looks like, for people who can't see it.</span
+                    ><input name="label" maxlength="500" value="${item?.label ?? ""}"
+                /></label>
+                <label
+                    >Order in this pack<input name="position" type="number" step="1" min="-2147483648" max="2147483647" value="${item?.position ?? 0}" /><span class="hint"
+                        >Lower numbers appear first.</span
+                    ></label
+                >
+                <div class="stack" id="store-type-fields"></div>
+                <div class="form-actions">
+                    <button class="btn" id="store-item-back" type="button" style="margin-right:auto">Back to ${pack.name}</button>
+                    ${
+                      item
+                        ? html`
+                            <button class="btn danger" id="store-item-delete" type="button">Delete</button>
+                          `
+                        : ""
+                    }
+                    <button class="btn primary" type="submit">${item ? "Save" : "Add item"}</button>
+                </div>
+            </form>
+        `,
+  );
+  if (!body) return;
+  const form = $("#store-item-form", body);
+  const renderFields = () => {
+    for (const key of Object.keys(art)) delete art[key];
+    mount($("#store-type-fields", body), storeItemFields(type, item));
+    for (const input of $$("[data-art]", form))
+      input.addEventListener("change", async () => (art[input.dataset.art] = await pickArt(input)));
+    for (const btn of $$("[data-art-remove]", form))
+      btn.addEventListener("click", () => {
+        art[btn.dataset.artRemove] = null;
+        form.dataset.dirty = "true";
+        mount(
+          btn.parentElement,
+          html`
+            <span class="muted">Removed when you save</span>
+          `,
+        );
+      });
+  };
+  renderFields();
+  form.type?.addEventListener("change", () => {
+    type = Number(form.type.value);
+    $("#store-type-hint").textContent = STORE_TYPES.find(([t]) => t === type)?.[2] ?? "";
+    renderFields();
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      name: form.name.value,
+      summary: form.summary.value,
+      label: form.label.value,
+      position: Number(form.position.value),
+    };
+    if (item) payload.pack_id = form.pack_id.value;
+    if (!item) payload.type = type;
+    if (type === 2) payload.palette = form.palette.value;
+    if (type === 1)
+      Object.assign(payload, {
+        duration: Number(form.duration.value) || 3000,
+        loop: form.loop.checked,
+      });
+    if (type === 3)
+      Object.assign(payload, {
+        overflow_top: Number(form.overflow_top.value) || 0,
+        overflow_bottom: Number(form.overflow_bottom.value) || 0,
+      });
+    const changed = Object.fromEntries(
+      Object.entries(art).filter(([, v]) => v !== undefined && (item || v)),
+    );
+    if (Object.keys(changed).length) payload.art = changed;
+    const saved = await act(
+      $("button[type=submit]", form),
+      () =>
+        item
+          ? api(`/admin/store/items/${item.id}`, { method: "PATCH", body: payload })
+          : api(`/admin/store/packs/${pack.id}/items`, { method: "POST", body: payload }),
+      item ? "Item saved" : "Item added",
+    );
+    if (saved) {
+      await refresh();
+      if (!body.isConnected || $("#drawer").hidden) return;
+      openPack(saved.pack_id ?? pack.id, refresh);
+    }
+  });
+  $("#store-item-back", body).addEventListener("click", () => openPack(pack.id, refresh));
+  $("#store-item-delete", body)?.addEventListener("click", async (e) => {
+    if (!await confirmDialog({ title: `Delete "${item.name}"?`, message: "People who have it stop seeing it.", confirm: "Delete item" })) return;
+    const done = await act(
+      e.currentTarget,
+      () => api(`/admin/store/items/${item.id}`, { method: "DELETE" }),
+      "Item deleted",
+    );
+    if (done !== undefined) {
+      await refresh();
+      if (!body.isConnected || $("#drawer").hidden) return;
+      openPack(pack.id, refresh);
+    }
+  });
+}
+
+/* ---------- sticker packs ---------- */
+
+const STICKER_FORMATS = { 1: "PNG", 2: "APNG", 3: "Lottie", 4: "GIF" };
+const STICKER_FILE_TYPES = "image/png,image/apng,image/gif,image/webp,application/json,.json";
+
+const stickersState = { data: null };
+
+const stickerThumb = (sticker, cls = "", fallback = "Lottie") =>
+  !sticker
+    ? html`<span class="sticker-thumb ${cls}">${fallback === "Lottie" ? "?" : fallback}</span>`
+    : sticker.format_type === 3
+      ? html`<span class="sticker-thumb ${cls}" title="Lottie animations have no preview here">${fallback}</span>`
+      : html`<img class="sticker-thumb ${cls}" src="${sticker.url}" alt="" loading="lazy" />`;
+
+const watchStickerThumbs = (root) => {
+  for (const img of $$("img.sticker-thumb", root))
+    img.addEventListener("error", () => {
+      const missing = document.createElement("span");
+      missing.className = img.className;
+      missing.title = "This sticker's artwork isn't stored on this instance";
+      missing.textContent = "?";
+      img.replaceWith(missing);
+    });
+};
+
+const stickerPackCover = (pack) =>
+  pack.stickers.find((sticker) => sticker.id === pack.cover_sticker_id) ?? pack.stickers[0];
+
+const stickerNameFromFile = (filename) => {
+  const name = filename
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .slice(0, 30)
+    .trim();
+  return name.length >= 2 ? name : "Sticker";
+};
+
+const stickerFileLimit = () => `${stickersState.data.limits.file_bytes / 1048576} MB`;
+
+async function pickStickerArt(file) {
+  if (file.size > stickersState.data.limits.file_bytes) {
+    toast(`${file.name} is over ${stickerFileLimit()}.`, "error");
+    return undefined;
+  }
+  return readAsDataUrl(file);
+}
+
+async function renderStickerPacks(view) {
+  const data = (stickersState.data = await api("/admin/sticker-packs"));
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Sticker packs</h1>
+                    <p class="muted">
+                        The packs everyone gets in the sticker picker, below the stickers of their servers. Add your own packs, or rename, reorder and trim the ones already here.
+                        Hiding a pack takes it out of the picker and leaves messages that used its stickers alone; deleting it removes the stickers from those messages too. An
+                        open client picks up new and edited packs within an hour, and drops hidden or deleted ones when it reloads.
+                    </p>
+                </div>
+                <button class="btn primary" id="new-sticker-pack" type="button">Add pack</button>
+            </div>
+            <div class="stack">
+                ${
+                  data.packs.length
+                    ? html`<div class="row" id="sticker-pack-bulk" style="gap:8px" hidden>
+                              <span class="muted" id="sticker-pack-count"></span>
+                              <button class="btn small" type="button" data-bulk="show">Show in the picker</button>
+                              <button class="btn small" type="button" data-bulk="hide">Hide from the picker</button>
+                              <button class="btn small danger" type="button" data-bulk="delete">Delete</button>
+                          </div>
+                          <div class="table-wrap">
+                              <table>
+                                  <thead>
+                                      <tr>
+                                          <th style="width:1%"><input type="checkbox" id="sticker-pack-all" aria-label="Select every pack" /></th>
+                                          <th>Pack</th>
+                                          <th>Stickers</th>
+                                          <th class="hide-sm">Order</th>
+                                          <th>Picker</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      ${data.packs.map(
+                                        (pack) =>
+                                          html`<tr data-sticker-pack="${pack.id}">
+                                                  <td data-select><input type="checkbox" data-select-pack="${pack.id}" aria-label="Select ${pack.name}" /></td>
+                                                  <td>
+                                                      <div class="ident">
+                                                          ${stickerThumb(stickerPackCover(pack), "small", initials(pack.name))}
+                                                          <div>
+                                                              <button class="btn small" type="button" style="align-self:flex-start" aria-label="Edit ${pack.name}">
+                                                                  ${pack.name}</button
+                                                              ><span class="muted">${pack.description || "No description"}</span>
+                                                          </div>
+                                                      </div>
+                                                  </td>
+                                                  <td>${fmtNumber(pack.stickers.length)}</td>
+                                                  <td class="hide-sm">${pack.position}</td>
+                                                  <td>
+                                                      ${
+                                                        pack.hidden
+                                                          ? html`<span class="badge">Hidden</span>`
+                                                          : pack.stickers.length
+                                                            ? html`<span class="badge ok">Shown</span>`
+                                                            : html`<span class="badge warn">Empty</span>`
+                                                      }
+                                                  </td>
+                                              </tr>`,
+                                      )}
+                                  </tbody>
+                              </table>
+                          </div>`
+                    : emptyCard("No sticker packs yet. Add one, then upload stickers into it.", "Add pack")
+                }
+            </div>
+        `,
+  );
+  watchStickerThumbs(view);
+  const refresh = () => renderStickerPacks(view);
+  $("#new-sticker-pack").addEventListener("click", () => openStickerPack(null, refresh));
+  $("[data-empty-action]", view)?.addEventListener("click", () => openStickerPack(null, refresh));
+  for (const row of $$("tr[data-sticker-pack]", view))
+    onRowOpen(row, (event) => {
+      if (!event.target.closest("[data-select]")) openStickerPack(row.dataset.stickerPack, refresh);
+    });
+
+  const all = $("#sticker-pack-all", view);
+  const boxes = $$("[data-select-pack]", view);
+  const selected = () => boxes.filter((box) => box.checked).map((box) => box.dataset.selectPack);
+  const syncBulk = () => {
+    const count = selected().length;
+    $("#sticker-pack-bulk", view).hidden = !count;
+    $("#sticker-pack-count", view).textContent = `${count} selected`;
+    all.checked = count === boxes.length;
+    all.indeterminate = count > 0 && count < boxes.length;
+  };
+  all?.addEventListener("change", () => {
+    for (const box of boxes) box.checked = all.checked;
+    syncBulk();
+  });
+  for (const box of boxes) box.addEventListener("change", syncBulk);
+  for (const button of $$("[data-bulk]", view))
+    button.addEventListener("click", async () => {
+      const ids = selected();
+      const action = button.dataset.bulk;
+      const packs = `${ids.length} ${ids.length === 1 ? "pack" : "packs"}`;
+      if (action === "delete") {
+        const reimport =
+          data.import_enabled && ids.length === data.packs.length
+            ? " No pack would be left, so Discord’s packs are imported again while “Import standard sticker packs from Discord” is on in Site settings."
+            : "";
+        if (!await confirmDialog({ title: `Delete ${packs}?`, message: `Their stickers are deleted too, and messages that used them lose the sticker.${reimport}`, confirm: `Delete ${packs}` })) return;
+      }
+      let done = 0;
+      for (const id of ids) {
+        const result = await act(button, () =>
+          action === "delete"
+            ? api(`/admin/sticker-packs/${id}`, { method: "DELETE" })
+            : api(`/admin/sticker-packs/${id}`, { method: "PATCH", body: { hidden: action === "hide" } }),
+        );
+        if (result !== undefined) done++;
+      }
+      if (done) toast(`${done} ${done === 1 ? "pack" : "packs"} ${action === "delete" ? "deleted" : action === "hide" ? "hidden" : "shown"}`);
+      refresh();
+    });
+}
+
+function openStickerPack(packId, refresh) {
+  const { packs, limits } = stickersState.data;
+  const pack = packId ? packs.find((entry) => entry.id === packId) : null;
+  if (packId && !pack) return;
+  const room = pack ? limits.stickers_per_pack - pack.stickers.length : 0;
+  const body = openDrawer(
+    pack ? pack.name : "Add sticker pack",
+    html`
+            <form id="sticker-pack-form" class="stack">
+                <label>Name<input name="name" required maxlength="100" value="${pack?.name ?? ""}" placeholder="Instance mascots" /></label>
+                <label>Description<span class="hint">Optional.</span><textarea name="description" maxlength="500" rows="2">${pack?.description ?? ""}</textarea></label>
+                <label
+                    >Order<span class="hint">Packs with a lower number come first in the picker. Packs with the same number go oldest first.</span
+                    ><input name="position" type="number" step="1" min="-2147483648" max="2147483647" value="${pack?.position ?? 0}"
+                /></label>
+                <label class="toggle"
+                    ><input name="visible" type="checkbox" ${pack?.hidden ? "" : raw("checked")} /><span
+                        >Show in the picker<span class="hint">Turn this off to hide the pack. Stickers already sent from it stay in their messages.</span></span
+                    ></label
+                >
+                ${
+                  pack?.stickers.length
+                    ? html`<label
+                              >Cover<span class="hint">The sticker shown as the pack’s icon in the picker.</span
+                              ><select name="cover_sticker_id">
+                                  ${options(
+                                    [["", "First sticker"], ...pack.stickers.map((sticker) => [sticker.id, sticker.name])],
+                                    pack.cover_sticker_id ?? "",
+                                  )}
+                              </select></label
+                          >`
+                    : ""
+                }
+                <div class="form-actions">
+                    ${
+                      pack
+                        ? html`
+                            <button class="btn danger" id="sticker-pack-delete" type="button" style="margin-right: auto">
+                              Delete pack
+                            </button>
+                          `
+                        : ""
+                    }
+                    <button class="btn primary" type="submit">${pack ? "Save pack" : "Add pack"}</button>
+                </div>
+            </form>
+            ${
+              pack
+                ? html`<div class="stack" style="margin-top:20px">
+                          <div class="row" style="justify-content:space-between">
+                              <h3 style="margin:0">Stickers <span class="muted">${pack.stickers.length} of ${limits.stickers_per_pack}</span></h3>
+                              <button class="btn small primary" id="sticker-add" type="button" ${room > 0 ? "" : raw("disabled")}>Add stickers</button>
+                              <input id="sticker-files" type="file" accept="${STICKER_FILE_TYPES}" multiple hidden />
+                          </div>
+                          <p class="muted" style="margin:0">
+                              Pick one or more PNG, APNG, GIF, WebP or Lottie JSON files, up to ${stickerFileLimit()} each. Each file becomes a sticker named after it, and
+                              you can rename it afterwards. 320×320 is the size the picker is made for.
+                          </p>
+                          ${
+                            pack.stickers.length
+                              ? html`<div class="sticker-grid">
+                                        ${pack.stickers.map(
+                                          (sticker) =>
+                                            html`<button class="sticker-tile" type="button" data-sticker="${sticker.id}" title="${sticker.name}">
+                                                    ${stickerThumb(sticker)}<span>${sticker.name}</span>
+                                                </button>`,
+                                        )}
+                                    </div>`
+                              : html`
+                                  <p class="muted" style="margin: 0">No stickers yet. An empty pack stays out of the picker.</p>
+                                `
+                          }
+                      </div>`
+                : ""
+            }
+        `,
+  );
+  if (!body) return;
+  watchStickerThumbs(body);
+  const form = $("#sticker-pack-form", body);
+  const reopen = async (id) => {
+    await refresh();
+    if (!body.isConnected || $("#drawer").hidden) return;
+    openStickerPack(id, refresh);
+  };
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      name: form.name.value,
+      description: form.description.value,
+      position: Number(form.position.value) || 0,
+      hidden: !form.visible.checked,
+    };
+    if (form.cover_sticker_id) payload.cover_sticker_id = form.cover_sticker_id.value || null;
+    const saved = await act(
+      $("button[type=submit]", form),
+      () =>
+        pack
+          ? api(`/admin/sticker-packs/${pack.id}`, { method: "PATCH", body: payload })
+          : api("/admin/sticker-packs", { method: "POST", body: payload }),
+      pack ? "Pack saved" : "Pack added",
+    );
+    if (saved) await reopen(saved.id);
+  });
+  $("#sticker-pack-delete", body)?.addEventListener("click", async (e) => {
+    const count = pack.stickers.length;
+    const reimport =
+      stickersState.data.import_enabled && packs.length === 1
+        ? " This is the last pack, so Discord’s packs are imported again while “Import standard sticker packs from Discord” is on in Site settings."
+        : "";
+    if (
+      !await confirmDialog({ title: `Delete "${pack.name}"?`, message: `Its ${plural(count, "sticker")} ${count === 1 ? "is" : "are"} deleted too, and messages that used them lose the sticker.${reimport}`, confirm: "Delete pack" })
+    )
+      return;
+    const done = await act(
+      e.currentTarget,
+      () => api(`/admin/sticker-packs/${pack.id}`, { method: "DELETE" }),
+      "Pack deleted",
+    );
+    if (done !== undefined) {
+      closeDrawer({ discard: true });
+      refresh();
+    }
+  });
+
+  const files = $("#sticker-files", body);
+  const add = $("#sticker-add", body);
+  add?.addEventListener("click", () => files.click());
+  files?.addEventListener("change", async () => {
+    const picked = [...files.files];
+    files.value = "";
+    if (!picked.length) return;
+    if (picked.length > room)
+      toast(`This pack has room for ${room} more ${room === 1 ? "sticker" : "stickers"}, the rest were left out.`, "error");
+    const label = add.textContent;
+    let added = 0;
+    for (const [index, file] of picked.slice(0, room).entries()) {
+      add.textContent = `Adding ${index + 1} of ${Math.min(picked.length, room)}…`;
+      const file_data = await pickStickerArt(file);
+      if (!file_data) continue;
+      const sticker = await act(add, () =>
+        api(`/admin/sticker-packs/${pack.id}/stickers`, {
+          method: "POST",
+          body: { name: stickerNameFromFile(file.name), file_data },
+        }),
+      );
+      if (sticker) added++;
+    }
+    add.textContent = label;
+    if (!added) return;
+    toast(`${added} ${added === 1 ? "sticker" : "stickers"} added`);
+    await reopen(pack.id);
+  });
+  for (const tile of $$("[data-sticker]", body))
+    tile.addEventListener("click", () =>
+      openSticker(
+        pack,
+        pack.stickers.find((sticker) => sticker.id === tile.dataset.sticker),
+        refresh,
+      ),
+    );
+}
+
+function openSticker(pack, sticker, refresh) {
+  const { packs } = stickersState.data;
+  const body = openDrawer(
+    `Edit ${sticker.name}`,
+    html`
+            <form id="sticker-form" class="stack">
+                <div class="row" style="gap:16px">
+                    ${stickerThumb(sticker, "large")}
+                    <div class="stack" style="gap:4px">
+                        <span class="badges"
+                            ><span class="badge">${STICKER_FORMATS[sticker.format_type] ?? "Sticker"}</span
+                            ><span class="badge">${sticker.uploaded ? "Uploaded here" : "From Discord"}</span></span
+                        >
+                        <span class="muted">ID ${sticker.id}</span>
+                    </div>
+                </div>
+                <label>Name<input name="name" required minlength="2" maxlength="30" value="${sticker.name}" /></label>
+                <label
+                    >Description<span class="hint">Optional. What it shows, for people who can’t see it.</span
+                    ><input name="description" maxlength="100" value="${sticker.description}"
+                /></label>
+                <label
+                    >Search words<span class="hint">Optional. Comma-separated words people find the sticker by, next to its name.</span
+                    ><input name="tags" maxlength="200" value="${sticker.tags}" placeholder="wave, hello, hi"
+                /></label>
+                <div class="form-grid">
+                    <label
+                        >Pack<select name="pack_id">
+                            ${options(
+                              packs.map((entry) => [entry.id, entry.name]),
+                              sticker.pack_id,
+                            )}</select
+                        ><span class="hint">Moving keeps the sticker and its artwork.</span></label
+                    >
+                    <label
+                        >Order in this pack<input name="sort_value" type="number" step="1" min="-2147483648" max="2147483647" value="${sticker.sort_value}" /><span class="hint"
+                            >Lower numbers appear first.</span
+                        ></label
+                    >
+                </div>
+                <label
+                    >Replace artwork<span class="hint"
+                        >PNG, APNG, GIF, WebP or Lottie JSON, up to ${stickerFileLimit()}. Browsers that already loaded the old artwork keep showing it for up to 6 hours.</span
+                    ><input name="file" type="file" accept="${STICKER_FILE_TYPES}"
+                /></label>
+                <div class="form-actions">
+                    <button class="btn" id="sticker-back" type="button" style="margin-right:auto">Back to ${pack.name}</button>
+                    <button class="btn danger" id="sticker-delete" type="button">Delete</button>
+                    <button class="btn primary" type="submit">Save</button>
+                </div>
+            </form>
+        `,
+  );
+  if (!body) return;
+  watchStickerThumbs(body);
+  const form = $("#sticker-form", body);
+  const reopenPack = async (id) => {
+    await refresh();
+    if (!body.isConnected || $("#drawer").hidden) return;
+    openStickerPack(id, refresh);
+  };
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      name: form.name.value,
+      description: form.description.value,
+      tags: form.tags.value,
+      sort_value: Number(form.sort_value.value) || 0,
+    };
+    if (form.pack_id.value !== sticker.pack_id) {
+      payload.pack_id = form.pack_id.value;
+      if (payload.sort_value === sticker.sort_value) delete payload.sort_value;
+    }
+    const file = form.file.files[0];
+    if (file) {
+      payload.file_data = await pickStickerArt(file);
+      if (!payload.file_data) return;
+    }
+    const saved = await act(
+      $("button[type=submit]", form),
+      () => api(`/admin/sticker-packs/${pack.id}/stickers/${sticker.id}`, { method: "PATCH", body: payload }),
+      "Sticker saved",
+    );
+    if (saved) await reopenPack(saved.pack_id);
+  });
+  $("#sticker-back", body).addEventListener("click", () => openStickerPack(pack.id, refresh));
+  $("#sticker-delete", body).addEventListener("click", async (e) => {
+    if (!await confirmDialog({ title: `Delete "${sticker.name}"?`, message: "Messages that used it lose the sticker.", confirm: "Delete sticker" })) return;
+    const done = await act(
+      e.currentTarget,
+      () => api(`/admin/sticker-packs/${pack.id}/stickers/${sticker.id}`, { method: "DELETE" }),
+      "Sticker deleted",
+    );
+    if (done !== undefined) await reopenPack(pack.id);
+  });
+}
+
+/* ---------- guilds ---------- */
+
+const guildsState = { q: "", origin: "local", sort: "newest", offset: 0, limit: 50 };
+const GUILD_SORTS = [
+  ["newest", "Newest first"],
+  ["oldest", "Oldest first"],
+  ["name", "Name, A to Z"],
+  ["members", "Most members"],
+];
+
+async function renderGuilds(view) {
+  const remote = location.hash.split("/")[2] === "remote";
+  if (guildsState.origin !== (remote ? "remote" : "local")) {
+    guildsState.origin = remote ? "remote" : "local";
+    guildsState.offset = 0;
+  }
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Servers</h1>
+                    <p class="muted">${
+                      remote
+                        ? "Copies of servers hosted on other instances that people here joined. Their host instance owns their settings, channels and roles. Block a server or its instance on the Federation page."
+                        : "Every server hosted on this instance. Click one to edit, transfer or delete it."
+                    }</p>
+                </div>
+            </div>
+            <div class="row view-switch" role="navigation" aria-label="Servers views">
+                <a class="btn small ${remote ? "" : "primary"}" href="#/guilds" ${remote ? "" : raw('aria-current="page"')}>Servers</a>
+                <a class="btn small ${remote ? "primary" : ""}" href="#/guilds/remote" ${remote ? raw('aria-current="page"') : ""}>Other instances</a>
+            </div>
+            <div class="row" style="margin-bottom:12px">
+                <label class="grow list-search"
+                    >Find servers<input id="guild-search" type="search" placeholder="Search names or IDs" value="${guildsState.q}" aria-controls="guild-results"
+                /></label>
+                <label class="list-filter">Sort<select id="guild-sort" aria-controls="guild-results">${options(GUILD_SORTS, guildsState.sort)}</select></label>
+            </div>
+            <div class="list-status muted" id="guild-status" role="status" aria-live="polite" hidden></div>
+            <div id="guild-results"><div class="spinner">Loading…</div></div>
+        `,
+  );
+
+  const results = $("#guild-results", view);
+  const requests = latestList(view, results, $("#guild-status", view));
+  const load = async () => {
+    const params = new URLSearchParams({
+      q: guildsState.q,
+      origin: guildsState.origin,
+      sort: guildsState.sort,
+      limit: guildsState.limit,
+    });
+    const remember = pageQuery(guildsState, params);
+    await requests.load(
+      `/admin/guilds?${params}`,
+      ({ guilds, total, next }) => {
+        remember(next);
+        mount(
+          results,
+          guilds.length
+            ? html`
+                              <div class="table-wrap">
+                                  <table>
+                                      <thead>
+                                          <tr>
+                                              <th>Server</th>
+                                              <th>Owner</th>
+                                              <th>Members</th>
+                                              <th class="hide-sm">Created</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody>
+                                          ${guilds.map(
+                                            (g) => html`
+                                                  <tr data-id="${g.id}">
+                                                      <td>
+                                                          <div class="ident">
+                                                              ${guildIcon(g)}
+                                                              <div>
+                                                                  <strong class="row" style="gap:6px">${g.name}${g.tag ? tagChip(g.id, g.tag.tag, g.tag.badge_hash) : ""}</strong>
+                                                                  ${
+                                                                    g.federated_instance
+                                                                      ? html`<span class="muted">Hosted on ${g.federated_instance}</span>`
+                                                                      : g.features.length
+                                                                        ? html`<span class="muted">${g.features.slice(0, 3).join(", ")}${g.features.length > 3 ? "…" : ""}</span>`
+                                                                        : ""
+                                                                  }
+                                                              </div>
+                                                          </div>
+                                                      </td>
+                                                      <td>
+                                                          ${
+                                                            g.owner
+                                                              ? html`<div class="ident">${avatar(g.owner)}<span>${userName(g.owner)}</span></div>`
+                                                              : html`
+                                                                  <span class="muted">None</span>
+                                                                `
+                                                          }
+                                                      </td>
+                                                      <td class="num">${fmtNumber(g.member_count)}</td>
+                                                      <td class="hide-sm">${fmtDay(snowflakeDate(g.id))}</td>
+                                                  </tr>
+                                              `,
+                                          )}
+                                      </tbody>
+                                  </table>
+                              </div>
+                              ${pager(total, guildsState)}
+                          `
+            : guildsState.q
+              ? emptyCard("No servers match this search. Search by name or ID.", "Clear search")
+              : remote
+                ? emptyCard("No servers from other instances are stored here. They appear once people here join a server on another instance.", "Show local servers")
+                : emptyCard("No servers exist on this instance yet. People create them from the client.", "Open the client"),
+        );
+        $("[data-empty-action]", results)?.addEventListener("click", () => {
+          if (!guildsState.q) {
+            if (remote) location.hash = "#/guilds";
+            else location.href = "/app";
+            return;
+          }
+          guildsState.q = "";
+          guildsState.offset = 0;
+          $("#guild-search", view).value = "";
+          load();
+          $("#guild-search", view).focus();
+        });
+        for (const row of $$("tbody tr", results))
+          onRowOpen(row, () => openGuild(row.dataset.id, load));
+        bindPager(results, total, guildsState, load);
+      },
+      load,
+    );
+  };
+
+  const search = debounce(load);
+  $("#guild-search", view).addEventListener("input", (e) => {
+    requests.cancel();
+    guildsState.q = e.target.value.trim();
+    guildsState.offset = 0;
+    search();
+  });
+  $("#guild-sort", view).addEventListener("change", (e) => {
+    guildsState.sort = e.target.value;
+    guildsState.offset = 0;
+    load();
+  });
+  await load();
+}
+
+async function openGuild(id, reload, openSection = "") {
+  const body = openDrawer(
+    "Server",
+    html`
+      <div class="spinner">Loading…</div>
+    `,
+  );
+  if (!body) return;
+  let g;
+  try {
+    g = await api(`/admin/guilds/${id}`);
+  } catch (e) {
+    if (!body.isConnected || $("#drawer").hidden || e.status === 401 || e.status === 499) return;
+    return mount(body, html`<p class="form-error">${e.message}</p>`);
+  }
+  if (!body.isConnected || $("#drawer").hidden) return;
+  if (g.federated_instance) {
+    const host = g.federated_instance;
+    mount(
+      body,
+      html`
+        <div class="ident">
+          ${guildIcon(g, "large")}
+          <div>
+            <h2>${g.name}</h2>
+            <code class="muted">${g.id}</code>
+          </div>
+        </div>
+        <div class="card stack" id="guild-home">
+          <h3>Server on ${host}</h3>
+          <p class="muted" style="margin:0">
+            This server is hosted on ${host}, and this instance keeps a copy because people here joined it. ${host} owns its name, icon, settings, channels and roles,
+            so they can only change there and are read-only here. To keep people here out of it, block the server or ${host} on the
+            ${state.overview.access.operator ? html`<a href="#/federation">Federation page</a>` : "Federation page, which needs the operator right"}.
+          </p>
+          <div class="list">
+            <div class="list-item"><span class="grow muted">Host instance</span><span>${host}</span></div>
+            <div class="list-item"><span class="grow muted">Federated ID</span>${g.canonical ? html`<code>${g.canonical}</code>` : html`<span class="muted">Unknown</span>`}</div>
+            <div class="list-item">
+              <span class="grow muted">Owner</span>
+              ${g.owner ? html`<span class="ident">${avatar(g.owner)}<span>${userName(g.owner)}</span></span>` : "None"}
+              ${g.owner && state.overview.access.users ? html`<button class="btn small ghost" id="open-owner" type="button">Open</button>` : ""}
+            </div>
+            <div class="list-item"><span class="grow muted">Members known here</span><span>${fmtNumber(g.member_count)}</span></div>
+            <div class="list-item"><span class="grow muted">Channels</span><span>${fmtNumber(g.channel_count)}</span></div>
+            <div class="list-item"><span class="grow muted">Description</span><span>${g.description || "Not set"}</span></div>
+          </div>
+        </div>
+        <div class="card danger-zone stack">
+          <h3>Danger zone</h3>
+          <p class="muted" style="margin:0">
+            Deletes this instance's copy of the server with its channels and messages here. The server itself stays on ${host}.
+          </p>
+          <div><button class="btn danger" id="guild-delete" type="button">Delete this copy</button></div>
+        </div>
+      `,
+    );
+    $("#open-owner", body)?.addEventListener("click", () => openUser(g.owner.id));
+    $("#guild-delete", body).addEventListener("click", async (e) => {
+      if (!await confirmDialog({ title: `Delete this copy of ${g.name}?`, message: `The server stays on ${host}. Only this instance's copy and its messages here are removed.`, confirm: "Delete copy" })) return;
+      const done = await act(
+        e.currentTarget,
+        () => api(`/admin/guilds/${g.id}`, { method: "DELETE" }),
+        `This instance's copy of ${g.name} was deleted`,
+      );
+      if (done !== undefined) {
+        closeDrawer();
+        reload?.();
+      }
+    });
+    return;
+  }
+  const features = new Set(g.features);
+
+  const renderFeatures = () =>
+    mount(
+      $("#feature-chips"),
+      features.size
+        ? [...features].map(
+            (f) =>
+              html`<span class="chip">${f}<button type="button" data-remove="${f}" aria-label="Remove ${f}">✕</button></span>`,
+          )
+        : html`
+            <span class="muted">No features</span>
+          `,
+    );
+
+  mount(
+    body,
+    html`
+            <div class="ident">
+                ${guildIcon(g, "large")}
+                <div>
+                    <h2>${g.name}</h2>
+                    <code class="muted">${g.id}</code>
+                </div>
+            </div>
+            <div class="card">
+                <div class="list">
+                    <div class="list-item">
+                        <span class="grow muted">Owner</span>
+                        ${g.owner ? html`<span class="ident">${avatar(g.owner)}<span>${userName(g.owner)}</span></span>` : "None"}
+                        ${
+                          g.owner && state.overview.access.users
+                            ? html`
+                                <button class="btn small ghost" id="open-owner" type="button">Open</button>
+                              `
+                            : ""
+                        }
+                    </div>
+                    <div class="list-item"><span class="grow muted">Members</span><span>${fmtNumber(g.member_count)}</span></div>
+                    <div class="list-item"><span class="grow muted">Channels</span><span>${fmtNumber(g.channel_count)}</span></div>
+                    <div class="list-item"><span class="grow muted">Created</span><span>${fmtDate(snowflakeDate(g.id))}</span></div>
+                </div>
+            </div>
+
+            <form id="guild-form" class="card stack">
+                <h3>Details</h3>
+                <div class="form-grid">
+                    ${imageField("icon", "Server icon", g.icon)} ${imageField("banner", "Server banner", g.banner)} ${imageField("splash", "Invite background", g.splash)}
+                    ${imageField("discovery_splash", "Discovery background", g.discovery_splash)}
+                </div>
+                <label>Name<input name="name" value="${g.name}" minlength="2" maxlength="100" required /></label>
+                <label>Description<textarea name="description" maxlength="300">${g.description ?? ""}</textarea></label>
+                <div class="stack">
+                    <div class="row" style="justify-content:space-between">
+                        <h3>Server tag</h3>
+                        <span id="tag-preview"></span>
+                    </div>
+                    <label
+                        >Tag<span class="hint"
+                            >Shown next to members' names. Staff can use any text of any length here (server owners are limited to 2–4 letters or numbers). Leave empty to remove
+                            the tag.</span
+                        ><input name="tag" autocomplete="off" maxlength="32" value="${g.tag?.tag ?? ""}" placeholder="LARP"
+                    /></label>
+                    <div class="stack" id="tag-badge-fields">
+                        <span class="muted">Badge</span>
+                        <div id="badge-picker" class="badge-picker"><span class="muted">Loading badges…</span></div>
+                        <label class="toggle"
+                            ><input type="checkbox" name="badge_default_colors" ${g.tag?.badge_color_primary ? "" : raw("checked")} /><span
+                                >Use the badge's own colours</span
+                            ></label
+                        >
+                        <div class="row" id="badge-colors">
+                            <label class="row" style="gap:8px">Main<input type="color" name="badge_color_primary" value="${g.tag?.badge_color_primary ?? "#5865f2"}" /></label>
+                            <label class="row" style="gap:8px"
+                                >Accent<input type="color" name="badge_color_secondary" value="${g.tag?.badge_color_secondary ?? "#ffffff"}"
+                            /></label>
+                        </div>
+                    </div>
+                </div>
+                <div class="stack">
+                    <h3>Feature flags</h3>
+                    <div id="feature-chips" class="chips"></div>
+                    <div class="row">
+                        <input class="grow" id="feature-input" aria-label="Feature flag" list="feature-list" placeholder="Add a feature, e.g. VERIFIED" />
+                        <datalist id="feature-list">${GUILD_FEATURES.map((f) => html`<option value="${f}"></option>`)}</datalist>
+                        <button class="btn" type="button" id="feature-add">Add</button>
+                    </div>
+                </div>
+                <div class="form-grid">
+                    <label
+                        >Verification level<select name="verification_level">
+                            ${options(
+                              [
+                                [0, "None"],
+                                [1, "Verified email"],
+                                [2, "Registered for 5 minutes"],
+                                [3, "Member for 10 minutes"],
+                                [4, "Verified phone"],
+                              ],
+                              g.verification_level,
+                            )}
+                        </select></label
+                    >
+                    <label
+                        >Media filter<select name="explicit_content_filter">
+                            ${options(
+                              [
+                                [0, "Off"],
+                                [1, "Members without roles"],
+                                [2, "All members"],
+                              ],
+                              g.explicit_content_filter,
+                            )}
+                        </select></label
+                    >
+                    <label
+                        >Default notifications<select name="default_message_notifications">
+                            ${options(
+                              [
+                                [0, "All messages"],
+                                [1, "Only mentions"],
+                              ],
+                              g.default_message_notifications,
+                            )}
+                        </select></label
+                    >
+                    <label
+                        >Boost tier<select name="premium_tier">
+                            ${options(
+                              [
+                                [0, "None"],
+                                [1, "Level 1"],
+                                [2, "Level 2"],
+                                [3, "Level 3"],
+                              ],
+                              g.premium_tier,
+                            )}
+                        </select></label
+                    >
+                    <label
+                        >Inactive voice timeout<select name="afk_timeout">
+                            ${options(
+                              [
+                                [60, "1 minute"],
+                                [300, "5 minutes"],
+                                [900, "15 minutes"],
+                                [1800, "30 minutes"],
+                                [3600, "1 hour"],
+                              ],
+                              g.afk_timeout,
+                            )}
+                        </select></label
+                    >
+                    <label>Language<input name="preferred_locale" value="${g.preferred_locale ?? "en-US"}" required maxlength="16" /></label>
+                    <label class="toggle"><input name="nsfw" type="checkbox" ${g.nsfw ? raw("checked") : ""} /><span>Age restricted server</span></label>
+                </div>
+                <label
+                    >Owner user ID<span class="hint">Transfer ownership to another member of this server.</span
+                    ><input name="owner_id" value="${g.owner?.id ?? ""}" inputmode="numeric" pattern="[0-9]{1,20}" maxlength="20"
+                /></label>
+                <div class="form-actions"><button class="btn primary" type="submit">Save server</button></div>
+            </form>
+
+            <details class="card" id="server-resources">
+                <summary>Manage channels and roles</summary>
+                <p class="muted">Create channels and roles, or edit their details and permissions.</p>
+                <div id="server-resource-body" class="stack"></div>
+            </details>
+            <details class="card server-section" data-section="members">
+                <summary>Members</summary>
+                <p class="muted">Find members to change their nickname and roles, time them out, remove or ban them.</p>
+                <div class="stack" data-section-body></div>
+            </details>
+            <details class="card server-section" data-section="bans">
+                <summary>Bans</summary>
+                <p class="muted">People who can't join this server, with who banned them and why.</p>
+                <div class="stack" data-section-body></div>
+            </details>
+            <details class="card server-section" data-section="invites">
+                <summary>Invites</summary>
+                <p class="muted">Create invite links, see how often each was used and revoke them.</p>
+                <div class="stack" data-section-body></div>
+            </details>
+            <details class="card server-section" data-section="expressions">
+                <summary>Emoji, stickers and sounds</summary>
+                <p class="muted">Rename or delete the server's custom emoji, stickers and soundboard sounds.</p>
+                <div class="stack" data-section-body></div>
+            </details>
+            <div class="card danger-zone stack">
+                <h3>Danger zone</h3>
+                <p class="muted" style="margin:0">Deletes the server with all its channels, messages, roles and members. This can't be undone.</p>
+                <label>Type the server name to confirm<input id="guild-confirm" placeholder="${g.name}" autocomplete="off" /></label>
+                <div><button class="btn danger" id="guild-delete" type="button" disabled>Delete server</button></div>
+            </div>
+        `,
+  );
+  let resourcesLoaded = false;
+  $("#server-resources", body).addEventListener("toggle", async (event) => {
+    if (!event.currentTarget.open || resourcesLoaded) return;
+    const target = $("#server-resource-body", body);
+    mount(
+      target,
+      html`
+        <div class="spinner">Loading channels and roles…</div>
+      `,
+    );
+    try {
+      const [channelData, roleData] = await Promise.all([
+        api(`/admin/guilds/${id}/channels`),
+        api(`/admin/guilds/${id}/roles`),
+      ]);
+      resourcesLoaded = true;
+      mount(
+        target,
+        html`<div class="form-actions">
+                        <h3>Channels</h3>
+                        <button class="btn" type="button" data-create-channel>Create channel</button>
+                    </div>
+                    ${
+                      channelData.truncated
+                        ? html`
+                            <p class="muted">Showing the first 1,000 channels.</p>
+                          `
+                        : ""
+                    }
+                    <div class="resource-list">
+                        ${channelData.channels.map((channel) => html`<button class="resource-row" type="button" data-edit-channel="${channel.id}"><span>${channel.type === 4 ? "Category" : channel.type === 2 ? "Voice" : "Channel"}</span><strong>${channel.name}</strong><span class="muted">Edit</span></button>`)}
+                    </div>
+                    <div class="form-actions">
+                        <h3>Roles</h3>
+                        <button class="btn" type="button" data-create-role>Create role</button>
+                    </div>
+                    <div class="resource-list">
+                        ${roleData.roles.map((role) => html`<button class="resource-row" type="button" data-edit-role="${role.id}" ${role.managed ? raw("disabled") : ""}><strong>${role.name}</strong><span class="muted">${role.managed ? "Integration managed" : "Edit"}</span></button>`)}
+                    </div>`,
+      );
+      $("[data-create-channel]", target).addEventListener("click", () =>
+        openAdminChannel(id, null, channelData.channels),
+      );
+      $("[data-create-role]", target).addEventListener("click", () =>
+        openAdminRole(id, null, roleData.permissions),
+      );
+      for (const button of $$("[data-edit-channel]", target))
+        button.addEventListener("click", () =>
+          openAdminChannel(
+            id,
+            channelData.channels.find((channel) => channel.id === button.dataset.editChannel),
+            channelData.channels,
+          ),
+        );
+      for (const button of $$("[data-edit-role]", target))
+        button.addEventListener("click", () =>
+          openAdminRole(
+            id,
+            roleData.roles.find((role) => role.id === button.dataset.editRole),
+            roleData.permissions,
+          ),
+        );
+    } catch (error) {
+      if (error.status !== 499) mount(target, html`<p class="form-error">${error.message}</p>`);
+    }
+  });
+  renderFeatures();
+
+  const addFeature = () => {
+    const input = $("#feature-input");
+    const value = input.value.trim().toUpperCase().replace(/\s+/g, "_");
+    if (value) features.add(value);
+    input.value = "";
+    renderFeatures();
+  };
+  $("#feature-add").addEventListener("click", addFeature);
+  $("#feature-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addFeature();
+    }
+  });
+  $("#feature-chips").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-remove]");
+    if (!btn) return;
+    features.delete(btn.dataset.remove);
+    renderFeatures();
+  });
+  $("#open-owner")?.addEventListener("click", () => openUser(g.owner.id));
+
+  const tagForm = $("#guild-form");
+  let badge = g.tag?.badge ?? 0;
+  const badgeColours = () =>
+    tagForm.badge_default_colors.checked
+      ? {}
+      : {
+          primary: tagForm.badge_color_primary.value,
+          secondary: tagForm.badge_color_secondary.value,
+        };
+  const previewUrl = (id, size) =>
+    `/clan-badges/preview/${id}?${new URLSearchParams({ size, ...badgeColours() })}`;
+  const renderTagPreview = () => {
+    const tag = tagForm.tag.value.trim();
+    $("#tag-badge-fields").hidden = !tag;
+    $("#badge-colors").hidden = tagForm.badge_default_colors.checked;
+    mount(
+      $("#tag-preview"),
+      tag
+        ? html`<span class="tag-chip"><img src="${previewUrl(badge, 32)}" alt="" />${tag}</span>`
+        : html`
+            <span class="muted">No tag</span>
+          `,
+    );
+    for (const img of $$("[data-badge] img", tagForm))
+      img.src = previewUrl(img.closest("[data-badge]").dataset.badge, 48);
+    for (const btn of $$("[data-badge]", tagForm))
+      btn.classList.toggle("active", Number(btn.dataset.badge) === badge);
+  };
+  // revalidated, since browsers may still hold a copy from when the list was cached for hours
+  fetch("/clan-badges/preview", { cache: "no-cache" })
+    .then((r) => r.json())
+    .then((list) => {
+      // grouped by pack, in the order the packs first appear: discord's free badges and packs, then the instance's own
+      const packs = new Map();
+      for (const b of list)
+        packs.set(b.pack ?? "Discord", [...(packs.get(b.pack ?? "Discord") ?? []), b]);
+      mount(
+        $("#badge-picker"),
+        list.length
+          ? [...packs].map(
+              ([pack, badges]) =>
+                html`<div class="badge-pack-title">${pack}<span class="muted">${badges.length}</span></div>
+                                  ${badges.map(
+                                    (b) =>
+                                      html`<button
+                                              type="button"
+                                              class="badge-option ${b.staff_only ? "staff-only" : ""}"
+                                              data-badge="${b.id}"
+                                              title="${b.name.toLowerCase().replace(/_/g, " ")}${b.staff_only ? " (staff only: server owners can't pick it)" : ""}"
+                                          >
+                                              <img src="${previewUrl(b.id, 48)}" alt="${b.name}" />
+                                          </button>`,
+                                  )}`,
+            )
+          : html`
+              <span class="muted"
+                >Badge artwork isn't available. Run <code>npm run generate:client</code> on the server.</span
+              >
+            `,
+      );
+      renderTagPreview();
+    })
+    .catch(() =>
+      mount(
+        $("#badge-picker"),
+        html`
+          <span class="muted">Couldn't load badges.</span>
+        `,
+      ),
+    );
+  $("#badge-picker").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-badge]");
+    if (!btn) return;
+    badge = Number(btn.dataset.badge);
+    renderTagPreview();
+  });
+  tagForm.tag.addEventListener("input", renderTagPreview);
+  tagForm.badge_default_colors.addEventListener("change", renderTagPreview);
+  for (const input of [tagForm.badge_color_primary, tagForm.badge_color_secondary])
+    input.addEventListener("input", debounce(renderTagPreview, 150));
+  renderTagPreview();
+
+  $("#guild-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const patch = {
+      name: form.name.value,
+      description: form.description.value,
+      features: [...features],
+      nsfw: form.nsfw.checked,
+      preferred_locale: form.preferred_locale.value,
+    };
+    for (const field of [
+      "verification_level",
+      "explicit_content_filter",
+      "default_message_notifications",
+      "premium_tier",
+      "afk_timeout",
+    ])
+      patch[field] = Number(form.elements[field].value);
+    const owner = form.owner_id.value.trim();
+    if (owner && owner !== g.owner?.id) patch.owner_id = owner;
+
+    const tag = form.tag.value.trim();
+    const colours = badgeColours();
+    const next = {
+      tag: tag || null,
+      badge,
+      badge_color_primary: colours.primary ?? null,
+      badge_color_secondary: colours.secondary ?? null,
+    };
+    const prev = g.tag
+      ? {
+          tag: g.tag.tag,
+          badge: g.tag.badge,
+          badge_color_primary: g.tag.badge_color_primary,
+          badge_color_secondary: g.tag.badge_color_secondary,
+        }
+      : { tag: null };
+    if (!next.tag) {
+      if (prev.tag) patch.tag = null;
+    } else if (JSON.stringify(next) !== JSON.stringify(prev)) Object.assign(patch, next);
+    const saved = await act(
+      $("button[type=submit]", form),
+      async () => {
+        await imagePatch(form, ["icon", "banner", "splash", "discovery_splash"], patch);
+        return api(`/admin/guilds/${g.id}`, { method: "PATCH", body: patch });
+      },
+      "Server updated",
+    );
+    if (saved && form.isConnected && !$("#drawer").hidden && !form.dataset.dirty) {
+      reload?.();
+      openGuild(g.id, reload);
+    }
+  });
+
+  $("#guild-confirm").addEventListener("input", (e) => {
+    $("#guild-delete").disabled = e.target.value !== g.name;
+  });
+  $("#guild-delete").addEventListener("click", async (e) => {
+    const done = await act(
+      e.currentTarget,
+      () => api(`/admin/guilds/${g.id}`, { method: "DELETE" }),
+      `${g.name} was deleted`,
+    );
+    if (done !== undefined) {
+      closeDrawer();
+      reload?.();
+    }
+  });
+  $("#server-resources", body).open = openSection === "resources";
+  bindGuildSections(body, g, openSection);
+}
+
+/* ---------- system ---------- */
+
+const fmtBytes = (n) =>
+  n == null ? "—" : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`;
+const fmtAgo = (value) => {
+  if (!value) return "never";
+  const seconds = (Date.now() - new Date(value).getTime()) / 1000;
+  return seconds < 60 ? "just now" : `${fmtDuration(seconds)} ago`;
+};
+const item = (label, value) =>
+  html`<div class="list-item"><span class="grow muted">${label}</span><span style="text-align:right">${value}</span></div>`;
+const PATCH_GROUPS = [
+  ["fosscord", "Fosscord plugins", "danger"],
+  ["enabled", "Upstream plugins enabled by default", "warn"],
+  ["upstream", "Other upstream plugins", ""],
+];
+
+async function renderSystem(view) {
+  mount(
+    view,
+    html`
+      <div class="page-head">
+        <div>
+          <h1>System</h1>
+          <p class="muted">The bundled web client, its Vencord mods, link previews, the Shop catalogue and voice.</p>
+        </div>
+        <button class="btn" id="system-refresh" type="button">Check again</button>
+      </div>
+      <div class="stack">
+        <div id="system-client" class="stack"><div class="card spinner">Loading client status…</div></div>
+        <div class="card stack" id="system-network"><div class="spinner">Loading link preview status…</div></div>
+        <div class="card stack" id="system-voice"><div class="spinner">Loading voice status…</div></div>
+        <div class="card stack" id="system-collectibles">
+          <div class="spinner">Loading Shop catalogue…</div>
+        </div>
+      </div>
+    `,
+  );
+  $("#system-refresh").addEventListener("click", () => renderSystem(view));
+
+  const fail = (el, title) => (e) => {
+    if (e.status !== 401 && e.status !== 499)
+      mount(
+        el,
+        html`<h2>${title}</h2>
+                    <p class="form-error">${e.message}</p>`,
+      );
+  };
+  await Promise.all([
+    api("/admin/system/client").then(renderClientStatus, fail($("#system-client"), "Web client")),
+    api("/admin/system/network").then(renderNetworkStatus, fail($("#system-network"), "Link previews")),
+    api("/admin/system/voice").then(renderVoiceStatus, fail($("#system-voice"), "Voice")),
+    api("/admin/system/collectibles").then(
+      renderCollectiblesStatus,
+      fail($("#system-collectibles"), "Shop catalogue"),
+    ),
+  ]);
+}
+
+function renderClientStatus({ client, vencord, patch_check: check }) {
+  const el = $("#system-client");
+  if (!el) return;
+  const stale = check && client.build_number && check.build_number !== client.build_number;
+  const outdated =
+    check && vencord.built_at && new Date(check.checked_at) < new Date(vencord.built_at);
+  const groups = check
+    ? PATCH_GROUPS.map(([key, label, tone]) => ({
+        label,
+        tone,
+        items: [
+          ...check.bad_patches
+            .filter((p) => p.group === key)
+            .map((p) => ({
+              plugin: p.plugin,
+              text: `Patch ${p.type}`,
+              detail: p.error ?? p.match,
+            })),
+          ...check.bad_starts
+            .filter((p) => p.group === key)
+            .map((p) => ({ plugin: p.plugin, text: "Failed to start", detail: p.error })),
+          ...(key === "fosscord"
+            ? check.unmatched_all_patches.map((p) => ({
+                plugin: p.plugin,
+                text: "Patch found no module",
+                detail: p.find,
+              }))
+            : []),
+          ...(key === "upstream"
+            ? check.bad_finds.map((find) => ({
+                plugin: "Webpack",
+                text: "Find failed",
+                detail: find,
+              }))
+            : []),
+        ],
+      }))
+    : [];
+  const problems = groups.slice(0, 2).reduce((n, g) => n + g.items.length, 0);
+
+  mount(
+    el,
+    html`
+            <div class="card">
+                <div class="row" style="justify-content:space-between;margin-bottom:8px">
+                    <h2 style="margin:0">Web client</h2>
+                    ${
+                      !client.enabled
+                        ? html`
+                            <span class="badge"><span class="dot"></span>Not served</span>
+                          `
+                        : client.present
+                          ? html`<span class="badge ok"><span class="dot"></span>Build ${client.build_number ?? "unknown"}</span>`
+                          : html`
+                              <span class="badge danger"><span class="dot"></span>Missing</span>
+                            `
+                    }
+                </div>
+                ${
+                  client.present
+                    ? html`<div class="list">
+                              ${item("Build number", client.build_number ?? "—")} ${item("Version hash", html`<code>${client.version_hash?.slice(0, 12) ?? "—"}</code>`)}
+                              ${item("Downloaded", html`${fmtDate(client.generated_at)} <span class="muted">(${fmtAgo(client.generated_at)})</span>`)}
+                              ${item("Cached files", `${fmtNumber(client.files)} files, ${client.compressed_files == null ? "not precompressed" : `${fmtNumber(client.compressed_files)} precompressed`}`)}
+                              ${item("Client patches", client.patches.length ? html`<span class="badges" style="justify-content:flex-end">${client.patches.map((p) => html`<span class="badge">${p.replace(/\.js$/, "")}</span>`)}</span>` : "None")}
+                              ${item(
+                                "Failed downloads",
+                                client.failures.count
+                                  ? html`<span class="badge warn">${fmtNumber(client.failures.count)}</span>`
+                                  : html`
+                                      <span class="badge ok">None</span>
+                                    `,
+                              )}
+                              ${item(
+                                "Assets missing from the cache",
+                                client.misses.count
+                                  ? html`<span class="badge warn">${fmtNumber(client.misses.count)} files</span>`
+                                  : html`
+                                      <span class="badge ok">None</span>
+                                    `,
+                              )}
+                          </div>`
+                    : html`
+                        <p class="muted" style="margin: 0">
+                          There's no client in <code>assets/cache</code>. Run <code>npm run generate:client</code> on the
+                          server.
+                        </p>
+                      `
+                }
+                ${
+                  client.failures.count || client.misses.count
+                    ? html`<details style="margin-top:12px">
+                              <summary class="btn small" style="width:max-content">Show files</summary>
+                              <div class="stack" style="margin-top:10px;gap:10px">
+                                  ${
+                                    client.failures.count
+                                      ? html`<div>
+                                                <strong>Failed during download</strong>
+                                                <pre class="file-list">${client.failures.items.join("\n")}</pre>
+                                            </div>`
+                                      : ""
+                                  }
+                                  ${
+                                    client.misses.count
+                                      ? html`<div>
+                                                <strong>Not in the cache, fetched from Discord when asked for</strong>
+                                                <pre class="file-list">${client.misses.items.join("\n")}</pre>
+                                                <span class="muted">Running <code>npm run generate:client</code> again adds them to the cache.</span>
+                                            </div>`
+                                      : ""
+                                  }
+                              </div>
+                          </details>`
+                    : ""
+                }
+            </div>
+            <div class="card">
+                <div class="row" style="justify-content:space-between;margin-bottom:8px">
+                    <h2 style="margin:0">Vencord</h2>
+                    ${
+                      vencord.present
+                        ? html`<span class="badge ok"><span class="dot"></span>v${vencord.version ?? "?"}</span>`
+                        : html`
+                            <span class="badge danger"><span class="dot"></span>Not built</span>
+                          `
+                    }
+                </div>
+                ${
+                  vencord.present
+                    ? html`<div class="list">
+                              ${item("Built", html`${fmtDate(vencord.built_at)} <span class="muted">(${fmtAgo(vencord.built_at)})</span>`)}
+                              ${item("Commit", vencord.commit ? html`<code>${vencord.commit.slice(0, 10)}</code>` : "—")} ${item("Bundle size", fmtBytes(vencord.size))}
+                              ${item("Fosscord plugins", html`<span class="badges" style="justify-content:flex-end">${vencord.plugins.map((p) => html`<span class="badge accent">${p.replace(/^fosscord/, "")}</span>`)}</span>`)}
+                          </div>`
+                    : html`
+                        <p class="muted" style="margin: 0">
+                          The client runs without its mods. Run <code>npm run build:vencord</code> on the server.
+                        </p>
+                      `
+                }
+            </div>
+            <div class="card">
+                <div class="row" style="justify-content:space-between;margin-bottom:8px">
+                    <h2 style="margin:0">Patch check</h2>
+                    ${
+                      !check
+                        ? html`
+                            <span class="badge"><span class="dot"></span>Never run</span>
+                          `
+                        : check.outcome !== "done"
+                          ? html`<span class="badge danger"><span class="dot"></span>Didn't finish (${check.outcome})</span>`
+                          : problems
+                            ? html`<span class="badge danger"><span class="dot"></span>${fmtNumber(problems)} ${problems === 1 ? "problem" : "problems"}</span>`
+                            : html`
+                                <span class="badge ok"><span class="dot"></span>Passing</span>
+                              `
+                    }
+                </div>
+                ${
+                  check
+                    ? html`<div class="list">
+                                  ${item("Checked", html`${fmtDate(check.checked_at)} <span class="muted">(${fmtAgo(check.checked_at)}, took ${check.seconds}s)</span>`)}
+                                  ${item(
+                                    "Against build",
+                                    html`${check.build_number ?? "unknown"}${stale ? html` <span class="badge warn">The client is now ${client.build_number}</span>` : ""}`,
+                                  )}
+                                  ${
+                                    outdated
+                                      ? item(
+                                          "Vencord",
+                                          html`
+                                            <span class="badge warn">Rebuilt since this check</span>
+                                          `,
+                                        )
+                                      : ""
+                                  }
+                                  ${check.errors.length ? item("Page errors", html`<span class="badge danger">${fmtNumber(check.errors.length)}</span>`) : ""}
+                              </div>
+                              <div class="stack" style="margin-top:14px;gap:12px">
+                                  ${groups.map(
+                                    (g) =>
+                                      html`<div class="stack" style="gap:6px">
+                                              <div class="row">
+                                                  <strong class="grow">${g.label}</strong
+                                                  >${
+                                                    g.items.length
+                                                      ? html`<span class="badge ${g.tone}">${fmtNumber(g.items.length)}</span>`
+                                                      : html`
+                                                          <span class="badge ok">OK</span>
+                                                        `
+                                                  }
+                                              </div>
+                                              ${
+                                                g.items.length
+                                                  ? html`<div class="list">
+                                                            ${g.items.map(
+                                                              (i) =>
+                                                                html`<div class="list-item" style="align-items:flex-start">
+                                                                        <div class="grow" style="min-width:0">
+                                                                            <strong>${i.plugin}</strong> <span class="muted">${i.text}</span>
+                                                                            <pre class="file-list" style="margin:4px 0 0">${i.detail}</pre>
+                                                                        </div>
+                                                                    </div>`,
+                                                            )}
+                                                        </div>`
+                                                  : ""
+                                              }
+                                          </div>`,
+                                  )}
+                                  ${
+                                    check.errors.length
+                                      ? html`<div>
+                                                <strong>Page errors</strong>
+                                                <pre class="file-list">${check.errors.join("\n")}</pre>
+                                            </div>`
+                                      : ""
+                                  }
+                              </div>`
+                    : ""
+                }
+                <p class="muted" style="margin:12px 0 0">Run <code>npm run check:client</code> on the server after updating the client or the plugins to refresh this.</p>
+            </div>
+        `,
+  );
+}
+
+function renderNetworkStatus(n) {
+  const el = $("#system-network");
+  if (!el) return;
+  const badge =
+    n.mode === "platform"
+      ? html`<span class="badge ok"><span class="dot"></span>Through Cloudflare</span>`
+      : n.mode === "proxy" && n.reachable
+      ? html`<span class="badge ok"><span class="dot"></span>Through the proxy</span>`
+      : n.mode === "direct"
+        ? html`<span class="badge warn"><span class="dot"></span>Direct</span>`
+        : html`<span class="badge danger"><span class="dot"></span>Refusing public URLs</span>`;
+  mount(
+    el,
+    html`
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Link previews</h2>
+        ${badge}
+      </div>
+      <p class="muted" style="margin:0">
+        Link previews, components media, webhook avatar images and the media proxy fetch user-chosen URLs through the SOCKS5 proxy in
+        <code>PUBLIC_FETCH_PROXY</code>.
+      </p>
+      <div class="list">
+        ${item("PUBLIC_FETCH_PROXY", n.mode === "platform" ? "Not used, Cloudflare Workers fetch from Cloudflare's addresses" : n.proxy ? html`<code>socks5://${n.proxy}</code>` : n.mode === "direct" ? html`<code>direct</code>` : n.mode === "unset" ? "Not set" : "Invalid")}
+        ${n.reachable === null ? "" : item("Proxy connection", n.reachable ? html`<span class="badge ok">Reachable</span>` : html`<span class="badge danger">Unreachable</span>`)}
+        ${item("Third-party requests", n.third_party ? "On" : html`<span class="badge warn">Off</span> <span class="muted">links to other sites get no preview</span>`)}
+        ${n.problem ? item("Problem", html`<span class="form-error">${n.problem}</span>`) : ""}
+      </div>
+    `,
+  );
+}
+
+function renderVoiceStatus(v) {
+  const el = $("#system-voice");
+  if (!el) return;
+  const server = v.server;
+  const sfu = server?.sfu;
+  const healthy = server?.enabled && (!sfu || (sfu.connected && sfu.ping_ms !== null));
+  mount(
+    el,
+    html`
+            <div class="row" style="justify-content:space-between">
+                <h2 style="margin:0">Voice</h2>
+                ${
+                  !server
+                    ? html`
+                        <span class="badge"><span class="dot"></span>Runs in another process</span>
+                      `
+                    : !server.enabled
+                      ? html`
+                          <span class="badge danger"><span class="dot"></span>Off</span>
+                        `
+                      : healthy
+                        ? html`
+                            <span class="badge ok"><span class="dot"></span>Healthy</span>
+                          `
+                        : html`
+                            <span class="badge danger"><span class="dot"></span>Unhealthy</span>
+                          `
+                }
+            </div>
+            ${
+              !server
+                ? html`
+                    <p class="muted" style="margin: 0">
+                      The voice server doesn't run in the same process as the API, so only the database numbers below
+                      are available here.
+                    </p>
+                  `
+                : !server.enabled
+                  ? html`<p class="form-error">${server.reason ?? "Voice is disabled."}</p>`
+                  : html`<div class="list">
+                            ${item("Media server", server.library === "pion" ? "Built-in pion SFU" : (server.library ?? "—"))} ${item("Voice gateway", server.listen ?? "—")}
+                            ${item("Running since", html`${fmtDate(server.started_at)} <span class="muted">(${fmtAgo(server.started_at)})</span>`)}
+                            ${server.reason ? item("Problem", html`<span class="form-error">${server.reason}</span>`) : ""}
+                            ${
+                              sfu
+                                ? html`
+                                          ${item(
+                                            "SFU connection",
+                                            sfu.connected
+                                              ? html`<span class="badge ok">Connected</span>
+                                                        <span class="muted">${sfu.ping_ms !== null ? `${sfu.ping_ms} ms ping` : sfu.ping_error}</span>`
+                                              : html`
+                                                  <span class="badge danger">Disconnected</span>
+                                                `,
+                                          )}
+                                          ${item("SFU process", sfu.managed ? (sfu.pid ? html`Started by the server, pid <code>${sfu.pid}</code>` : "Started by the server, not running") : "Runs on its own")}
+                                          ${item("Media address", html`<code>${sfu.public_ip}:${sfu.udp_port}</code> <span class="muted">UDP</span>`)}
+                                          ${item("Restarts", sfu.restarts ? html`<span class="badge warn">${fmtNumber(sfu.restarts)}</span>${sfu.last_exit_at ? html` <span class="muted">last exit code ${sfu.last_exit_code ?? "?"}, ${fmtAgo(sfu.last_exit_at)}</span>` : ""}` : "None")}
+                                          ${item("Connected media clients", `${fmtNumber(sfu.connected ? server.connected_clients : 0)} of ${fmtNumber(server.clients)} in ${fmtNumber(server.rooms)} ${server.rooms === 1 ? "room" : "rooms"}`)}
+                                      `
+                                : ""
+                            }
+                            ${item("DAVE sessions", fmtNumber(server.dave_sessions ?? 0))}
+                        </div>`
+            }
+            <div class="stats">
+                <div class="card stat">
+                    <div class="muted">In voice</div>
+                    <div class="value">${fmtNumber(v.voice_states.users)}</div>
+                </div>
+                <div class="card stat">
+                    <div class="muted">Active channels</div>
+                    <div class="value">${fmtNumber(v.voice_states.channels)}</div>
+                </div>
+                <div class="card stat">
+                    <div class="muted">DM calls</div>
+                    <div class="value">${fmtNumber(v.voice_states.dm_calls)}</div>
+                </div>
+                <div class="card stat">
+                    <div class="muted">Cameras on</div>
+                    <div class="value">${fmtNumber(v.voice_states.video)}</div>
+                </div>
+                <div class="card stat">
+                    <div class="muted">Go Live streams</div>
+                    <div class="value">${fmtNumber(v.voice_states.streams)}</div>
+                </div>
+            </div>
+            <div class="stack" style="gap:6px">
+                <strong>Voice regions</strong>
+                <div class="list">
+                    ${v.regions.available.map(
+                      (r) =>
+                        html`<div class="list-item">
+                                <span class="grow"
+                                    >${r.name}${
+                                      r.id === v.regions.default
+                                        ? html`
+                                            <span class="badge accent">Default</span>
+                                          `
+                                        : ""
+                                    }${
+                                      r.deprecated
+                                        ? html`
+                                            <span class="badge">Deprecated</span>
+                                          `
+                                        : ""
+                                    }</span
+                                >
+                                <code>${r.endpoint ?? "—"}</code>
+                            </div>`,
+                    )}
+                </div>
+            </div>
+        `,
+  );
+}
+
+function renderCollectiblesStatus(c) {
+  const el = $("#system-collectibles");
+  if (!el) return;
+  const source = (label, s) =>
+    item(
+      label,
+      s.updated_at
+        ? html`${fmtDate(s.updated_at)} <span class="muted">(${fmtAgo(s.updated_at)}, ${fmtBytes(s.size)})</span>`
+        : html`
+            <span class="badge warn">Not downloaded</span>
+          `,
+    );
+  mount(
+    el,
+    html`
+            <div class="row" style="justify-content:space-between">
+                <h2 style="margin:0">Shop catalogue</h2>
+                <button class="btn small" id="collectibles-refresh" type="button">Refresh catalogue</button>
+            </div>
+            <p class="muted" style="margin:0">
+                ${
+                  c.catalog.external_refresh_enabled
+                    ? `Decorations, effects, nameplates and bundles in the free Shop come from a copy of Discord's catalogue at ${c.catalog.url}, downloaded again every ${c.refresh_interval_hours} hours.`
+                    : "Decorations, effects, nameplates and bundles in the free Shop come from the collectibles.json snapshot in the assets folder. Downloading is off. Set COLLECTIBLES_EXTERNAL_REFRESH=true and COLLECTIBLES_CATALOG_URL to download it from a URL."
+                }
+            </p>
+            <div class="list">
+                ${source("Catalogue", c.catalog)} ${source("Profile effects", c.effects)}
+                ${item(
+                  "Loaded in the Shop",
+                  c.loaded
+                    ? `${fmtNumber(c.loaded.categories)} categories, ${fmtNumber(c.loaded.products)} products, ${fmtNumber(c.loaded.items)} items`
+                    : html`
+                        <span class="muted">Loads the first time someone opens the Shop</span>
+                      `,
+                )}
+                ${
+                  c.last_refresh
+                    ? item(
+                        "Last refresh",
+                        c.last_refresh.ok
+                          ? html`<span class="badge ok">OK</span> <span class="muted">${fmtAgo(c.last_refresh.at)}</span>`
+                          : html`<span class="badge danger">Failed</span> <span class="muted">${fmtAgo(c.last_refresh.at)}</span>`,
+                      )
+                    : ""
+                }
+                ${c.last_refresh?.error ? item("Problem", html`<span class="form-error">${c.last_refresh.error}</span>`) : ""}
+                ${
+                  c.cache
+                    ? item(
+                        "Art cache",
+                        `${fmtBytes(c.cache.bytes)} of ${fmtBytes(c.cache.limit_bytes)}, ${fmtNumber(c.cache.objects)} of ${fmtNumber(c.cache.limit_objects)} files`,
+                      )
+                    : ""
+                }
+                ${
+                  c.cache
+                    ? item(
+                        "Evicted from the cache",
+                        c.cache.evicted_objects
+                          ? html`${fmtNumber(c.cache.evicted_objects)} files, ${fmtBytes(c.cache.evicted_bytes)} <span class="muted">(last ${fmtAgo(c.cache.last_evicted_at)})</span>`
+                          : html`<span class="muted">Nothing yet</span>`,
+                      )
+                    : ""
+                }
+            </div>
+        `,
+  );
+  $("#collectibles-refresh", el).addEventListener("click", async (e) => {
+    const next = await act(e.currentTarget, () =>
+      api("/admin/system/collectibles/refresh", { method: "POST" }),
+    );
+    if (!next) return;
+    const failed = !next.last_refresh?.ok || !next.last_refresh.products;
+    toast(
+      failed
+        ? (next.last_refresh?.error ?? "Couldn't refresh the catalogue")
+        : `Catalogue refreshed: ${fmtNumber(next.last_refresh.products)} products`,
+      failed ? "error" : "ok",
+    );
+    renderCollectiblesStatus(next);
+  });
+}
+
+/* ---------- status page ---------- */
+
+async function renderStatus(view) {
+  const [summary, components, { incidents }] = await Promise.all([
+    api("/status/summary.json", { auth: false }),
+    api("/admin/status/components"),
+    api("/admin/status/incidents?limit=50"),
+  ]);
+  const open = incidents.filter((i) => !RESOLVED.includes(i.status));
+  const closed = incidents.filter((i) => RESOLVED.includes(i.status));
+  const indicatorClass =
+    { none: "ok", maintenance: "info", minor: "warn", major: "warn", critical: "danger" }[
+      summary.status.indicator
+    ] ?? "";
+
+  mount(
+    view,
+    html`
+            <div class="page-head">
+                <div>
+                    <h1>Status page</h1>
+                    <p class="muted">Components, incidents and maintenance shown on the public <a href="/status" target="_blank" rel="noopener">status page</a>.</p>
+                </div>
+                <div class="row">
+                    <button class="btn" id="new-maintenance" type="button">Schedule maintenance</button>
+                    <button class="btn primary" id="new-incident" type="button">Report incident</button>
+                </div>
+            </div>
+            <div class="stack">
+                <div class="card row">
+                    <span class="badge ${indicatorClass}" style="font-size:13px;padding:5px 12px"><span class="dot"></span>${summary.status.description}</span>
+                    <span class="muted">Currently shown at the top of the public page.</span>
+                </div>
+
+                <div class="card">
+                    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+                        <h2>Components</h2>
+                    </div>
+                    <div class="list" id="component-list">
+                        ${
+                          components.length
+                            ? components.map(
+                                (c) => html`
+                                          <div class="list-item" data-component="${c.id}">
+                                              <div class="grow">
+                                                  <strong>${c.name}</strong>
+                                                  ${c.description ? html`<div class="muted">${c.description}</div>` : ""}
+                                              </div>
+                                              <select data-status style="width:auto" aria-label="Status of ${c.name}">
+                                                  ${options(COMPONENT_STATUSES, c.status)}
+                                              </select>
+                                              <button class="btn small ghost" data-edit type="button">Edit</button>
+                                              <button class="btn small ghost" data-delete type="button" aria-label="Delete ${c.name}">Delete</button>
+                                          </div>
+                                      `,
+                              )
+                            : html`
+                                <p class="muted">
+                                  No components yet. Add the parts of your service people care about, like "API", "Gateway" or
+                                  "Media".
+                                </p>
+                              `
+                        }
+                    </div>
+                    <form id="component-add" class="row" style="margin-top:12px">
+                        <input name="name" aria-label="Component name" placeholder="Component name, e.g. Gateway" required maxlength="100" class="grow" style="min-width:180px" />
+                        <input name="description" aria-label="Component description" maxlength="500" placeholder="Description (optional)" class="grow" style="min-width:180px" />
+                        <button class="btn" type="submit">Add component</button>
+                    </form>
+                </div>
+
+                <div class="stack">
+                    <h2>Open incidents & maintenance</h2>
+                    ${
+                      open.length
+                        ? open.map((i) => incidentCard(i, true))
+                        : emptyCard("Nothing is open. Incidents and maintenance you report show up here and on the public status page.", "Report incident")
+                    }
+                </div>
+
+                <div class="stack">
+                    <h2>History</h2>
+                    ${
+                      closed.length
+                        ? closed.map((i) => incidentCard(i, false))
+                        : emptyCard("No resolved incidents yet. Incidents move here once you resolve them.", null)
+                    }
+                </div>
+            </div>
+        `,
+  );
+
+  const refresh = () => renderStatus(view);
+
+  $("#new-incident").addEventListener("click", () => openIncidentForm(components, false, refresh));
+  $("[data-empty-action]", view)?.addEventListener("click", () => openIncidentForm(components, false, refresh));
+  $("#new-maintenance").addEventListener("click", () =>
+    openIncidentForm(components, true, refresh),
+  );
+
+  $("#component-add").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const done = await act(
+      $("button", form),
+      () =>
+        api("/admin/status/components", {
+          method: "POST",
+          body: { name: form.name.value, description: form.description.value || null },
+        }),
+      "Component added",
+    );
+    if (done) refresh();
+  });
+
+  for (const row of $$("[data-component]", view)) {
+    const id = row.dataset.component;
+    const component = components.find((c) => c.id === id);
+    $("[data-status]", row).addEventListener("change", async (e) => {
+      const done = await act(
+        e.target,
+        () =>
+          api(`/admin/status/components/${id}`, {
+            method: "PATCH",
+            body: { status: e.target.value },
+          }),
+        `${component.name}: ${componentStatus(e.target.value)[1]}`,
+      );
+      if (done) refresh();
+    });
+    $("[data-edit]", row).addEventListener("click", () => {
+      const body = openDrawer(
+        "Edit component",
+        html`<form id="component-edit" class="stack">
+                    <label>Name<input name="name" value="${component.name}" required maxlength="100" /></label>
+                    <label>Description<textarea name="description" maxlength="500">${component.description ?? ""}</textarea></label>
+                    <label>Position<span class="hint">Lower numbers are listed first.</span><input name="position" type="number" step="1" min="-2147483648" max="2147483647" value="${component.position}" /></label>
+                    <div class="form-actions"><button class="btn primary" type="submit">Save component</button></div>
+                </form>`,
+      );
+      if (!body) return;
+      $("#component-edit", body).addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const f = ev.currentTarget;
+        const done = await act(
+          $("button", f),
+          () =>
+            api(`/admin/status/components/${id}`, {
+              method: "PATCH",
+              body: {
+                name: f.name.value,
+                description: f.description.value || null,
+                position: Number(f.position.value) || 0,
+              },
+            }),
+          "Component saved",
+        );
+        if (done) refresh();
+      });
+    });
+    $("[data-delete]", row).addEventListener("click", async (e) => {
+      if (
+        !await confirmDialog({ title: `Delete the "${component.name}" component?`, message: "It's also removed from incidents that reference it.", confirm: "Delete component" })
+      )
+        return;
+      const done = await act(
+        e.currentTarget,
+        () => api(`/admin/status/components/${id}`, { method: "DELETE" }),
+        "Component deleted",
+      );
+      if (done !== undefined) refresh();
+    });
+  }
+
+  for (const card of $$("[data-incident]", view)) {
+    const incident = incidents.find((i) => i.id === card.dataset.incident);
+    $("[data-update-form]", card)?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = e.currentTarget;
+      const done = await act(
+        $("button[type=submit]", f),
+        () =>
+          api(`/admin/status/incidents/${incident.id}/updates`, {
+            method: "POST",
+            body: { status: f.status.value, body: f.body.value },
+          }),
+        "Update posted",
+      );
+      if (done) refresh();
+    });
+    $("[data-edit]", card)?.addEventListener("click", () =>
+      openIncidentForm(components, incident.impact === "maintenance", refresh, incident),
+    );
+    $("[data-delete]", card).addEventListener("click", async (e) => {
+      if (
+        !await confirmDialog({ title: `Delete "${incident.name}"?`, message: "Its whole timeline is deleted. Post an update that resolves it instead if it should stay in the history.", confirm: "Delete incident" })
+      )
+        return;
+      const done = await act(
+        e.currentTarget,
+        () => api(`/admin/status/incidents/${incident.id}`, { method: "DELETE" }),
+        "Incident deleted",
+      );
+      if (done !== undefined) refresh();
+    });
+  }
+}
+
+function incidentCard(i, isOpen) {
+  const isMaintenance = i.impact === "maintenance";
+  const states = isMaintenance ? MAINTENANCE_STATES : INCIDENT_STATES;
+  return html`
+        <div class="incident" data-incident="${i.id}">
+            <div class="row">
+                <strong class="grow">${i.name}</strong>
+                ${impactBadge(i)} ${stateBadge(i.status)}
+            </div>
+            <div class="muted">
+                ${isMaintenance && i.scheduled_for ? html`Window: ${fmtDate(i.scheduled_for)} → ${fmtDate(i.scheduled_until)} · ` : ""}Opened
+                ${fmtDate(i.created_at)}${i.resolved_at ? html` · ${isMaintenance ? "Completed" : "Resolved"} ${fmtDate(i.resolved_at)}` : ""}
+            </div>
+            ${i.components.length ? html`<div class="badges">${i.components.map((c) => html`<span class="badge">${c.name}</span>`)}</div>` : ""}
+            <div class="timeline">
+                ${i.incident_updates.map(
+                  (u) =>
+                    html`<div class="timeline-item">
+                            <div class="row"><strong>${stateLabel(u.status)}</strong><span class="muted">${fmtDate(u.created_at)}</span></div>
+                            <p>${u.body}</p>
+                        </div>`,
+                )}
+            </div>
+            ${
+              isOpen
+                ? html`<form data-update-form class="stack">
+                          <div class="row">
+                              <select name="status" style="width:auto" aria-label="New state">
+                                  ${options(states, states[Math.min(states.findIndex(([k]) => k === i.status) + 1, states.length - 1)][0])}
+                              </select>
+                              <span class="muted">Posting an update moves the ${isMaintenance ? "maintenance" : "incident"} to this state.</span>
+                          </div>
+                          <textarea name="body" aria-label="Update" maxlength="4000" placeholder="What's the latest?" required></textarea>
+                          <div class="row" style="justify-content:flex-end">
+                              <button class="btn ghost small" data-edit type="button">Edit details</button>
+                              <button class="btn ghost small" data-delete type="button">Delete</button>
+                              <button class="btn primary small" type="submit">Post update</button>
+                          </div>
+                      </form>`
+                : html`
+                    <div class="row" style="justify-content: flex-end">
+                      <button class="btn ghost small" data-delete type="button">Delete</button>
+                    </div>
+                  `
+            }
+        </div>
+    `;
+}
+
+function openIncidentForm(components, isMaintenance, refresh, existing) {
+  const editing = !!existing;
+  const title = editing
+    ? `Edit ${isMaintenance ? "maintenance" : "incident"}`
+    : isMaintenance
+      ? "Schedule maintenance"
+      : "Report incident";
+  const body = openDrawer(
+    title,
+    html`
+            <form id="incident-form" class="stack">
+                <label
+                    >Title<input
+                        name="name"
+                        required
+                        maxlength="200"
+                        value="${existing?.name ?? ""}"
+                        placeholder="${isMaintenance ? "Database upgrade" : "Messages failing to send"}"
+                /></label>
+                ${
+                  isMaintenance
+                    ? html`<div class="form-grid">
+                              <label>Starts<input name="scheduled_for" type="datetime-local" required value="${toLocalInput(existing?.scheduled_for)}" /></label>
+                              <label>Ends<input name="scheduled_until" type="datetime-local" required value="${toLocalInput(existing?.scheduled_until)}" /></label>
+                          </div>`
+                    : html`<label
+                              >Impact<select name="impact">
+                                  ${options(IMPACTS, existing?.impact ?? "minor")}
+                              </select></label
+                          >`
+                }
+                ${
+                  !editing
+                    ? html`<label
+                                  >Status<select name="status">
+                                      ${options(isMaintenance ? MAINTENANCE_STATES.filter(([k]) => k !== "completed") : INCIDENT_STATES.filter(([k]) => k !== "resolved"), isMaintenance ? "scheduled" : "investigating")}
+                                  </select></label
+                              >
+                              <label
+                                  >Message<span class="hint">The first entry in the public timeline.</span
+                                  ><textarea name="body" required maxlength="4000" placeholder="${isMaintenance ? "We'll be upgrading…" : "We're looking into reports of…"}"></textarea>
+                              </label>`
+                    : ""
+                }
+                <div class="stack">
+                    <h3>Affected components</h3>
+                    ${
+                      components.length
+                        ? html`<div class="checks">
+                                  ${components.map(
+                                    (c) =>
+                                      html`<label class="toggle"
+                                              ><input
+                                                  type="checkbox"
+                                                  name="component"
+                                                  value="${c.id}"
+                                                  ${existing?.components.some((x) => x.id === c.id) ? raw("checked") : ""}
+                                              /><span>${c.name}</span></label
+                                          >`,
+                                  )}
+                              </div>`
+                        : html`
+                            <p class="muted">No components yet. Add some on the status page tab.</p>
+                          `
+                    }
+                    ${
+                      !editing && !isMaintenance && components.length
+                        ? html`<label
+                                  >Set affected components to<select name="component_status">
+                                      ${options(
+                                        COMPONENT_STATUSES.filter(
+                                          ([k]) => k !== "operational" && k !== "under_maintenance",
+                                        ),
+                                        "partial_outage",
+                                      )}
+                                  </select></label
+                              >`
+                        : ""
+                    }
+                    ${
+                      isMaintenance && !editing
+                        ? html`
+                            <p class="muted">
+                              Components switch to "Under maintenance" when you mark the maintenance in progress.
+                            </p>
+                          `
+                        : ""
+                    }
+                </div>
+                <div class="form-actions"><button class="btn primary" type="submit">${editing ? "Save changes" : isMaintenance ? "Schedule" : "Publish incident"}</button></div>
+            </form>
+        `,
+  );
+  if (!body) return;
+
+  $("#incident-form", body).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget;
+    const component_ids = $$("input[name=component]:checked", f).map((x) => x.value);
+    const payload = { name: f.name.value, component_ids };
+    if (isMaintenance) {
+      payload.scheduled_for = fromLocalInput(f.scheduled_for.value);
+      payload.scheduled_until = fromLocalInput(f.scheduled_until.value);
+      if (new Date(payload.scheduled_until) <= new Date(payload.scheduled_for))
+        return toast("The maintenance has to end after it starts.", "error");
+    } else payload.impact = f.impact.value;
+
+    let done;
+    if (editing)
+      done = await act(
+        $("button[type=submit]", f),
+        () => api(`/admin/status/incidents/${existing.id}`, { method: "PATCH", body: payload }),
+        "Saved",
+      );
+    else {
+      Object.assign(payload, {
+        status: f.status.value,
+        body: f.body.value,
+        impact: isMaintenance ? "maintenance" : payload.impact,
+      });
+      if (f.component_status && component_ids.length)
+        payload.component_status = f.component_status.value;
+      done = await act(
+        $("button[type=submit]", f),
+        () => api("/admin/status/incidents", { method: "POST", body: payload }),
+        isMaintenance ? "Maintenance scheduled" : "Incident published",
+      );
+    }
+    if (done) {
+      closeDrawer();
+      refresh();
+    }
+  });
+}
+
+boot();
+
+async function renderPerformance(view) {
+  const data = await api("/admin/system/performance");
+  const bytes = (n) => `${(Number(n) / 1048576).toFixed(1)} MB`;
+  const ms = (n) => `${Number(n).toFixed(1)} ms`;
+  mount(
+    view,
+    html` <div class="page-head">
+                <div>
+                    <h1>Performance</h1>
+                    <p class="muted">${data.scope}. Sampled ${fmtDate(data.sampled_at)}.</p>
+                </div>
+                <button class="btn" id="performance-refresh" type="button">Refresh measurements</button>
+            </div>
+            <div class="stack">
+                <div class="stats">
+                    <div class="card stat">
+                        <span class="muted">Requests</span>
+                        <div class="value">${fmtNumber(data.requests)}</div>
+                    </div>
+                    <div class="card stat">
+                        <span class="muted">Server errors</span>
+                        <div class="value">${fmtNumber(data.errors)}</div>
+                    </div>
+                    <div class="card stat">
+                        <span class="muted">Rate limited</span>
+                        <div class="value">${fmtNumber(data.rate_limited)}</div>
+                    </div>
+                    <div class="card stat">
+                        <span class="muted">Process memory</span>
+                        <div class="value">${bytes(data.memory.rss)}</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>Runtime health</h2>
+                    <div class="list">
+                        ${item(
+                          "Database",
+                          data.database.connected
+                            ? html`<span class="badge ok">Connected · ${ms(data.database.round_trip_ms)}</span>`
+                            : html`
+                                <span class="badge danger">Unavailable</span>
+                              `,
+                        )}
+                        ${item("Node.js", data.node)}${item("Uptime", fmtDuration(data.uptime_seconds))}
+                        ${item("Heap used / allocated", `${bytes(data.memory.heapUsed)} / ${bytes(data.memory.heapTotal)}`)}
+                        ${item("Event loop delay, p95 / p99", `${ms(data.event_loop.p95_ms)} / ${ms(data.event_loop.p99_ms)}`)}
+                        ${item("Maximum event loop delay", ms(data.event_loop.max_ms))}
+                    </div>
+                    <p class="muted">Event loop sampling uses a 20 ms interval. Timings include authentication and database work.</p>
+                </div>
+                <div class="card">
+                    <h2>Slowest routes</h2>
+                    <p class="muted">Average completed request time since startup. Use the load benchmark for p50, p95 and p99 under concurrency.</p>
+                    <div class="table-wrap performance-routes">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Route</th>
+                                    <th>Requests</th>
+                                    <th>Mean</th>
+                                    <th>Server errors</th>
+                                    <th>Rate limited</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.routes.map(
+                                  (row) =>
+                                    html`<tr>
+                                            <td>${row.method} ${row.path}</td>
+                                            <td>${fmtNumber(row.requests)}</td>
+                                            <td>${ms(row.mean_ms)}</td>
+                                            <td>${fmtNumber(row.errors)}</td>
+                                            <td>${fmtNumber(row.limited)}</td>
+                                        </tr>`,
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                    ${
+                      data.routes.length
+                        ? ""
+                        : html`
+                            <p class="muted">No completed requests yet. Refresh after using the app.</p>
+                          `
+                    }
+                </div>
+            </div>`,
+  );
+  $("#performance-refresh", view).addEventListener("click", (e) =>
+    act(e.currentTarget, () => renderPerformance(view)),
+  );
+}
+
+function openAdminChannel(guildId, channel, channels) {
+  const creating = !channel;
+  channel ??= { name: "", type: 0, parent_id: null, rate_limit_per_user: 0, nsfw: false };
+  const body = openDrawer(
+    creating ? "Create channel" : `Edit ${channel.name}`,
+    html`<form class="stack" id="admin-channel-form">
+            ${
+              creating
+                ? html`<label
+                              >Channel type<select name="type">
+                                  ${options(
+                                    [
+                                      [0, "Text"],
+                                      [2, "Voice"],
+                                      [4, "Category"],
+                                      [5, "Announcement"],
+                                      [13, "Stage"],
+                                      [15, "Forum"],
+                                      [16, "Media"],
+                                    ],
+                                    0,
+                                  )}
+                              </select></label
+                          >
+                          <p class="muted">Announcement and stage channels require the corresponding server features.</p>`
+                : ""
+            }
+            <label>Name<input name="name" value="${channel.name}" required maxlength="100" /></label>
+            <label data-channel-topic>Topic<textarea name="topic" maxlength="4096">${channel.topic ?? ""}</textarea></label>
+            <label
+                >Category<select name="parent_id">
+                    ${options([["", "No category"], ...channels.filter((item) => item.type === 4 && item.id !== channel.id).map((item) => [item.id, item.name])], channel.parent_id ?? "")}
+                </select></label
+            >
+            <label data-channel-slowmode
+                >Slowmode in seconds<input name="rate_limit_per_user" type="number" min="0" max="21600" step="1" value="${channel.rate_limit_per_user ?? 0}"
+            /></label>
+            ${
+              creating
+                ? html`
+                    <div class="form-grid" data-channel-voice hidden>
+                      <label
+                        >Bitrate in bits per second<input
+                          name="bitrate"
+                          type="number"
+                          min="8000"
+                          max="384000"
+                          step="1000"
+                          value="64000" /></label
+                      ><label
+                        >Member limit<input name="user_limit" type="number" min="0" max="99" step="1" value="0" /><span
+                          class="hint"
+                          >Use 0 for no limit.</span
+                        ></label
+                      >
+                    </div>
+                  `
+                : ""
+            }
+            <label class="toggle"><input name="nsfw" type="checkbox" ${channel.nsfw ? raw("checked") : ""} /><span>Age restricted channel</span></label>
+            <div class="form-actions">
+                <button class="btn primary" type="submit">${creating ? "Create channel" : "Save channel"}</button
+                ><button class="btn" type="button" data-return-server>Back to server</button>
+            </div>
+        </form>`,
+  );
+  if (!body) return;
+  $("[data-return-server]", body).addEventListener("click", () =>
+    openGuild(guildId, undefined, "resources"),
+  );
+  const form = $("form", body);
+  const field = (name) => form.elements.namedItem(name);
+  const updateType = () => {
+    const type = creating ? Number(field("type").value) : channel.type;
+    const voice = type === 2 || type === 13;
+    $("[data-channel-topic]", body).hidden = voice || type === 4;
+    $("[data-channel-slowmode]", body).hidden = voice || type === 4;
+    field("parent_id").disabled = type === 4;
+    if (type === 4) field("parent_id").value = "";
+    const voiceFields = $("[data-channel-voice]", body);
+    if (voiceFields) {
+      voiceFields.hidden = !voice;
+      for (const input of $$("input", voiceFields)) input.disabled = !voice;
+    }
+  };
+  if (creating) field("type").addEventListener("change", updateType);
+  updateType();
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const type = creating ? Number(field("type").value) : channel.type;
+    const voice = type === 2 || type === 13;
+    const patch = {
+      name: field("name").value,
+      parent_id: field("parent_id").value || null,
+      nsfw: field("nsfw").checked,
+    };
+    if (!voice && type !== 4)
+      Object.assign(patch, {
+        topic: field("topic").value || null,
+        rate_limit_per_user: Number(field("rate_limit_per_user").value),
+      });
+    if (creating) {
+      patch.type = type;
+      if (voice)
+        Object.assign(patch, {
+          bitrate: Number(field("bitrate").value),
+          user_limit: Number(field("user_limit").value),
+        });
+    }
+    const path = `/admin/guilds/${guildId}/channels${creating ? "" : `/${channel.id}`}`;
+    const result = await act(
+      $("button[type=submit]", form),
+      () => api(path, { method: creating ? "POST" : "PATCH", body: patch }),
+      creating ? "Channel created" : "Channel saved",
+    );
+    if (result) openGuild(guildId, undefined, "resources");
+  });
+}
+
+function openAdminRole(guildId, role, permissions) {
+  const creating = !role;
+  role ??= { name: "", color: 0, permissions: "0", hoist: false, mentionable: false };
+  const body = openDrawer(
+    creating ? "Create role" : `Edit ${role.name}`,
+    html`<form class="stack" id="admin-role-form">
+            <label>Name<input name="name" value="${role.name}" required maxlength="100" /></label>
+            <label>Color<input name="color" type="color" value="${hexColor(role.color)}" /></label>
+            <label class="toggle"><input name="hoist" type="checkbox" ${role.hoist ? raw("checked") : ""} /><span>Display members separately</span></label>
+            <label class="toggle"><input name="mentionable" type="checkbox" ${role.mentionable ? raw("checked") : ""} /><span>Allow anyone to mention this role</span></label>
+            <h3>Permissions</h3>
+            <p class="muted">Administrator grants every server permission. ${creating ? "New roles start with no permissions." : "Existing unknown permissions are preserved."}</p>
+            <div class="checks">
+                ${permissions.map((permission) => html`<label class="toggle"><input type="checkbox" data-permission="${permission.value}" ${(BigInt(role.permissions) & BigInt(permission.value)) === BigInt(permission.value) ? raw("checked") : ""} /><span>${permission.name.toLowerCase().replaceAll("_", " ")}</span></label>`)}
+            </div>
+            <div class="form-actions">
+                <button class="btn primary" type="submit">${creating ? "Create role" : "Save role"}</button
+                ><button class="btn" type="button" data-return-server>Back to server</button>
+            </div>
+        </form>`,
+  );
+  if (!body) return;
+  $("[data-return-server]", body).addEventListener("click", () =>
+    openGuild(guildId, undefined, "resources"),
+  );
+  $("form", body).addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    let bits = BigInt(role.permissions);
+    for (const checkbox of $$("[data-permission]", form)) {
+      const bit = BigInt(checkbox.dataset.permission);
+      bits = checkbox.checked ? bits | bit : bits & ~bit;
+    }
+    const patch = {
+      name: form.name.value,
+      color: parseInt(form.color.value.slice(1), 16),
+      hoist: form.hoist.checked,
+      mentionable: form.mentionable.checked,
+      permissions: bits.toString(),
+    };
+    const path = `/admin/guilds/${guildId}/roles${creating ? "" : `/${role.id}`}`;
+    const result = await act(
+      $("button[type=submit]", form),
+      () => api(path, { method: creating ? "POST" : "PATCH", body: patch }),
+      creating ? "Role created" : "Role saved",
+    );
+    if (result) openGuild(guildId, undefined, "resources");
+  });
+}
+
+async function renderOfficialInbox(view) {
+  const initial = location.hash.split("/")[2] || "";
+  mount(
+    view,
+    html`
+      <div class="page-head">
+        <h1>Official inbox</h1>
+        <p class="muted">Messages to and from the Official account.</p>
+      </div>
+      <div class="official-layout">
+        <aside class="card official-sidebar" aria-label="Users">
+          <label
+            >Search users<input
+              id="official-search"
+              type="search"
+              maxlength="100"
+              placeholder="Name or username"
+          /></label>
+          <div class="row">
+            <span class="muted grow">Support conversations first</span
+            ><button class="btn small" id="official-users-refresh" type="button">Refresh users</button>
+          </div>
+          <div id="official-users" class="official-users" aria-label="Choose a user"></div>
+          <p id="official-users-status" class="muted" role="status"></p>
+          <button id="official-users-more" class="btn" type="button" hidden>Load more users</button>
+        </aside>
+        <div id="official-conversation">
+          <section class="card">
+            <p class="muted">Select a user to read or start a conversation.</p>
+          </section>
+        </div>
+      </div>
+    `,
+  );
+  let generation = 0;
+  let request;
+  let selectedId = initial;
+  let directoryGeneration = 0;
+  let directoryRequest;
+  let directory = [];
+  let directoryOffset = 0;
+  const panel = $("#official-conversation", view);
+  const list = $("#official-users", view);
+  const search = $("#official-search", view);
+  const more = $("#official-users-more", view);
+  const directoryStatus = $("#official-users-status", view);
+  const selection = () => {
+    for (const button of $$("[data-official-user]", list))
+      button.setAttribute("aria-pressed", String(button.dataset.officialUser === selectedId));
+  };
+  function drawDirectory() {
+    mount(
+      list,
+      directory.map(
+        (
+          user,
+        ) => html`<button type="button" class="official-user" data-official-user="${user.id}" aria-pressed="${user.id === selectedId}">
+            ${avatar(user)}<span class="official-user-label"><strong>${userName(user)}</strong><span>${userTag(user)}</span>
+            ${user.has_replied ? html`<span class="official-user-support">Contacted support · ${fmtDate(user.last_incoming_at)}</span>` : html`<span class="muted">${user.channel_id ? "Official conversation" : "Start conversation"}</span>`}</span></button>`,
+      ),
+    );
+    for (const button of $$("[data-official-user]", list))
+      button.addEventListener("click", () => {
+        if (button.dataset.officialUser === selectedId) return;
+        if ($("form[data-dirty]", panel) && !confirm("Discard your unsent message?")) return;
+        open(button.dataset.officialUser);
+      });
+  }
+  async function loadDirectory(reset = true) {
+    const current = ++directoryGeneration;
+    directoryRequest?.abort();
+    directoryRequest = new AbortController();
+    more.disabled = true;
+    directoryStatus.textContent = "Loading users…";
+    try {
+      const data = await api(
+        `/admin/conversations?q=${encodeURIComponent(search.value.trim())}&offset=${reset ? 0 : directoryOffset}`,
+        { signal: directoryRequest.signal },
+      );
+      if (!view.isConnected || current !== directoryGeneration) return;
+      const previous = reset ? [] : directory;
+      const known = new Set(previous.map((user) => user.id));
+      directory = [...previous, ...data.users.filter((user) => !known.has(user.id))];
+      directoryOffset = data.offset;
+      more.hidden = !data.has_more;
+      drawDirectory();
+      directoryStatus.textContent = directory.length
+        ? `${directory.length} users shown`
+        : "No users found.";
+      if (!selectedId && directory.length) open(directory[0].id);
+    } catch (error) {
+      if (!view.isConnected || current !== directoryGeneration || error.status === 499) return;
+      directoryStatus.textContent = error.message;
+    } finally {
+      if (current === directoryGeneration) more.disabled = false;
+    }
+  }
+  search.addEventListener(
+    "input",
+    debounce(() => loadDirectory(), 250),
+  );
+  more.addEventListener("click", () => loadDirectory(false));
+  $("#official-users-refresh", view).addEventListener("click", () => loadDirectory());
+  async function open(id, retainedDraft = "") {
+    selectedId = id;
+    selection();
+    const current = ++generation;
+    request?.abort();
+    request = new AbortController();
+    const previousSend = $("#official-send", panel);
+    const draft =
+      retainedDraft || (previousSend?.dataset.userId === id ? previousSend.content.value : "");
+    mount(
+      panel,
+      html`
+        <p role="status">Loading conversation…</p>
+      `,
+    );
+    let data;
+    try {
+      data = await api(`/admin/conversations/${encodeURIComponent(id)}`, {
+        signal: request.signal,
+      });
+    } catch (error) {
+      if (!view.isConnected || current !== generation || error.status === 499) return;
+      mount(
+        panel,
+        html`<section class="card stack"><p class="form-error" role="alert">${error.message}</p>
+                ${draft ? html`<form class="stack" data-dirty="true"><label>Unsent message<textarea rows="4" readonly>${draft}</textarea></label></form><p class="muted">Your draft is kept. Retry to continue editing.</p>` : ""}
+                <button class="btn" id="official-retry" type="button">Retry loading conversation</button></section>`,
+      );
+      $("#official-retry", panel).addEventListener("click", () => open(id, draft));
+      return;
+    }
+    if (!view.isConnected || current !== generation) return;
+    mount(
+      panel,
+      html`<section class="card stack"><div class="row"><h2 class="grow">${userName(data.user)}</h2><button class="btn" id="official-refresh" type="button">Refresh</button></div>
+            <button class="btn" id="official-older" type="button" ${data.has_more ? "" : raw("hidden")}>Load older messages</button>
+            <div id="official-history" class="stack" aria-label="Conversation history"></div>
+            <p id="official-status" class="muted" role="status"></p>
+            <form id="official-send" class="stack" data-user-id="${id}"><label>Message<textarea name="content" rows="4" maxlength="${data.max_characters}" required></textarea></label><button class="btn primary" type="submit">Send as Official</button></form></section>`,
+    );
+    let messages = data.messages;
+    let before = data.before;
+    const older = $("#official-older", panel);
+    const history = $("#official-history", panel);
+    function draw() {
+      mount(
+        history,
+        messages.length
+          ? messages.map(
+              (message) =>
+                html`<article class="official-message"><div class="row"><strong class="grow">${message.author_id === data.official.id ? "Official" : userName(data.user)}</strong><time datetime="${message.timestamp}">${fmtDate(message.timestamp)}</time></div><p>${message.readable ? message.content : "This encrypted message could not be opened."}</p>${message.attachments.map((file) => html`<span class="muted">Attachment: ${file.filename}</span>`)}</article>`,
+            )
+          : html`
+              <p class="muted">No messages yet.</p>
+            `,
+      );
+    }
+    draw();
+    older.addEventListener("click", () =>
+      act(older, async () => {
+        const page = await api(
+          `/admin/conversations/${encodeURIComponent(id)}?before=${encodeURIComponent(before)}`,
+          { signal: request.signal },
+        );
+        if (!view.isConnected || current !== generation) return;
+        messages = [...page.messages, ...messages];
+        before = page.before;
+        older.hidden = !page.has_more;
+        draw();
+      }),
+    );
+    const send = $("#official-send", panel);
+    if (retainedDraft) {
+      send.content.value = retainedDraft;
+      send.dataset.dirty = "true";
+    }
+    $("#official-refresh", panel).addEventListener("click", () => {
+      if (send.content.value && !confirm("Discard your unsent message and refresh?")) return;
+      open(id);
+    });
+    send.addEventListener("input", () => {
+      send.dataset.dirty = "true";
+    });
+    send.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const content = send.content.value.trim();
+      if (!content) return;
+      const result = await act($("button", send), () =>
+        api(`/admin/conversations/${encodeURIComponent(id)}`, {
+          method: "POST",
+          body: { content },
+        }),
+      );
+      if (!result || !view.isConnected || current !== generation) return;
+      delete send.dataset.dirty;
+      send.reset();
+      await open(id);
+    });
+  }
+  await loadDirectory();
+  if (/^\d{1,20}$/.test(initial)) await open(initial);
+}

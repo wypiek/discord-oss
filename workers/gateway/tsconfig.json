@@ -1,0 +1,15 @@
+{
+    "include": ["src", "worker-configuration.d.ts"],
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "lib": ["ESNext"],
+        "strict": true,
+        "noEmit": true,
+        "skipLibCheck": true,
+        "paths": {
+            "@spacebar/*": ["../../dist/*"]
+        }
+    }
+}

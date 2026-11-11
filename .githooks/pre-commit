@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged" ] || exit 0
+bunx biome check --staged --no-errors-on-unmatched --files-ignore-unknown=true
+if echo "$staged" | grep -qE '^src/'; then
+    bun run build:src
+fi
+if echo "$staged" | grep -qE '^client/e2ee/'; then
+    bunx tsc -p client/e2ee
+fi
+if echo "$staged" | grep -q '^src/schemas/'; then
+    bun run generate:schema >/dev/null
+    git add assets/schemas.json
+fi

@@ -1,0 +1,54 @@
+.fosscord-role-templates {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.fosscord-role-templates-head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.fosscord-role-templates-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+}
+
+.fosscord-role-template {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--background-base-lower);
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color 120ms ease-out,
+        border-color 120ms ease-out;
+}
+
+.fosscord-role-template:hover:not(:disabled) {
+    background: var(--background-mod-subtle);
+}
+
+.fosscord-role-template[aria-pressed="true"] {
+    border-color: var(--brand-500);
+}
+
+.fosscord-role-template:focus-visible {
+    outline: 2px solid var(--brand-500);
+    outline-offset: 2px;
+}
+
+.fosscord-role-template:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}

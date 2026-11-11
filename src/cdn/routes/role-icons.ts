@@ -1,0 +1,92 @@
+import crypto from "node:crypto";
+import { Router, Response, Request } from "express";
+import { fileTypeFromBuffer } from "file-type";
+import { HTTPError } from "lambert-server/HTTPError";
+import { Config, isRequestSignature } from "@spacebar/util";
+import { storage, internalUpload, setCacheControl, safeMediaType } from "../util";
+
+//Role icons ---> avatars.ts modified
+
+// TODO: check user rights and perks and animated pfp are allowed in the policies
+// TODO: generate different sizes of icon
+// TODO: generate different image types of icon
+
+const STATIC_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/avif", "image/svg+xml", "image/svg"];
+const ALLOWED_MIME_TYPES = [...STATIC_MIME_TYPES];
+
+const router = Router({ mergeParams: true });
+
+router.post(
+    "/:role_id",
+    internalUpload(async (req: Request, res: Response) => {
+        if (!isRequestSignature(req.headers.signature)) throw new HTTPError("Invalid request signature");
+        if (!req.file) throw new HTTPError("Missing file");
+        const { buffer, size } = req.file;
+        const { role_id } = req.params as { [key: string]: string };
+
+        const hash = crypto.createHash("md5").update(buffer).digest("hex");
+
+        const type = await fileTypeFromBuffer(buffer);
+        if (!type || !ALLOWED_MIME_TYPES.includes(type.mime)) throw new HTTPError("Invalid file type");
+
+        const path = `role-icons/${role_id}/${hash}.png`;
+        const endpoint = Config.get().cdn.endpointPublic;
+
+        await storage.set(path, buffer);
+
+        return res.json({
+            id: hash,
+            content_type: type.mime,
+            size,
+            url: `${endpoint}${req.baseUrl}/${role_id}/${hash}`,
+        });
+    }),
+);
+
+router.get("/:role_id", setCacheControl, async (req: Request, res: Response) => {
+    const { role_id } = req.params as { [key: string]: string };
+    //role_id = role_id.split(".")[0]; // remove .file extension
+    const path = `role-icons/${role_id}`;
+
+    const file = await storage.get(path);
+    if (!file) throw new HTTPError("not found", 404);
+    const type = await fileTypeFromBuffer(file);
+
+    res.set("Content-Type", safeMediaType(type?.mime));
+
+    return res.send(file);
+});
+
+router.get("/:role_id/:hash", setCacheControl, async (req: Request, res: Response) => {
+    const { role_id, hash } = req.params as { [key: string]: string };
+    //hash = hash.split(".")[0]; // remove .file extension
+    const requested_extension = hash.split(".")[1];
+    const role_icon_hash = hash.split(".")[0];
+    let file: Buffer | null = null;
+
+    const extensions_to_try = [requested_extension, "png", "jpg", "jpeg", "webp", "svg"];
+
+    for (let i = 0; i < extensions_to_try.length; i++) {
+        file = await storage.get(`role-icons/${role_id}/${role_icon_hash}.${extensions_to_try[i]}`);
+        if (file) break;
+    }
+
+    if (!file) throw new HTTPError("not found", 404);
+    const type = await fileTypeFromBuffer(file);
+
+    res.set("Content-Type", safeMediaType(type?.mime));
+
+    return res.send(file);
+});
+
+router.delete("/:role_id/:id", async (req: Request, res: Response) => {
+    if (!isRequestSignature(req.headers.signature)) throw new HTTPError("Invalid request signature");
+    const { role_id, id } = req.params as { [key: string]: string };
+    const path = `role-icons/${role_id}/${id}`;
+
+    await storage.delete(path);
+
+    return res.send({ success: true });
+});
+
+export default router;

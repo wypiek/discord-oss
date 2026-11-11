@@ -1,0 +1,711 @@
+import { User } from "./User";
+import { Member } from "./Member";
+import { Role } from "./Role";
+import { Channel } from "./Channel";
+import { Application } from "./Application";
+import { Column, CreateDateColumn, Entity, Index, JoinColumn, JoinTable, ManyToMany, ManyToOne, OneToMany, FindOneOptions, Raw, Not, BaseEntity, In } from "typeorm";
+import { BaseClass } from "./BaseClass";
+import { Guild } from "./Guild";
+import { Webhook } from "./Webhook";
+import { Sticker } from "./Sticker";
+import { Attachment } from "./Attachment";
+import { getUrlSignature, NewUrlSignatureData, NewUrlUserSignatureData } from "../../util/Signing";
+import { Config } from "@spacebar/util/util";
+import {
+    ApplicationCommandType,
+    BaseMessageComponents,
+    E2eeEnvelope,
+    Embed,
+    EmbedType,
+    MessageComponentType,
+    MessageSnapshot,
+    MessageType,
+    PartialMessage,
+    MessageCall,
+    MessageSoundboardSound,
+    Poll,
+    PollAnswerCount,
+    PublicMessage,
+    PublicReaction,
+    Reaction,
+    UnfurledMediaItem,
+    PartialUser,
+    PublicUser,
+    InteractionType,
+} from "@spacebar/schemas";
+import { MessageFlags, proxyEmbedMedia, proxyComponentsMedia } from "@spacebar/util";
+import { JsonRemoveEmpty } from "@spacebar/util/util/Decorators";
+
+export const MessageRelations = ["author", "mentions", "mention_roles", "mention_channels", "sticker_items", "attachments"] as const;
+export type MessageRelation = (typeof MessageRelations)[number];
+const MessageLinks: { relation: MessageRelation; table: string; column: string }[] = [
+    { relation: "mentions", table: "message_user_mentions", column: "user_id" },
+    { relation: "mention_roles", table: "message_role_mentions", column: "role_id" },
+    { relation: "mention_channels", table: "message_channel_mentions", column: "channel_id" },
+    { relation: "sticker_items", table: "message_stickers", column: "sticker_id" },
+];
+
+@Entity({
+    name: "messages",
+})
+@Index(["channel_id", "id"], { unique: true })
+export class Message extends BaseClass {
+    @Column({ nullable: true })
+    channel_id?: string;
+
+    @JoinColumn({ name: "channel_id" })
+    @ManyToOne(() => Channel, {
+        createForeignKeyConstraints: false,
+    })
+    channel: Channel;
+
+    @Column({ nullable: true })
+    @JsonRemoveEmpty
+    thread_id?: string;
+
+    @JoinColumn({ name: "thread_id", foreignKeyConstraintName: "FK_message_thread_id" })
+    @ManyToOne(() => Channel, {
+        onDelete: "SET NULL",
+    })
+    @JsonRemoveEmpty
+    thread?: Channel;
+
+    @Column({ nullable: true })
+    @JsonRemoveEmpty
+    guild_id?: string;
+
+    @JoinColumn({ name: "guild_id" })
+    @ManyToOne(() => Guild, {
+        createForeignKeyConstraints: false,
+    })
+    guild?: Guild;
+
+    @Column({ nullable: true })
+    @Index()
+    author_id?: string;
+
+    @JoinColumn({
+        name: "author_id",
+        referencedColumnName: "id",
+        foreignKeyConstraintName: "FK_message_author_id",
+    })
+    @ManyToOne(() => User, {
+        onDelete: "CASCADE",
+    })
+    author?: User;
+
+    @Column({ nullable: true })
+    member_id?: string;
+
+    @JoinColumn({
+        name: "member_id",
+        referencedColumnName: "id",
+        foreignKeyConstraintName: "FK_message_member_id",
+    })
+    @ManyToOne(() => User, {
+        onDelete: "CASCADE",
+    })
+    member?: Member;
+
+    @Column({ nullable: true })
+    @JsonRemoveEmpty
+    webhook_id?: string;
+
+    @JoinColumn({ name: "webhook_id" })
+    @ManyToOne(() => Webhook, { createForeignKeyConstraints: false })
+    webhook?: Webhook;
+
+    @Column({ nullable: true })
+    application_id?: string;
+
+    @JoinColumn({ name: "application_id", foreignKeyConstraintName: "FK_message_application_id" })
+    @ManyToOne(() => Application)
+    application?: Application;
+
+    @Column({ nullable: true })
+    content?: string;
+
+    @Column()
+    @CreateDateColumn()
+    timestamp: Date;
+
+    @Column({ nullable: true })
+    edited_timestamp?: Date;
+
+    @Column({ nullable: true })
+    tts?: boolean;
+
+    @Column({ nullable: true })
+    mention_everyone?: boolean;
+
+    @JoinTable({
+        name: "message_user_mentions",
+        joinColumn: {
+            name: "message_id",
+            referencedColumnName: "id",
+            foreignKeyConstraintName: "FK_message_mentions_message_id",
+        },
+        inverseJoinColumn: {
+            name: "user_id",
+            referencedColumnName: "id",
+            foreignKeyConstraintName: "FK_message_mentions_user_id",
+        },
+    })
+    @ManyToMany(() => User)
+    mentions: User[];
+
+    @JoinTable({
+        name: "message_role_mentions",
+        joinColumn: {
+            name: "message_id",
+            referencedColumnName: "id",
+            foreignKeyConstraintName: "FK_message_role_mentions_message_id",
+        },
+        inverseJoinColumn: {
+            name: "role_id",
+            referencedColumnName: "id",
+            foreignKeyConstraintName: "FK_message_role_mentions_role_id",
+        },
+    })
+    @ManyToMany(() => Role)
+    mention_roles: Role[];
+
+    @JoinTable({
+        name: "message_channel_mentions",
+        joinColumn: {
+            name: "message_id",
+            referencedColumnName: "id",
+            foreignKeyConstraintName: "FK_message_channel_mentions_message_id",
+        },
+        inverseJoinColumn: {
+            name: "channel_id",
+            referencedColumnName: "id",
+            foreignKeyConstraintName: "FK_message_channel_mentions_channel_id",
+        },
+    })
+    @ManyToMany(() => Channel)
+    @JsonRemoveEmpty
+    mention_channels: Channel[];
+
+    @JoinTable({
+        name: "message_stickers",
+        joinColumn: {
+            name: "message_id",
+            referencedColumnName: "id",
+            foreignKeyConstraintName: "FK_message_stickers_message_id",
+        },
+        inverseJoinColumn: {
+            name: "sticker_id",
+            referencedColumnName: "id",
+            foreignKeyConstraintName: "FK_message_stickers_sticker_id",
+        },
+    })
+    @ManyToMany(() => Sticker, { cascade: true, onDelete: "CASCADE" })
+    @JsonRemoveEmpty
+    sticker_items?: Sticker[];
+
+    @OneToMany(
+        () => Attachment,
+        (attachment: Attachment) => attachment.message,
+        {
+            cascade: true,
+            orphanedRowAction: "delete",
+        },
+    )
+    attachments?: Attachment[];
+
+    @Column({ type: "jsonb" })
+    embeds: Embed[];
+
+    @Column({ type: "jsonb" })
+    @JsonRemoveEmpty
+    reactions: Reaction[];
+
+    @Column({ type: "text", nullable: true })
+    @JsonRemoveEmpty
+    nonce?: string;
+
+    @Column({ nullable: true, type: Date })
+    pinned_at?: Date | null;
+
+    get pinned(): boolean {
+        return this.pinned_at != null;
+    }
+
+    @Column({ type: "int" })
+    type: MessageType;
+
+    @Column({ type: "jsonb", nullable: true })
+    @JsonRemoveEmpty
+    activity?: {
+        type: number;
+        party_id: string;
+    };
+
+    @Column({ default: 0 })
+    flags: number;
+
+    @Column({ type: "jsonb", nullable: true })
+    @JsonRemoveEmpty
+    message_reference?: {
+        message_id?: string;
+        channel_id?: string;
+        guild_id?: string;
+        type?: number; // 0 = DEFAULT, 1 = FORWARD
+    };
+
+    @JoinColumn({
+        name: "message_reference_id",
+        foreignKeyConstraintName: "FK_message_message_reference_id",
+    })
+    @ManyToOne(() => Message, { onDelete: "SET NULL" })
+    referenced_message?: Message | null;
+
+    @Column({ type: "jsonb", nullable: true })
+    @JsonRemoveEmpty
+    interaction?: {
+        id: string;
+        type: InteractionType;
+        name: string;
+        user?: PublicUser;
+        command_id?: string;
+        options?: unknown[];
+    };
+
+    @Column({ type: "jsonb", nullable: true })
+    @JsonRemoveEmpty
+    interaction_metadata?: {
+        id: string;
+        type: InteractionType;
+        user_id: string;
+        authorizing_integration_owners: object;
+        name: string;
+        command_type: ApplicationCommandType;
+    };
+
+    @Column({ type: "jsonb", nullable: true })
+    components?: BaseMessageComponents[];
+
+    @Column({ type: "jsonb", nullable: true })
+    @JsonRemoveEmpty
+    poll?: Poll;
+
+    @Column({ nullable: true })
+    username?: string;
+
+    @Column({ nullable: true })
+    avatar?: string;
+
+    @Column({ default: "[]", type: "jsonb" })
+    message_snapshots: MessageSnapshot[];
+
+    @Column({ type: "jsonb", nullable: true })
+    encrypted?: E2eeEnvelope | null;
+
+    @Column({ type: "text", nullable: true, select: false })
+    authorship?: string | null;
+
+    @Column({ type: "jsonb", nullable: true })
+    soundboard_sounds?: MessageSoundboardSound[] | null;
+
+    @Column({ type: "jsonb", nullable: true })
+    call?: MessageCall | null;
+
+    get isWebhook() {
+        return this.webhook_id != null && this.webhook != null;
+    }
+
+    static async mutate<T>(where: { id: string; channel_id?: string }, fn: (message: Message | null) => T | Promise<T>): Promise<T> {
+        return Message.getRepository().manager.transaction(async (manager) => {
+            const message = await manager.findOne(Message, {
+                where,
+                lock: { mode: "pessimistic_write" },
+            });
+            const result = await fn(message);
+            if (message) await manager.update(Message, { id: message.id }, { reactions: message.reactions, poll: message.poll });
+            return result;
+        });
+    }
+
+    static async loadRelations(messages: Message[], relations: MessageRelation[] = [...MessageRelations]) {
+        if (!messages.length) return messages;
+        const ids = messages.map((message) => message.id);
+        const wanted = new Set(relations);
+        const linked = MessageLinks.filter((link) => wanted.has(link.relation));
+        const manager = Message.getRepository().manager;
+        const authorIds = wanted.has("author") ? [...new Set(messages.map((message) => message.author_id).filter((id): id is string => !!id))] : [];
+        const [authors, links, attachments] = await Promise.all([
+            authorIds.length ? User.find({ where: { id: In(authorIds) } }) : [],
+            linked.length
+                ? manager.query(
+                      ...manager.connection.driver.escapeQueryWithParameters(
+                          linked
+                              .map(
+                                  ({ relation, table, column }) =>
+                                      `SELECT '${relation}' AS relation, message_id, ${column} AS target_id FROM ${table} WHERE message_id IN (:...ids)`,
+                              )
+                              .join(" UNION ALL "),
+                          { ids },
+                      ),
+                  )
+                : [],
+            wanted.has("attachments") ? Attachment.find({ where: { message_id: In(ids) } }) : [],
+        ]);
+        const rows = (links as { relation: MessageRelation; message_id: string | number; target_id: string | number }[]).map((row) => ({
+            relation: row.relation,
+            message_id: String(row.message_id),
+            target_id: String(row.target_id),
+        }));
+        const targets = (relation: MessageRelation) => [...new Set(rows.filter((row) => row.relation === relation).map((row) => row.target_id))];
+        const load = <T extends { id: string }>(relation: MessageRelation, find: (ids: string[]) => Promise<T[]>) => {
+            const wantedIds = targets(relation);
+            return wantedIds.length ? find(wantedIds) : Promise.resolve([] as T[]);
+        };
+        const [users, roles, channels, stickers] = await Promise.all([
+            load("mentions", (targetIds) => User.find({ where: { id: In(targetIds) } })),
+            load("mention_roles", (targetIds) => Role.find({ where: { id: In(targetIds) } })),
+            load("mention_channels", (targetIds) => Channel.find({ where: { id: In(targetIds) } })),
+            load("sticker_items", (targetIds) => Sticker.find({ where: { id: In(targetIds) } })),
+        ]);
+        const found: Record<string, Map<string, { id: string }>> = {
+            mentions: new Map(users.map((x) => [x.id, x])),
+            mention_roles: new Map(roles.map((x) => [x.id, x])),
+            mention_channels: new Map(channels.map((x) => [x.id, x])),
+            sticker_items: new Map(stickers.map((x) => [x.id, x])),
+        };
+        const byAuthor = new Map(authors.map((author) => [author.id, author]));
+        const byMessage = Map.groupBy(rows, (row) => `${row.relation}:${row.message_id}`);
+        const attachmentsByMessage = Map.groupBy(attachments, (attachment) => String(attachment.message_id));
+        for (const message of messages) {
+            if (wanted.has("author") && message.author_id) {
+                const author = byAuthor.get(message.author_id);
+                if (author) message.author = author;
+            }
+            for (const { relation } of linked)
+                Object.assign(message, {
+                    [relation]: (byMessage.get(`${relation}:${message.id}`) ?? []).map((row) => found[relation].get(row.target_id)).filter((target) => !!target),
+                });
+            if (wanted.has("attachments")) message.attachments = attachmentsByMessage.get(message.id) ?? [];
+        }
+        return messages;
+    }
+
+    static async fillReplies(messages: Message[]) {
+        const ms = messages
+            .filter((msg) => msg.message_reference && !msg.referenced_message?.id && msg.message_reference.message_id)
+            .filter((msg) => [MessageType.REPLY, MessageType.THREAD_STARTER_MESSAGE, MessageType.CONTEXT_MENU_COMMAND].includes(msg.type));
+        if (!ms.length) return;
+        const curMs = new Map(messages.map((m) => [m.id, m] as const));
+        const neededIds = new Set(ms.map((m) => m.message_reference!.message_id as string)).difference(curMs);
+        if (neededIds.size) {
+            const newMessages = await Message.loadRelations(await Message.find({ where: { id: In([...neededIds]) } }), ["author", "mentions", "mention_roles", "mention_channels"]);
+            newMessages.forEach((msg) => curMs.set(msg.id, msg));
+        }
+        for (const message of ms) {
+            message.referenced_message = curMs.get(message.message_reference!.message_id as string) || null;
+        }
+        const starterParents = ms.filter((m) => m.type === MessageType.THREAD_STARTER_MESSAGE && m.referenced_message).map((m) => m.referenced_message!);
+        if (starterParents.length) await Message.fillReplies(starterParents);
+    }
+
+    static publicReactions(reactions: Reaction[] | undefined, userId?: string): PublicReaction[] {
+        return (reactions ?? []).map(({ emoji, user_ids, burst_user_ids, burst_colors }) => ({
+            emoji,
+            count: user_ids.length + (burst_user_ids?.length ?? 0),
+            count_details: { burst: burst_user_ids?.length ?? 0, normal: user_ids.length },
+            burst_colors: burst_colors ?? [],
+            me: !!userId && user_ids.includes(userId),
+            me_burst: !!userId && !!burst_user_ids?.includes(userId),
+        }));
+    }
+
+    static publicPoll(poll: Poll | undefined, userId?: string): Poll | undefined {
+        if (!poll) return undefined;
+        const counts = (poll.results?.answer_counts ?? []) as (PollAnswerCount & {
+            voters?: string[];
+        })[];
+        return {
+            ...poll,
+            layout_type: poll.layout_type ?? 1,
+            results: {
+                is_finalized: poll.results?.is_finalized ?? false,
+                answer_counts: counts.map(({ id, count, voters }) => ({
+                    id: Number(id) as unknown as string,
+                    count,
+                    me_voted: !!userId && !!voters?.includes(userId),
+                })),
+            },
+        };
+    }
+
+    toPublicJSON(userId: string): PublicMessage {
+        return {
+            ...this.toJSON(),
+            reactions: Message.publicReactions(this.reactions, userId),
+            poll: Message.publicPoll(this.poll, userId),
+        };
+    }
+
+    toJSON(shallow = false): PublicMessage {
+        // this.clean_data();
+        return {
+            ...this,
+            channel_id: this.channel_id ?? this.channel.id,
+            channel: undefined,
+            message_snapshots: this.message_snapshots?.length ? this.message_snapshots : undefined,
+
+            timestamp: this.timestamp.toISOString(),
+            edited_timestamp: this.edited_timestamp ? this.edited_timestamp.toISOString() : null,
+
+            author_id: undefined,
+            member_id: undefined,
+            authorship: undefined,
+            username: undefined,
+            avatar: undefined,
+            webhook_id: this.webhook_id ?? undefined,
+            application_id: this.application_id ?? undefined,
+            mentions: this.mentions?.map((user) => {
+                if (user && !user.toPublicUser) console.trace("toPublic user missing!!!");
+                return (user?.toPublicUser?.() ?? user ?? undefined) as unknown as PartialUser;
+            }),
+
+            mention_roles: this.mention_roles?.map((role) => role.id) ?? [],
+            mention_channels: this.mention_channels?.map((ch) => ch.toJSON()) ?? [],
+            attachments: this.attachments?.map((att) => att.toJSON()) ?? [],
+
+            nonce: this.encrypted && !this.encrypted.mid ? (this.nonce ?? undefined) : undefined,
+            tts: this.tts ?? false,
+            guild: undefined,
+            webhook: undefined,
+            interaction: this.interaction
+                ? {
+                      id: this.interaction.id,
+                      type: this.interaction.type,
+                      name: this.interaction.name,
+                      user: this.interaction.user,
+                  }
+                : undefined,
+            interaction_metadata: this.interaction_metadata ?? undefined,
+            reactions: undefined,
+            sticker_items: this.sticker_items?.map(({ id, name, format_type }) => ({
+                id,
+                name,
+                format_type,
+            })),
+            message_reference: this.message_reference ?? undefined,
+            mention_everyone: this.mention_everyone ?? false,
+            author: {
+                ...(this.author?.toPartialUser() ?? undefined),
+                // Webhooks
+                username: this.username ?? this.author?.username ?? null,
+                avatar: (this.webhook_id ? this.avatar : (this.avatar ?? this.author?.avatar)) ?? null,
+            },
+            activity: this.activity ?? undefined,
+            application:
+                this.activity && this.application
+                    ? {
+                          id: this.application.id,
+                          name: this.application.name,
+                          icon: this.application.icon ?? null,
+                          description: this.application.description,
+                          cover_image: this.application.cover_image,
+                      }
+                    : undefined,
+            components: proxyComponentsMedia(this.components ?? []),
+            poll: Message.publicPoll(this.poll),
+            call: this.call ?? undefined,
+            content: this.content ?? "",
+            embeds: (this.embeds ?? []).map((embed) => proxyEmbedMedia({ ...embed, type: embed.type || EmbedType.rich })),
+            pinned: this.pinned,
+            thread: this.thread ? this.thread.toJSON() : this.thread,
+            referenced_message: shallow ? undefined : this.referenced_message === null ? null : this.referenced_message?.toJSON(this.type !== MessageType.THREAD_STARTER_MESSAGE),
+            encrypted: this.encrypted ?? undefined,
+            soundboard_sounds: this.soundboard_sounds?.length ? this.soundboard_sounds : undefined,
+        } satisfies PublicMessage;
+    }
+
+    toPartialMessage(): PartialMessage {
+        return {
+            id: this.id,
+            // lobby_id: this.lobby_id,
+            channel_id: this.channel_id!,
+            type: this.type,
+            content: this.content!,
+            author: this.author?.toPartialUser() as PartialUser,
+            flags: this.flags,
+            application_id: this.application_id,
+            //channel: this.channel, // TODO: ephemeral DM channels
+            // recipient_id: this.recipient_id, // TODO: ephemeral DM channels
+        };
+    }
+
+    toSnapshot(): MessageSnapshot {
+        return {
+            message: {
+                attachments: this.attachments?.map((x) => x.toJSON()),
+                components: proxyComponentsMedia(this.components ?? []),
+                content: this.content!,
+                edited_timestamp: this.edited_timestamp,
+                embeds: (this.embeds ?? []).map(proxyEmbedMedia),
+                flags: this.flags,
+                mention_roles: this.mention_roles?.map((x) => x.id),
+                mentions: this.mentions.map((x) => x.toPublicUser() as unknown as PartialUser), // TODO: write a proper method for this
+                timestamp: this.timestamp,
+                type: this.type,
+            },
+        };
+    }
+
+    withSignedAttachments(data: NewUrlUserSignatureData) {
+        const cdn = Config.get().cdn.endpointPublic?.replace(/\/+$/, "");
+        const sign = (url?: string) => {
+            if (!url || !cdn || !url.startsWith(`${cdn}/attachments/`)) return url;
+            const unsigned = new URL(url);
+            unsigned.search = "";
+            return getUrlSignature(new NewUrlSignatureData({ ...data, url: unsigned.toString() }))
+                .applyToUrl(unsigned)
+                .toString();
+        };
+        function signMedia(media: UnfurledMediaItem) {
+            media.url = sign(media.url) ?? media.url;
+            media.proxy_url = sign(media.proxy_url);
+        }
+        const json = this instanceof Message ? this.toJSON() : (this as unknown as PublicMessage);
+        const components = proxyComponentsMedia((this.components ?? json.components ?? []) as BaseMessageComponents[]);
+        return {
+            ...json,
+            attachments: (this.attachments ?? json.attachments)?.map((attachment) => {
+                const { url } = attachment as { url?: unknown };
+                return typeof url === "string" && cdn && !url.startsWith(`${cdn}/attachments/`) ? attachment : Attachment.prototype.signUrls.call(attachment, data);
+            }),
+            components: components
+                ? components.map((comp) => {
+                      comp = structuredClone(comp);
+                      if (comp.type === MessageComponentType.Section) {
+                          const accessory = comp.accessory;
+                          if (accessory.type === MessageComponentType.Thumbnail) {
+                              signMedia(accessory.media);
+                          }
+                      } else if (comp.type === MessageComponentType.MediaGallery) {
+                          comp.items.forEach(({ media }) => signMedia(media));
+                      } else if (comp.type === MessageComponentType.File) {
+                          signMedia(comp.file);
+                      } else if (comp.type === MessageComponentType.Container) {
+                          for (const elm of comp.components) {
+                              switch (elm.type) {
+                                  case MessageComponentType.Separator:
+                                  case MessageComponentType.TextDisplay:
+                                  case MessageComponentType.ActionRow:
+                                      break;
+                                  case MessageComponentType.Section: {
+                                      const accessory = elm.accessory;
+                                      if (accessory.type === MessageComponentType.Thumbnail) {
+                                          signMedia(accessory.media);
+                                      }
+                                      break;
+                                  }
+                                  case MessageComponentType.MediaGallery:
+                                      elm.items.forEach(({ media }) => signMedia(media));
+                                      break;
+                                  case MessageComponentType.File: {
+                                      signMedia(elm.file);
+                                      break;
+                                  }
+
+                                  default:
+                                      elm satisfies never;
+                              }
+                          }
+                      }
+                      return comp;
+                  })
+                : json.components,
+        };
+    }
+
+    static async createWithDefaults(opts: Partial<Message>): Promise<Message> {
+        const message = Message.create();
+
+        if (!opts.author) {
+            if (!opts.author_id) throw new Error("Either author or author_id must be provided to create a Message");
+            opts.author = await User.findOneOrFail({ where: { id: opts.author_id! } });
+        }
+
+        if (!opts.channel) {
+            if (!opts.channel_id) throw new Error("Either channel or channel_id must be provided to create a Message");
+            opts.channel = await Channel.findOneOrFail({ where: { id: opts.channel_id! } });
+            opts.guild_id ??= opts.channel.guild_id;
+        }
+
+        if (!opts.member_id) opts.member_id = message.author_id;
+        if (!opts.member) opts.member = await Member.findOneOrFail({ where: { id: opts.member_id! } });
+
+        if (!opts.guild) {
+            if (opts.guild_id) opts.guild = await Guild.findOneOrFail({ where: { id: opts.guild_id! } });
+            else if (opts.channel?.guild?.id) opts.guild = opts.channel.guild;
+            else if (opts.channel?.guild_id) opts.guild = await Guild.findOneOrFail({ where: { id: opts.channel.guild_id! } });
+            else if (opts.member?.guild?.id) opts.guild = opts.member.guild;
+            else if (opts.member?.guild_id) opts.guild = await Guild.findOneOrFail({ where: { id: opts.member.guild_id! } });
+            else throw new Error("Either guild, guild_id, channel.guild, channel.guild_id, member.guild or member.guild_id must be provided to create a Message");
+        }
+
+        // try 2 now that we have a guild
+        if (!opts.member)
+            opts.member = await Member.findOneOrFail({
+                where: { id: opts.author!.id, guild_id: opts.guild!.id },
+            });
+
+        // set reply type if a message if referenced
+        if (opts.message_reference && !opts.type) message.type = MessageType.REPLY;
+
+        // backpropagate ids
+        opts.channel_id = opts.channel.id;
+        opts.guild_id = opts.guild.id;
+        opts.author_id = opts.author.id;
+        opts.member_id = opts.member.id;
+        opts.webhook_id = opts.webhook?.id;
+        opts.application_id = opts.application?.id;
+
+        delete opts.member;
+
+        Object.assign(message, {
+            tts: false,
+            embeds: [],
+            reactions: [],
+            flags: 0,
+            type: 0,
+            timestamp: new Date(),
+            ...opts,
+        });
+        return message;
+    }
+    static addDefault(options: FindOneOptions<Message>) {
+        if (options.where) {
+            const arr = options.where instanceof Array ? options.where : [options.where];
+            for (const thing of arr) {
+                if (!("flags" in thing)) {
+                    thing.flags = Not(Raw((alias) => `${alias} & ${MessageFlags.FLAGS.EPHEMERAL} = ${MessageFlags.FLAGS.EPHEMERAL}`));
+                }
+            }
+        }
+    }
+}
+
+//@ts-expect-error It works but TS types hate it
+Message.findOneOrFail = function (this: Message, options: FindOneOptions<Message>): Promise<Message> {
+    Message.addDefault(options as FindOneOptions<Message>);
+    //@ts-expect-error how to use generics on call, who knows!
+    return BaseEntity.findOneOrFail.call(Message, options);
+};
+//@ts-expect-error It works but TS types hate it
+Message.findOne = function (this: Message, options: FindOneOptions<Message>): Promise<Message> {
+    Message.addDefault(options as FindOneOptions<Message>);
+    //@ts-expect-error how to use generics on call, who knows!
+    return BaseEntity.findOne.call(Message, options);
+};
+//@ts-expect-error It works but TS types hate it
+Message.find = function (this: Message, options: FindOneOptions<Message>): Promise<Message[]> {
+    Message.addDefault(options as FindOneOptions<Message>);
+    //@ts-expect-error how to use generics on call, who knows!
+    return BaseEntity.find.call(Message, options);
+};

@@ -1,0 +1,46 @@
+name: Release validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  integrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      USER: postgres
+      PORT: "3001"
+      E2EE_TEST_DATABASE_NAME: meowcord_release_ci
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: extra/pion-sfu/go.mod
+          cache-dependency-path: extra/pion-sfu/go.sum
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client lsof
+      - run: bun install --frozen-lockfile
+      - run: |
+          mkdir -p "$HOME/.cache/fosscord-tools"
+          bun add --cwd "$HOME/.cache/fosscord-tools" playwright-core playwright
+          bun "$HOME/.cache/fosscord-tools/node_modules/playwright/cli.js" install --with-deps chromium
+          bun -e 'const {chromium}=require(process.env.HOME+"/.cache/fosscord-tools/node_modules/playwright-core"); console.log("CHROME_PATH="+chromium.executablePath())' >> "$GITHUB_ENV"
+      - run: bun run generate:client
+      - run: bun scripts/client-release.js --check
+      - run: bun run check:client
+      - run: scripts/ci/release-integrations.sh

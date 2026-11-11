@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_TEST_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      MFA_ATTEMPT_PG_TEST: "1"
+      STORAGE_RUNTIME_TEST_DATABASE: fosscord_storage_runtime_test_ci
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4"
+      - run: bun install --frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: bun run release:pack
+      - run: bun run lint
+      - run: bun run build:src
+      - run: bun run typecheck
+      - run: bun run typecheck:workers
+      - run: createdb "$STORAGE_RUNTIME_TEST_DATABASE"
+      - run: |
+          mkdir -p "$HOME/.cache/fosscord-tools"
+          bun add --cwd "$HOME/.cache/fosscord-tools" playwright-core playwright
+          bun "$HOME/.cache/fosscord-tools/node_modules/playwright/cli.js" install --with-deps chromium webkit
+          bun -e 'const {chromium}=require(process.env.HOME+"/.cache/fosscord-tools/node_modules/playwright-core"); console.log("CHROME_PATH="+chromium.executablePath())' >> "$GITHUB_ENV"
+      - run: bun run test
+      - if: always()
+        run: dropdb --if-exists "$STORAGE_RUNTIME_TEST_DATABASE"
+  voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: extra/pion-sfu
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: extra/pion-sfu/go.mod
+          cache-dependency-path: extra/pion-sfu/go.sum
+      - run: go test ./...
+      - run: go test -race ./...

@@ -1,0 +1,46 @@
+{
+  "repository": "https://github.com/Equicord/Equicord",
+  "commit": "1489c0e2a4435d854d7343a5cfb0abb894772318",
+  "settings": {
+    "autoUpdate": false,
+    "autoUpdateNotification": false
+  },
+  "plugins": {
+    "BetterFolders": true,
+    "BetterGifAltText": true,
+    "CopyEmojiMarkdown": true,
+    "CopyUserURLs": true,
+    "FavoriteEmojiFirst": true,
+    "FixImagesQuality": true,
+    "ForceOwnerCrown": true,
+    "FullSearchContext": true,
+    "MessageLinkEmbeds": true,
+    "NoDevtoolsWarning": true,
+    "NoUnblockToJump": true,
+    "PermissionsViewer": true,
+    "PictureInPicture": true,
+    "ReverseImageSearch": true,
+    "ServerInfo": true,
+    "SilentTyping": {
+      "enabled": true,
+      "isEnabled": false
+    },
+    "TypingTweaks": true,
+    "Unindent": true,
+    "ValidReply": true,
+    "ValidUser": true,
+    "ViewIcons": true,
+    "ViewRaw": true,
+    "VoiceMessages": true,
+    "VolumeBooster": true,
+    "WhoReacted": true,
+    "FakeNitro": false,
+    "MessageLogger": false,
+    "ShowHiddenChannels": false,
+    "WebPWA": false,
+    "NewPluginsManager": false
+  },
+  "patches": "equicord-patches",
+  "settingsKey": "EquicordSettings",
+  "pluginDependencies": ["mediabunny"]
+}
