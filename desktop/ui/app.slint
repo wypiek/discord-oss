@@ -1,0 +1,902 @@
+import { Button, LineEdit, ListView, Palette, ScrollView } from "std-widgets.slint";
+
+export struct InstanceRow {
+    id: string,
+    name: string,
+    host: string,
+}
+
+export struct GuildRow {
+    id: string,
+    name: string,
+    initials: string,
+    icon: image,
+    has-icon: bool,
+    selected: bool,
+}
+
+export struct ChannelRow {
+    id: string,
+    name: string,
+    prefix: string,
+    is-category: bool,
+    enabled: bool,
+    selected: bool,
+}
+
+export struct AttachmentRow {
+    name: string,
+    size: string,
+    url: string,
+}
+
+export struct MessageRow {
+    id: string,
+    author: string,
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    time: string,
+    content: string,
+    compact: bool,
+    edited: bool,
+    notice: bool,
+    attachments: [AttachmentRow],
+}
+
+global Theme {
+    out property <color> muted: Palette.foreground.transparentize(0.4);
+    out property <color> faint: Palette.foreground.transparentize(0.9);
+    out property <color> danger: #e5484d;
+    out property <color> rail: Palette.color-scheme == ColorScheme.dark ? #1e1f22 : #e3e5e8;
+    out property <color> sidebar: Palette.color-scheme == ColorScheme.dark ? #2b2d31 : #f2f3f5;
+    out property <color> content: Palette.color-scheme == ColorScheme.dark ? #313338 : #ffffff;
+    out property <color> card: Palette.color-scheme == ColorScheme.dark ? #2b2d31 : #ffffff;
+    out property <color> accent: #3ba3e8;
+}
+
+component Avatar inherits Rectangle {
+    in property <image> source;
+    in property <bool> has-image;
+    in property <string> initials;
+    in property <length> size: 40px;
+    in property <length> radius: self.size / 2;
+    width: self.size;
+    height: self.size;
+    border-radius: self.radius;
+    clip: true;
+    background: Theme.accent;
+    if !root.has-image: Text {
+        text: root.initials;
+        color: white;
+        font-size: root.size * 0.36;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if root.has-image: Image {
+        source: root.source;
+        width: root.size;
+        height: root.size;
+        image-fit: cover;
+    }
+}
+
+component Muted inherits Text {
+    color: Theme.muted;
+    font-size: 12px;
+}
+
+component ErrorText inherits Text {
+    color: Theme.danger;
+    wrap: word-wrap;
+}
+
+component PickerScreen inherits Rectangle {
+    in property <[InstanceRow]> instances;
+    in property <string> error;
+    in property <bool> looking-up;
+    in property <bool> has-preview;
+    in property <string> preview-name;
+    in property <string> preview-host;
+    in property <string> preview-description;
+    in property <string> preview-signups;
+    callback look-up(string);
+    callback add-previewed();
+    callback cancel-preview();
+    callback open-instance(string);
+    callback remove-instance(string);
+    background: Theme.sidebar;
+
+    ScrollView {
+        VerticalLayout {
+            alignment: start;
+            padding-top: 56px;
+            padding-bottom: 40px;
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    width: min(560px, root.width - 48px);
+                    spacing: 12px;
+                    Text {
+                        text: "Choose an instance";
+                        font-size: 28px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "An instance is a chat server someone runs. Enter its address to connect, and the app keeps it in this list.";
+                        wrap: word-wrap;
+                        color: Theme.muted;
+                    }
+
+                    if root.instances.length > 0: VerticalLayout {
+                        spacing: 8px;
+                        padding-top: 16px;
+                        Muted {
+                            text: "YOUR INSTANCES";
+                        }
+                        for instance in root.instances: Rectangle {
+                            height: 64px;
+                            border-radius: 10px;
+                            background: area.has-hover ? Theme.faint : Theme.card;
+                            border-width: 1px;
+                            border-color: Theme.faint;
+                            area := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.open-instance(instance.id);
+                                }
+                            }
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 10px;
+                                spacing: 12px;
+                                alignment: stretch;
+                                VerticalLayout {
+                                    alignment: center;
+                                    horizontal-stretch: 1;
+                                    Text {
+                                        text: instance.name;
+                                        font-weight: 600;
+                                        overflow: elide;
+                                    }
+                                    Muted {
+                                        text: instance.host;
+                                        overflow: elide;
+                                    }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    Button {
+                                        text: "Remove";
+                                        clicked => {
+                                            root.remove-instance(instance.id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 8px;
+                        padding-top: 16px;
+                        Muted {
+                            text: "ADD AN INSTANCE";
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            address := LineEdit {
+                                placeholder-text: "chat.example.org";
+                                enabled: !root.looking-up;
+                                accepted => {
+                                    root.look-up(self.text);
+                                }
+                            }
+                            Button {
+                                text: root.looking-up ? "Looking up…" : "Look up";
+                                enabled: !root.looking-up && address.text != "";
+                                primary: true;
+                                clicked => {
+                                    root.look-up(address.text);
+                                }
+                            }
+                        }
+                        if root.error != "": ErrorText {
+                            text: root.error;
+                        }
+                        if root.has-preview: Rectangle {
+                            border-radius: 10px;
+                            background: Theme.card;
+                            border-width: 1px;
+                            border-color: Theme.accent;
+                            VerticalLayout {
+                                padding: 14px;
+                                spacing: 6px;
+                                Text {
+                                    text: root.preview-name;
+                                    font-size: 18px;
+                                    font-weight: 700;
+                                    wrap: word-wrap;
+                                }
+                                Muted {
+                                    text: root.preview-host;
+                                }
+                                if root.preview-description != "": Text {
+                                    text: root.preview-description;
+                                    wrap: word-wrap;
+                                }
+                                Muted {
+                                    text: root.preview-signups;
+                                    wrap: word-wrap;
+                                }
+                                HorizontalLayout {
+                                    alignment: end;
+                                    spacing: 8px;
+                                    padding-top: 6px;
+                                    Button {
+                                        text: "Cancel";
+                                        clicked => {
+                                            root.cancel-preview();
+                                        }
+                                    }
+                                    Button {
+                                        text: "Add and open";
+                                        primary: true;
+                                        clicked => {
+                                            root.add-previewed();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component LoginScreen inherits Rectangle {
+    in property <string> instance-name;
+    in property <string> error;
+    in property <bool> busy;
+    in property <bool> needs-code;
+    in property <bool> signups-open;
+    callback log-in(string, string);
+    callback submit-code(string);
+    callback create-account();
+    callback back();
+    background: Theme.sidebar;
+
+    HorizontalLayout {
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: min(440px, root.width - 48px);
+                border-radius: 12px;
+                background: Theme.card;
+                border-width: 1px;
+                border-color: Theme.faint;
+                VerticalLayout {
+                    padding: 28px;
+                    spacing: 12px;
+                    Text {
+                        text: "Log in";
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+                    Muted {
+                        text: root.instance-name;
+                        font-size: 14px;
+                        wrap: word-wrap;
+                    }
+                    if !root.needs-code: VerticalLayout {
+                        spacing: 10px;
+                        login := LineEdit {
+                            placeholder-text: "Email or username";
+                            enabled: !root.busy;
+                        }
+                        password := LineEdit {
+                            placeholder-text: "Password";
+                            input-type: InputType.password;
+                            enabled: !root.busy;
+                            accepted => {
+                                root.log-in(login.text, password.text);
+                            }
+                        }
+                        Button {
+                            text: root.busy ? "Logging in…" : "Log in";
+                            primary: true;
+                            enabled: !root.busy && login.text != "" && password.text != "";
+                            clicked => {
+                                root.log-in(login.text, password.text);
+                            }
+                        }
+                    }
+                    if root.needs-code: VerticalLayout {
+                        spacing: 10px;
+                        Text {
+                            text: "Enter the code from your authenticator app, or one of your backup codes.";
+                            wrap: word-wrap;
+                        }
+                        code := LineEdit {
+                            placeholder-text: "123456";
+                            enabled: !root.busy;
+                            accepted => {
+                                root.submit-code(code.text);
+                            }
+                        }
+                        Button {
+                            text: root.busy ? "Checking…" : "Verify";
+                            primary: true;
+                            enabled: !root.busy && code.text != "";
+                            clicked => {
+                                root.submit-code(code.text);
+                            }
+                        }
+                    }
+                    if root.error != "": ErrorText {
+                        text: root.error;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        padding-top: 4px;
+                        Button {
+                            text: "Back to instances";
+                            clicked => {
+                                root.back();
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+                        if root.signups-open: Button {
+                            text: "Create an account";
+                            clicked => {
+                                root.create-account();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component GuildRail inherits Rectangle {
+    in property <[GuildRow]> guilds;
+    callback select(string);
+    width: 72px;
+    background: Theme.rail;
+    ListView {
+        for guild in root.guilds: Rectangle {
+            height: 60px;
+            Rectangle {
+                x: 0;
+                width: 4px;
+                height: guild.selected ? 40px : (item.has-hover ? 20px : 0px);
+                y: (parent.height - self.height) / 2;
+                border-radius: 2px;
+                background: Palette.foreground;
+                animate height { duration: 120ms; }
+            }
+            Avatar {
+                size: 48px;
+                radius: guild.selected || item.has-hover ? 16px : 24px;
+                source: guild.icon;
+                has-image: guild.has-icon;
+                initials: guild.initials;
+                animate radius { duration: 120ms; }
+            }
+            item := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.select(guild.id);
+                }
+            }
+        }
+    }
+}
+
+component ChannelSidebar inherits Rectangle {
+    in property <string> title;
+    in property <[ChannelRow]> channels;
+    in property <string> user-name;
+    callback select(string);
+    callback log-out();
+    callback switch-instance();
+    width: 240px;
+    background: Theme.sidebar;
+    VerticalLayout {
+        Rectangle {
+            height: 48px;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                Text {
+                    text: root.title;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.faint;
+            }
+        }
+        ListView {
+            vertical-stretch: 1;
+            for channel in root.channels: Rectangle {
+                height: channel.is-category ? 36px : 34px;
+                if channel.is-category: HorizontalLayout {
+                    padding-left: 16px;
+                    padding-top: 14px;
+                    Muted {
+                        text: channel.name;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+                }
+                if !channel.is-category: Rectangle {
+                    x: 8px;
+                    width: parent.width - 16px;
+                    height: 32px;
+                    border-radius: 6px;
+                    background: channel.selected ? Theme.faint : (row.has-hover && channel.enabled ? Theme.faint.transparentize(0.5) : transparent);
+                    row := TouchArea {
+                        mouse-cursor: channel.enabled ? pointer : default;
+                        clicked => {
+                            if channel.enabled {
+                                root.select(channel.id);
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        spacing: 6px;
+                        Text {
+                            text: channel.prefix;
+                            color: Theme.muted;
+                            vertical-alignment: center;
+                            font-size: 16px;
+                        }
+                        Text {
+                            text: channel.name;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                            color: channel.selected ? Palette.foreground : (channel.enabled ? Palette.foreground.transparentize(0.2) : Theme.muted);
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            height: 52px;
+            background: Theme.rail.transparentize(0.4);
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 8px;
+                spacing: 4px;
+                Text {
+                    text: root.user-name;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Button {
+                        text: "Instances";
+                        clicked => {
+                            root.switch-instance();
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Button {
+                        text: "Log out";
+                        clicked => {
+                            root.log-out();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component MessageView inherits Rectangle {
+    in property <[MessageRow]> messages;
+    in property <string> title;
+    in property <string> topic;
+    in property <bool> can-send;
+    in property <string> composer-placeholder;
+    in property <bool> show-open-in-browser;
+    in property <bool> can-load-older;
+    in property <bool> loading;
+    in property <bool> has-channel;
+    in-out property <bool> stick-to-bottom: true;
+    callback send(string);
+    callback load-older();
+    callback open-url(string);
+    callback open-in-browser();
+    background: Theme.content;
+
+    public function scroll-to-bottom() {
+        root.stick-to-bottom = true;
+        list.content-y = min(0px, list.visible-height - list.content-height);
+    }
+
+    VerticalLayout {
+        Rectangle {
+            height: 48px;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 10px;
+                Text {
+                    text: root.title;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+                if root.topic != "": Muted {
+                    text: root.topic;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                if root.topic == "": Rectangle {
+                    horizontal-stretch: 1;
+                }
+                if root.show-open-in-browser: VerticalLayout {
+                    alignment: center;
+                    Button {
+                        text: "Open in browser";
+                        clicked => {
+                            root.open-in-browser();
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.faint;
+            }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            if !root.has-channel: Muted {
+                text: "Pick a channel to start reading.";
+                font-size: 14px;
+            }
+            if root.has-channel && root.messages.length == 0: Muted {
+                text: root.loading ? "Loading messages…" : "No messages yet.";
+                font-size: 13px;
+            }
+            list := ListView {
+            width: parent.width;
+            height: parent.height;
+            visible: root.has-channel && root.messages.length > 0;
+            changed content-height => {
+                if root.stick-to-bottom {
+                    self.content-y = min(0px, self.visible-height - self.content-height);
+                }
+            }
+            changed content-y => {
+                root.stick-to-bottom = self.content-y <= self.visible-height - self.content-height + 8px;
+            }
+            for message[index] in root.messages: VerticalLayout {
+                if index == 0 && (root.can-load-older || root.loading): HorizontalLayout {
+                    alignment: center;
+                    padding: 12px;
+                    if root.loading: Muted {
+                        text: "Loading messages…";
+                        font-size: 13px;
+                    }
+                    if !root.loading: Button {
+                        text: "Load older messages";
+                        clicked => {
+                            root.stick-to-bottom = false;
+                            root.load-older();
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 24px;
+                    padding-top: message.compact ? 2px : 14px;
+                    padding-bottom: 2px;
+                    spacing: 14px;
+                    if !message.compact: VerticalLayout {
+                        alignment: start;
+                        Avatar {
+                            size: 40px;
+                            source: message.avatar;
+                            has-image: message.has-avatar;
+                            initials: message.initials;
+                        }
+                    }
+                    if message.compact: Rectangle {
+                        width: 40px;
+                    }
+                    VerticalLayout {
+                        spacing: 3px;
+                        horizontal-stretch: 1;
+                        if !message.compact: HorizontalLayout {
+                            spacing: 8px;
+                            Text {
+                                text: message.author;
+                                font-weight: 600;
+                            }
+                            Muted {
+                                text: message.time;
+                                vertical-alignment: center;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                            }
+                        }
+                        if message.content != "": Text {
+                            text: message.edited ? message.content + "  (edited)" : message.content;
+                            wrap: word-wrap;
+                            color: message.notice ? Theme.muted : Palette.foreground;
+                            font-italic: message.notice;
+                        }
+                        for attachment in message.attachments: HorizontalLayout {
+                            alignment: start;
+                            Rectangle {
+                                border-radius: 6px;
+                                background: link.has-hover ? Theme.faint : Theme.faint.transparentize(0.5);
+                                border-width: 1px;
+                                border-color: Theme.faint;
+                                HorizontalLayout {
+                                    padding: 8px;
+                                    spacing: 8px;
+                                    Text {
+                                        text: attachment.name;
+                                        color: Theme.accent;
+                                    }
+                                    Muted {
+                                        text: attachment.size;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                link := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.open-url(attachment.url);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        }
+
+        Rectangle {
+            height: 68px;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-bottom: 20px;
+                padding-top: 8px;
+                composer := LineEdit {
+                    enabled: root.can-send;
+                    placeholder-text: root.composer-placeholder;
+                    accepted => {
+                        if self.text != "" {
+                            root.send(self.text);
+                            self.text = "";
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    in property <string> window-title: "OSS Chat";
+    in property <int> screen: 0;
+
+    in property <[InstanceRow]> instances;
+    in property <string> picker-error;
+    in property <bool> looking-up;
+    in property <bool> has-preview;
+    in property <string> preview-name;
+    in property <string> preview-host;
+    in property <string> preview-description;
+    in property <string> preview-signups;
+    callback look-up(string);
+    callback add-previewed();
+    callback cancel-preview();
+    callback open-instance(string);
+    callback remove-instance(string);
+
+    in property <string> login-instance;
+    in property <string> login-error;
+    in property <bool> login-busy;
+    in property <bool> needs-code;
+    in property <bool> signups-open;
+    callback log-in(string, string);
+    callback submit-code(string);
+    callback create-account();
+    callback back-to-instances();
+
+    in property <string> connecting-text;
+
+    in property <[GuildRow]> guilds;
+    in property <[ChannelRow]> channels;
+    in property <[MessageRow]> messages;
+    in property <string> sidebar-title;
+    in property <string> channel-title;
+    in property <string> channel-topic;
+    in property <string> user-name;
+    in property <string> status-text;
+    in property <bool> has-channel;
+    in property <bool> can-send;
+    in property <string> composer-placeholder;
+    in property <bool> show-open-in-browser;
+    in property <bool> can-load-older;
+    in property <bool> loading-messages;
+    callback select-guild(string);
+    callback select-channel(string);
+    callback send-message(string);
+    callback load-older();
+    callback open-url(string);
+    callback open-in-browser();
+    callback log-out();
+    callback switch-instance();
+
+    public function scroll-to-bottom() {
+        messages-view.scroll-to-bottom();
+    }
+
+    title: root.window-title;
+    icon: @image-url("../icons/128x128@2x.png");
+    preferred-width: 1200px;
+    preferred-height: 760px;
+    min-width: 860px;
+    min-height: 520px;
+    background: Theme.content;
+
+    if root.screen == 0: PickerScreen {
+        instances: root.instances;
+        error: root.picker-error;
+        looking-up: root.looking-up;
+        has-preview: root.has-preview;
+        preview-name: root.preview-name;
+        preview-host: root.preview-host;
+        preview-description: root.preview-description;
+        preview-signups: root.preview-signups;
+        look-up(address) => {
+            root.look-up(address);
+        }
+        add-previewed => {
+            root.add-previewed();
+        }
+        cancel-preview => {
+            root.cancel-preview();
+        }
+        open-instance(id) => {
+            root.open-instance(id);
+        }
+        remove-instance(id) => {
+            root.remove-instance(id);
+        }
+    }
+
+    if root.screen == 1: LoginScreen {
+        instance-name: root.login-instance;
+        error: root.login-error;
+        busy: root.login-busy;
+        needs-code: root.needs-code;
+        signups-open: root.signups-open;
+        log-in(login, password) => {
+            root.log-in(login, password);
+        }
+        submit-code(code) => {
+            root.submit-code(code);
+        }
+        create-account => {
+            root.create-account();
+        }
+        back => {
+            root.back-to-instances();
+        }
+    }
+
+    if root.screen == 3: Rectangle {
+        background: Theme.sidebar;
+        VerticalLayout {
+            alignment: center;
+            spacing: 16px;
+            Text {
+                text: root.connecting-text;
+                horizontal-alignment: center;
+                font-size: 16px;
+            }
+            HorizontalLayout {
+                alignment: center;
+                Button {
+                    text: "Back to instances";
+                    clicked => {
+                        root.switch-instance();
+                    }
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        visible: root.screen == 2;
+        GuildRail {
+            guilds: root.guilds;
+            select(id) => {
+                root.select-guild(id);
+            }
+        }
+        ChannelSidebar {
+            title: root.sidebar-title;
+            channels: root.channels;
+            user-name: root.user-name;
+            select(id) => {
+                root.select-channel(id);
+            }
+            log-out => {
+                root.log-out();
+            }
+            switch-instance => {
+                root.switch-instance();
+            }
+        }
+        VerticalLayout {
+            if root.status-text != "": Rectangle {
+                height: 28px;
+                background: #f0b232;
+                Text {
+                    text: root.status-text;
+                    color: #1f1f1f;
+                    font-size: 13px;
+                }
+            }
+            messages-view := MessageView {
+                vertical-stretch: 1;
+                messages: root.messages;
+                title: root.channel-title;
+                topic: root.channel-topic;
+                has-channel: root.has-channel;
+                can-send: root.can-send;
+                composer-placeholder: root.composer-placeholder;
+                show-open-in-browser: root.show-open-in-browser;
+                can-load-older: root.can-load-older;
+                loading: root.loading-messages;
+                send(text) => {
+                    root.send-message(text);
+                }
+                load-older => {
+                    root.load-older();
+                }
+                open-url(url) => {
+                    root.open-url(url);
+                }
+                open-in-browser => {
+                    root.open-in-browser();
+                }
+            }
+        }
+    }
+}
