@@ -3,7 +3,6 @@ const test = require("node:test");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const ts = require("typescript");
-const { loadFederatedAdmin } = require("./federated-admin-module.cjs");
 const load = (file, imports) => {
     const module = { exports: {} };
     vm.runInNewContext(
@@ -45,7 +44,6 @@ test("customization target uses explicit user and protects staff at or above the
         "lambert-server/HTTPError": { HTTPError },
         "@spacebar/schemas": { AuditLogEvents: { ADMIN_USER_CUSTOMIZATION: 2000 } },
         typeorm: {},
-        "../utility/federatedAdmin": loadFederatedAdmin(HTTPError),
     });
     await assert.rejects(
         utility.adminCustomizationTarget({ method: "PATCH", params: { user_id: "target" }, user_id: "actor", rights: { bitfield: 128n } }),
@@ -58,7 +56,7 @@ test("customization target uses explicit user and protects staff at or above the
     assert.equal((await utility.adminCustomizationTarget({ method: "GET", params: { user_id: "target" }, user_id: "actor", rights: { bitfield: 1n } })).id, "target");
     assert.equal((await utility.adminCustomizationTarget({ method: "PATCH", params: { user_id: "target" }, user_id: "actor", rights: { bitfield: 1n } })).id, "target");
     assert.equal(reads[0].where.id, "target");
-    assert.deepEqual(Object.keys(reads[0].select), ["id", "rights", "bot", "federated_instance"]);
+    assert.deepEqual(Object.keys(reads[0].select), ["id", "rights", "bot"]);
 });
 test("customization reads need VIEW_USERS and writes need MANAGE_USERS before target loading", () => {
     for (const name of ["pride-badges", "widgets", "settings", "customization-audit"]) {
@@ -137,7 +135,6 @@ test("customization audit records actor, target, section and field names only", 
         "lambert-server/HTTPError": { HTTPError },
         "@spacebar/schemas": { AuditLogEvents: { ADMIN_USER_CUSTOMIZATION: 2000 } },
         typeorm: {},
-        "../utility/federatedAdmin": loadFederatedAdmin(HTTPError),
     });
     const locals = {};
     await utility.recordAdminCustomization({ user_id: "actor", headers: {}, res: { locals } }, "target", "client_preferences", ["theme"], {

@@ -28,7 +28,6 @@ assets/cache_compressed
 assets/cacheMisses
 assets/cacheFailures
 assets/vencord
-assets/collectibles.json
 assets/detectable.json
 extra/pion-sfu/pion-sfu
 **/.DS_Store

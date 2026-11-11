@@ -4,8 +4,6 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const { EventEmitter } = require("node:events");
 const ts = require("typescript");
-const { Database } = require("bun:sqlite");
-const { jobLease, loadModule } = require("./helpers/route-harness.cjs");
 
 function load(file, mocks) {
     const timers = [];
@@ -107,41 +105,4 @@ test("the scam list refresh stops its timer and waits for a fetch in flight on s
     assert.equal(h.api.scamListStatus().domains, 1);
     h.timers.forEach((timer) => timer.run());
     assert.equal(fetches, 1);
-});
-
-test("a restarted process runs the startup sync while the registry lease a previous process held lasts", async () => {
-    const db = new Database(":memory:");
-    const file = fs.readdirSync("src/database/migration/sqlite").find((name) => name.endsWith("-JobLeases.ts"));
-    const migration = Object.values(loadModule(`src/database/migration/sqlite/${file}`, { typeorm: {} }))[0];
-    await new migration().up({ query: async (sql, params = []) => db.query(sql).all(...params) });
-    const leases = jobLease(db);
-    assert.equal((await leases.withJobLease("federation-registry", async () => true, 4.5 * 60 * 1000)).held, true);
-    const ran = [];
-    const h = load("src/api/util/utility/federation.ts", {
-        "@spacebar/database": {
-            withJobLease: (name, work, holdForMs) =>
-                leases.withJobLease(
-                    name,
-                    async () => {
-                        ran.push(name);
-                    },
-                    holdForMs,
-                ),
-        },
-        "@spacebar/util": { Config: { get: () => ({ federation: { enabled: true, announce: false } }) }, FederationKey: { restore() {} }, getRevInfoOrFail: () => ({}) },
-        "./federationMoves": { refreshAliases: async () => undefined, prepareOwnMoves: async () => undefined },
-    });
-    h.api.startFederation();
-    assert.equal(h.timers.length, 2);
-    for (const timer of h.timers) timer.run();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    assert.deepEqual(ran, ["federation-startup"]);
-    assert.deepEqual(
-        db
-            .query(`SELECT "name" FROM "job_leases"`)
-            .all()
-            .map((row) => row.name),
-        ["federation-registry"],
-    );
-    await h.stop();
 });

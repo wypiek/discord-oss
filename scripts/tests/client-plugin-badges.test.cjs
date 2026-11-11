@@ -19,5 +19,4 @@ test("plugins register profile badges through the list Equicord reads", () => {
                 .map((file) => `${name}/${file}`);
         });
     assert.deepEqual(singular, [], "Equicord only adds badges from userProfileBadges, so a userProfileBadge field never shows");
-    assert.match(fs.readFileSync(path.join(plugins, "fosscordFederation/index.tsx"), "utf8"), /userProfileBadges:\s*\[/);
 });

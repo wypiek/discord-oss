@@ -257,29 +257,32 @@ await check("users", "display name styles", async () => {
         note: `${r.status} ${JSON.stringify(r.body.display_name_styles ?? p.body?.user?.display_name_styles)}`,
     };
 });
-await check("users", "avatar corner radius shows on the profile and message author others see", async () => {
-    const saved = await call("PATCH", "/users/@me", A, { avatar_corner_radius: 0 });
-    const tooBig = await call("PATCH", "/users/@me", B, { avatar_corner_radius: 51 });
-    const fraction = await call("PATCH", "/users/@me", B, { avatar_corner_radius: 12.5 });
-    const posted = await call("POST", `/channels/${text.id}/messages`, A, { content: `square avatar ${suffix}` });
+await check("users", "pride flags ride on the user objects others see and are not profile badges", async () => {
+    const before = (await call("GET", "/users/@me/pride-badges", A)).body?.flags ?? [];
+    const saved = await call("PATCH", "/users/@me/pride-badges", A, { flags: ["transgender", "rainbow"] });
+    const posted = await call("POST", `/channels/${text.id}/messages`, A, { content: `pride flags ${suffix}` });
     const profile = await call("GET", `/users/${me.id}/profile`, B);
     const messages = await call("GET", `/channels/${text.id}/messages?limit=5`, B);
     const author = messages.body?.find?.((m) => m.id === posted.body?.id)?.author;
-    const cleared = await call("PATCH", "/users/@me", A, { avatar_corner_radius: null });
-    const after = await call("GET", `/users/${me.id}/profile`, B);
+    const user = await call("GET", `/users/${me.id}`, B);
+    const directory = await call("GET", "/users/@me/badges", A);
     await call("DELETE", `/channels/${text.id}/messages/${posted.body?.id}`, A);
+    const cleared = await call("PATCH", "/users/@me/pride-badges", A, { flags: [] });
+    const after = await call("GET", `/users/${me.id}/profile`, B);
+    await call("PATCH", "/users/@me/pride-badges", A, { flags: before });
+    const order = (value) => JSON.stringify(value) === JSON.stringify(["transgender", "rainbow"]);
+    const prideBadges = [...(profile.body?.badges ?? []), ...(directory.body?.badges ?? [])].filter((b) => /pride_/.test(`${b.icon ?? ""}${b.simple_icon_url ?? ""}`));
     return {
         ok:
             saved.status === 200 &&
-            saved.body?.avatar_corner_radius === 0 &&
-            tooBig.status === 400 &&
-            fraction.status === 400 &&
-            profile.body?.user?.avatar_corner_radius === 0 &&
-            author?.avatar_corner_radius === 0 &&
-            cleared.body?.avatar_corner_radius === null &&
-            after.status === 200 &&
-            !("avatar_corner_radius" in after.body.user),
-        note: `saved=${saved.status}:${saved.body?.avatar_corner_radius} cleared=${cleared.status} invalid=${tooBig.status},${fraction.status} profile=${profile.body?.user?.avatar_corner_radius} author=${author?.avatar_corner_radius} after=${JSON.stringify(after.body?.user?.avatar_corner_radius)}`,
+            order(profile.body?.user?.pride_badges) &&
+            order(author?.pride_badges) &&
+            order(user.body?.pride_badges) &&
+            prideBadges.length === 0 &&
+            cleared.status === 200 &&
+            Array.isArray(after.body?.user?.pride_badges) &&
+            after.body.user.pride_badges.length === 0,
+        note: `profile=${JSON.stringify(profile.body?.user?.pride_badges)} author=${JSON.stringify(author?.pride_badges)} user=${JSON.stringify(user.body?.pride_badges)} badges=${prideBadges.length} after=${JSON.stringify(after.body?.user?.pride_badges)}`,
     };
 });
 await check("users", "profile fetch with mutuals and badges", async () => {
@@ -289,38 +292,47 @@ await check("users", "profile fetch with mutuals and badges", async () => {
         note: `badges=${r.body.badges?.map((b) => b.id).join(",")} mutual_guilds=${r.body.mutual_guilds?.length} mutual_friends=${r.body.mutual_friends?.length}`,
     };
 });
+const ORBS_BADGE_SKU = "1342211853484429445";
 await check("users", "badge directory lists own badges", async () => {
-    const before = (await call("GET", "/users/@me/pride-badges", A)).body?.flags ?? [];
-    await call("PATCH", "/users/@me/pride-badges", A, { flags: ["rainbow", "transgender"] });
+    const claim = await call("PUT", "/users/@me/claim-premium-collectibles-product", A, { sku_id: ORBS_BADGE_SKU });
     const r = await call("GET", "/users/@me/badges", A);
-    const single = r.body?.badges?.[0] && (await call("GET", `/users/${me.id}/badges/${r.body.badges[0].badge_id}`, B));
-    await call("PATCH", "/users/@me/pride-badges", A, { flags: before });
+    const owned = (r.body?.badges ?? []).filter((b) => b.owned);
+    const earnable = (r.body?.badges ?? []).filter((b) => !b.owned);
+    const single = owned[0] && (await call("GET", `/users/${me.id}/badges/${owned[0].badge_id}`, B));
     return {
-        ok: r.status === 200 && r.body.badges.length >= 2 && r.body.badges.every((b) => b.owned && typeof b.simple_icon_url === "string") && single?.status === 200,
-        note: `${r.status} ${r.body?.badges?.map((b) => b.name).join(",")} single=${single?.status}`,
+        ok:
+            claim.status === 200 &&
+            r.status === 200 &&
+            owned.length >= 1 &&
+            r.body.badges.every((b) => typeof b.simple_icon_url === "string" && !/pride_/.test(b.simple_icon_url)) &&
+            earnable.every((b) => b.is_earnable) &&
+            single?.status === 200,
+        note: `${r.status} owned=${owned.map((b) => b.name).join(",")} earnable=${earnable.map((b) => b.name).join(",")} single=${single?.status}`,
     };
 });
-await check("users", "badge settings reorder and keep pride badges visible", async () => {
-    const before = (await call("GET", "/users/@me/pride-badges", A)).body?.flags ?? [];
-    await call("PATCH", "/users/@me/pride-badges", A, { flags: ["rainbow", "transgender", "bisexual"] });
-    const [first, second, third] = (await call("GET", "/users/@me/badges", A)).body.badges.map((b) => String(b.badge_id)).slice(-3);
-    const saved = await call("PATCH", "/users/@me/badges/settings", A, { display_order: [second, first], hidden_badges: [third] });
+await check("users", "badge settings hide a badge from others and show it again", async () => {
+    await call("PUT", "/users/@me/claim-premium-collectibles-product", A, { sku_id: ORBS_BADGE_SKU });
+    const owned = (await call("GET", "/users/@me/badges", A)).body.badges.filter((b) => b.owned).map((b) => String(b.badge_id));
+    const target = owned.at(-1);
+    const saved = await call("PATCH", "/users/@me/badges/settings", A, { display_order: [...owned].reverse(), hidden_badges: [target] });
     const own = (await call("GET", "/users/@me/badges", A)).body.badges;
-    const profile = (await call("GET", `/users/${me.id}/profile`, B)).body.badges.map((b) => b.id);
-    const shownToOthers = await call("GET", `/users/${me.id}/badges/${third}`, B);
+    const hiddenProfile = (await call("GET", `/users/${me.id}/profile`, B)).body.badges.length;
+    const hiddenToOthers = await call("GET", `/users/${me.id}/badges/${target}`, B);
     const bad = await call("PATCH", "/users/@me/badges/settings", A, { hidden_badges: "all" });
     await call("PATCH", "/users/@me/badges/settings", A, { display_order: [], hidden_badges: [] });
-    await call("PATCH", "/users/@me/pride-badges", A, { flags: before });
+    const shownProfile = (await call("GET", `/users/${me.id}/profile`, B)).body.badges.length;
+    const shownToOthers = await call("GET", `/users/${me.id}/badges/${target}`, B);
     return {
         ok:
             saved.status === 200 &&
-            saved.body?.hidden_badges?.length === 0 &&
-            own.find((b) => String(b.badge_id) === third)?.hidden === false &&
-            profile.indexOf(second) < profile.indexOf(first) &&
-            profile.includes(third) &&
+            JSON.stringify(saved.body?.hidden_badges) === JSON.stringify([target]) &&
+            own.find((b) => String(b.badge_id) === target)?.hidden === true &&
+            hiddenProfile === owned.length - 1 &&
+            hiddenToOthers.status === 404 &&
+            shownProfile === owned.length &&
             shownToOthers.status === 200 &&
             bad.status === 400,
-        note: `${saved.status} ${JSON.stringify(saved.body)} profile=${profile.join(",")} shown=${shownToOthers.status} bad=${bad.status}`,
+        note: `${saved.status} ${JSON.stringify(saved.body)} profile=${hiddenProfile}->${shownProfile} of ${owned.length} others=${hiddenToOthers.status}->${shownToOthers.status} bad=${bad.status}`,
     };
 });
 await check("users", "premium (nitro) granted", async () => ({
@@ -365,35 +377,44 @@ await check("users", "server tag (clan) set", async () =>
     ),
 );
 await check("users", "collectibles shop", async () => st(await call("GET", "/collectibles-shop", A), 200));
-await check("users", "avatar decorations / collectibles purchases", async () => st(await call("GET", "/users/@me/collectibles-purchases", A), 200));
-await check("users", "steam avatar frames listed and equippable", async () => {
-    const categories = await call("GET", "/collectibles-categories", A);
-    const steam = Array.isArray(categories.body) ? categories.body.find((category) => category.sku_id === "8000000000000000000") : undefined;
-    const product = steam?.products?.[0];
-    if (!product) return { ok: false, note: `${categories.status} no Steam category` };
-    const detail = await call("GET", `/collectibles-products/${product.sku_id}`, A);
-    const equipped = await call("PATCH", "/users/@me", A, { avatar_decoration_sku_id: product.sku_id });
-    await call("PATCH", "/users/@me", A, { avatar_decoration_sku_id: null });
-    const data = equipped.body?.avatar_decoration_data;
+await check("users", "orbs shop tab lists the free Orbs Apprentice badge and claiming adds it to the profile", async () => {
+    const tab = await call("GET", "/collectibles-shop?tab=orbs", A);
+    const listed = tab.body?.shop_blocks?.some?.((block) => block.ranked_sku_ids?.includes(ORBS_BADGE_SKU));
+    const price = tab.body?.categories?.flatMap?.((category) => category.products).find((product) => product.sku_id === ORBS_BADGE_SKU)?.prices?.["0"]?.country_prices?.prices?.[0];
+    const claim = await call("PUT", "/users/@me/claim-premium-collectibles-product", A, { sku_id: ORBS_BADGE_SKU });
+    const profile = await call("GET", "/users/@me/profile", A);
+    const badge = profile.body?.badges?.find?.((entry) => entry.icon === "83d8a1eb09a8d64e59233eec5d4d5c2d" || entry.id === "orb_profile_badge");
     return {
-        ok: detail.status === 200 && product.items?.[0]?.type === 0 && data?.sku_id === product.sku_id && data?.asset === product.items[0].asset,
-        note: `products=${steam.products.length} detail=${detail.status} equip=${equipped.status} ${data?.asset}`,
+        ok: tab.status === 200 && listed && price?.currency === "discord_orb" && price.amount === 0 && claim.status === 200 && !!badge,
+        note: `tab=${tab.status} listed=${listed} price=${price?.amount} ${price?.currency} claim=${claim.status} badge=${badge?.id}`,
     };
 });
-await check("users", "steam avatar frame art served", async () => {
-    const shop = await call("GET", "/collectibles-categories", A);
-    const sku = shop.body?.find?.((category) => category.sku_id === "8000000000000000000")?.products?.[0]?.sku_id;
-    if (!sku) return { ok: false, note: "no Steam frame" };
-    const results = [];
-    for (const slot of ["static", "animated"]) {
-        const r = await fetch(`${base}/media/v1/collectibles-shop/${sku}/${slot}`);
-        const type = r.headers.get("content-type");
-        await r.body?.cancel();
-        results.push({ slot, status: r.status, type });
-    }
-    const note = results.map((r) => `${r.slot}=${r.status} ${r.type}`).join(" ");
-    if (results.every((r) => r.status === 404)) return { skip: true, note: `Steam art unreachable, steamAssetFallback off or offline: ${note}` };
-    return { ok: results.every((r) => r.status === 200 && /^image\/(?:a?png|jpeg|gif)$/.test(r.type ?? "")), note };
+await check("users", "orb redemption is free and refuses Nitro credit", async () => {
+    const credit = await call("POST", "/virtual-currency/skus/1333912750274904064/redeem", A, {});
+    const balance = await call("GET", "/users/@me/virtual-currency/balance", A);
+    return { ok: credit.status === 404 && balance.status === 200 && balance.body?.balance === 0, note: `credit=${credit.status} balance=${balance.body?.balance}` };
+});
+await check("users", "avatar decorations / collectibles purchases", async () => st(await call("GET", "/users/@me/collectibles-purchases", A), 200));
+await check("users", "shop has no steam avatar frames and lists profile frames", async () => {
+    const categories = await call("GET", "/collectibles-categories", A);
+    const steamSku = (sku) => /^800000000\d{10}$/.test(sku ?? "");
+    const nested = (product) => [product, ...(product.bundled_products ?? []).flatMap(nested), ...(product.variants ?? []).flatMap(nested)];
+    const listed = Array.isArray(categories.body) ? categories.body : [];
+    const products = listed.flatMap((category) => category.products ?? []).flatMap(nested);
+    const steam = listed.filter((category) => steamSku(category.sku_id)).length + products.filter((product) => steamSku(product.sku_id)).length;
+    const frames = [...new Set(products.filter((product) => product.type === 3).map((product) => product.sku_id))];
+    const search = await call("GET", "/shop/search?item_types=PROFILE_FRAME", A);
+    const note = `categories=${listed.length} steam=${steam} frames=${frames.length} search=${search.status} ${search.body?.pagination?.total}`;
+    if (categories.status !== 200 || !listed.length || steam !== 0 || search.status !== 200) return { ok: false, note };
+    if (!frames.length) return search.body?.pagination?.total === 0 ? { skip: true, note: `no profile frames in this catalogue: ${note}` } : { ok: false, note };
+    const equipped = await call("PATCH", "/users/@me/profile", A, { collectibles_sku_ids: [frames[0]] });
+    const profile = await call("GET", "/users/@me/profile", A);
+    await call("PATCH", "/users/@me/profile", A, { collectibles_sku_ids: [] });
+    const worn = profile.body?.user_profile?.collectibles?.find?.((entry) => entry.type === 3);
+    return {
+        ok: search.body?.pagination?.total > 0 && equipped.status === 200 && worn?.sku_id === frames[0],
+        note: `${note} equip=${equipped.status} worn=${worn?.sku_id}`,
+    };
 });
 await check("users", "custom themes", async () => st(await call("GET", "/users/@me/custom-themes", A), 200));
 await check("users", "email settings persist", async () => st(await call("GET", "/users/@me/email-settings", A), 200));

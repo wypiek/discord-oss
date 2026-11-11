@@ -4,7 +4,6 @@ import { fileTypeFromBuffer } from "file-type";
 import { HTTPError } from "lambert-server/HTTPError";
 import { Config, isRequestSignature } from "@spacebar/util";
 import { storage, internalUpload, setCacheControl, setCacheControlNotFound, safeMediaType } from "../util";
-import { extension, sendRemoteFallback } from "../util/federationMedia";
 
 // TODO: check premium and animated pfp are allowed in the config
 // TODO: generate different sizes of icon
@@ -52,7 +51,6 @@ router.get("/:emoji_id", setCacheControl, async (req: Request, res: Response) =>
     const path = `${pathPrefix}/${emoji_id}`;
 
     const file = await storage.get(path);
-    if (!file && (await sendRemoteFallback(req, res, emoji_id, (remote) => `/${pathPrefix}/${remote}${extension(String(req.params.emoji_id))}`))) return;
     if (!file) return setCacheControlNotFound(req, res);
     const type = await fileTypeFromBuffer(file);
 

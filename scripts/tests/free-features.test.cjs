@@ -47,7 +47,7 @@ test("profile response keeps free feature entitlements and custom badges without
         badge_ids: ["operator", "premium"],
         pride_badges: ["rainbow"],
         connected_accounts: [],
-        toPartialUser: () => ({ id: "self", premium_type: 2 }),
+        toPartialUser: () => ({ id: "self", premium_type: 2, pride_badges: ["rainbow"] }),
     };
     const query = {
         leftJoin: () => query,
@@ -56,6 +56,38 @@ test("profile response keeps free feature entitlements and custom badges without
         where: () => query,
         getOneOrFail: async () => user,
     };
+    const database = {
+        User: { createQueryBuilder: () => query, findOne: async () => null },
+        Member: { find: async () => [] },
+        Badge: {
+            find: async () => [
+                { id: "operator", icon: "operator" },
+                { id: "premium", icon: "subscriber" },
+            ],
+        },
+        Relationship: {},
+        UserActivityStats: { findOne: async () => null },
+    };
+    const util = { loadStaffRoles: async () => ({ roles: new Map(), members: new Map() }), staffBadgeRole: () => null, instanceName: () => "Meowcord" };
+    const badgeSettings = load("src/api/util/utility/badgeSettings.ts", { "@spacebar/util": {}, "./staffBadge": { STAFF_BADGE_ID: "1" } });
+    const profileBadges = load("src/api/util/utility/profileBadges.ts", {
+        typeorm: { In: (x) => x },
+        "@spacebar/database": database,
+        "@spacebar/util": {
+            ...util,
+            ...load("src/util/util/BadgeCatalog.ts"),
+            ACCOUNT_AGE_BADGE: 18,
+            STREAMING_BADGE: 19,
+            GAME_TIME_BADGE: 20,
+            GAME_VARIETY_BADGE: 21,
+            NITRO_TIER_ICONS: {},
+            activityProgress: () => ({ 19: 0, 20: 0, 21: 0 }),
+            Config: { get: () => ({ cdn: {}, api: {} }) },
+        },
+        "./badgeSettings": badgeSettings,
+        "./profile": utilities(),
+        "./staffBadge": { STAFF_BADGE_ID: "1", ensureStaffBadge: async () => ({ icon: "staff" }) },
+    });
     load("src/api/routes/users/#user_id/profile.ts", {
         express: {
             Router: () => ({ get: (_path, _options, fn) => (handlers.get = fn), patch: () => {} }),
@@ -63,24 +95,12 @@ test("profile response keeps free feature entitlements and custom badges without
         typeorm: { In: (x) => x },
         "@spacebar/api/middlewares": { route: (x) => x },
         "@spacebar/api/util": { profileMetadata: () => ({ theme_colors: [123, 456] }), STAFF_BADGE_ID: "1", ensureStaffBadge: async () => ({ icon: "staff" }) },
-        "@spacebar/database": {
-            User: { createQueryBuilder: () => query },
-            Member: { find: async () => [] },
-            Badge: {
-                find: async () => [
-                    { id: "operator", icon: "operator" },
-                    { id: "premium", icon: "subscriber" },
-                ],
-            },
-            Relationship: {},
-        },
-        "@spacebar/util": { loadStaffRoles: async () => ({ roles: new Map(), members: new Map() }), staffBadgeRole: () => null, instanceName: () => "Meowcord" },
+        "@spacebar/database": database,
+        "@spacebar/util": util,
         "@spacebar/schemas": {},
-        "@spacebar/api/util/utility/prideBadges": {
-            prideBadges: () => [{ id: "8000000000000000001", icon: "pride_rainbow" }],
-        },
         "@spacebar/api/util/utility/profile": utilities(),
-        "@spacebar/api/util/utility/badgeSettings": load("src/api/util/utility/badgeSettings.ts", { "@spacebar/util": {}, "./staffBadge": { STAFF_BADGE_ID: "1" }, "./prideBadges": { PRIDE_BADGES: [] } }),
+        "@spacebar/api/util/utility/badgeSettings": badgeSettings,
+        "@spacebar/api/util/utility/profileBadges": profileBadges,
         "@spacebar/api/util/handlers/Application": {},
     });
     let result;
@@ -91,8 +111,9 @@ test("profile response keeps free feature entitlements and custom badges without
     assert.equal(result.premium_guild_since, null);
     assert.deepEqual(
         Array.from(result.badges, (x) => x.id),
-        ["operator", "8000000000000000001"],
+        ["operator"],
     );
+    assert.deepEqual(Array.from(result.user.pride_badges), ["rainbow"]);
     assert.deepEqual(Array.from(result.user_profile.theme_colors), [123, 456]);
 });
 

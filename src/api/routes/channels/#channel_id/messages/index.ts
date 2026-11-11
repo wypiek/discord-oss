@@ -11,7 +11,6 @@ import {
     spamAttachmentHashes,
 } from "@spacebar/api/util";
 import { route, parsePayloadJson } from "@spacebar/api/middlewares";
-import { relayedAuthorship } from "@spacebar/api/util/utility/federationAuthorship";
 import { Application, Attachment, Channel, GuildInsights, Member, Message, ReadState, Recipient, User, Webhook } from "@spacebar/database";
 import {
     Config,
@@ -380,7 +379,7 @@ router.post(
         assertNoHarmfulLinks(body.content);
         const files = (req.files as Express.Multer.File[]) ?? [];
         await enforceQuarantine(
-            { user_id: req.user_id, federated: !!req.user?.federated_instance, bot: req.user_bot, system: req.user?.system, rights: req.rights },
+            { user_id: req.user_id, bot: req.user_bot, system: req.user?.system, rights: req.rights },
             {
                 content: body.content,
                 attachments: files.length + (body.attachments?.length ?? 0),
@@ -429,7 +428,6 @@ router.post(
             attachments,
             permission: req.permission,
             attachmentHashes: attachmentFacts.map((fact) => fact.hash),
-            authorship: relayedAuthorship(req),
         });
         if (dmViaGuilds.length) {
             const recipient = channel.recipients?.find((r) => r.user_id !== req.user_id)?.user_id;

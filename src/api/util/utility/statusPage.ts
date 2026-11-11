@@ -1,6 +1,7 @@
-import { In, MoreThan, Not } from "typeorm";
+import { Between, In, LessThan, MoreThan, Not } from "typeorm";
 import { RESOLVED_INCIDENT_STATES, StatusComponent, StatusComponentStatus, StatusIncident } from "@spacebar/database";
-import { Config, Snowflake } from "@spacebar/util";
+import { HTTPError } from "lambert-server/HTTPError";
+import { Config, escapeHtml, instanceName, Snowflake } from "@spacebar/util";
 
 // statuspage.io-compatible shapes, so existing status tooling (and the discord client's upcoming.json poll) understand them
 const IMPACT_SEVERITY = { none: 0, maintenance: 1, minor: 2, major: 3, critical: 4 } as const;
@@ -29,8 +30,52 @@ export function serializeComponent(component: StatusComponent) {
         description: component.description ?? null,
         status: component.status,
         position: component.position,
+        group_id: component.group_id ?? null,
         updated_at: component.updated_at,
     };
+}
+
+const COMPONENT_SEVERITY: Record<StatusComponentStatus, number> = {
+    operational: 0,
+    under_maintenance: 1,
+    degraded_performance: 2,
+    partial_outage: 3,
+    major_outage: 4,
+};
+
+const worstStatus = (statuses: StatusComponentStatus[]) =>
+    statuses.reduce<StatusComponentStatus>((worst, status) => (COMPONENT_SEVERITY[status] > COMPONENT_SEVERITY[worst] ? status : worst), "operational");
+
+type UptimeDay = { date: string; indicator: Indicator | null };
+type ComponentWithUptime = ReturnType<typeof serializeComponent> & { uptime: number; uptime_days: UptimeDay[] };
+
+export function rollUpGroups(components: ComponentWithUptime[]) {
+    const children = Map.groupBy(
+        components.filter((c) => c.group_id && components.some((parent) => parent.id === c.group_id && !parent.group_id)),
+        (c) => c.group_id as string,
+    );
+    return components
+        .filter((c) => !c.group_id || !children.get(c.group_id)?.includes(c))
+        .map((c) => {
+            const members = children.get(c.id);
+            if (!members?.length) return { ...c, group_id: null, group: false, components: [] as ComponentWithUptime[] };
+            return {
+                ...c,
+                group_id: null,
+                group: true,
+                status: worstStatus([c.status, ...members.map((m) => m.status)]),
+                uptime: Math.round((members.reduce((sum, m) => sum + m.uptime, 0) / members.length) * 100) / 100,
+                uptime_days: c.uptime_days.map((day, i) => {
+                    const indicators = members.map((m) => m.uptime_days[i]?.indicator).filter((indicator): indicator is Indicator => indicator != null);
+                    if (!indicators.length) return { ...day, indicator: null };
+                    return {
+                        ...day,
+                        indicator: indicators.reduce((worst, indicator) => (IMPACT_SEVERITY[indicator] > IMPACT_SEVERITY[worst] ? indicator : worst), "none" as Indicator),
+                    };
+                }),
+                components: members,
+            };
+        });
 }
 
 export function serializeIncident(incident: StatusIncident, components: StatusComponent[]) {
@@ -51,6 +96,7 @@ export function serializeIncident(incident: StatusIncident, components: StatusCo
 
 const DAY = 24 * 60 * 60 * 1000;
 const UPTIME_DAYS = 90;
+export const HISTORY_DAYS = 15;
 const OUTAGE_WEIGHT: Partial<Record<Indicator, number>> = { major: 0.3, critical: 1 };
 
 function componentUptime(component: StatusComponent, incidents: StatusIncident[], now: number) {
@@ -94,10 +140,10 @@ export async function getStatusSummary() {
     const recent = await StatusIncident.find({
         where: {
             status: In(RESOLVED_INCIDENT_STATES),
-            resolved_at: MoreThan(new Date(now - 14 * DAY)),
+            created_at: MoreThan(new Date(Math.floor(now / DAY) * DAY - (HISTORY_DAYS - 1) * DAY)),
         },
-        order: { resolved_at: "DESC" },
-        take: 25,
+        order: { created_at: "DESC" },
+        take: 100,
     });
     const quarter = components.length
         ? await StatusIncident.find({
@@ -133,14 +179,73 @@ export async function getStatusSummary() {
             updated_at: updatedAt ?? new Date(0),
         },
         status: { indicator, description: INDICATOR_DESCRIPTIONS[indicator] },
-        components: components.map((c) => ({
-            ...serializeComponent(c),
-            ...componentUptime(c, [...open, ...quarter], now),
-        })),
+        components: rollUpGroups(
+            components.map((c) => ({
+                ...serializeComponent(c),
+                ...componentUptime(c, [...open, ...quarter], now),
+            })),
+        ),
         incidents: incidents.map((i) => serializeIncident(i, components)),
         scheduled_maintenances: maintenances.map((i) => serializeIncident(i, components)),
         history: recent.map((i) => serializeIncident(i, components)),
     };
+}
+
+export const HISTORY_PAGE_MONTHS = 3;
+
+export function historyWindow(page: number, now: number) {
+    const today = new Date(now);
+    const month = today.getUTCFullYear() * 12 + today.getUTCMonth() - page * HISTORY_PAGE_MONTHS;
+    const monthStart = (m: number) => Date.UTC(Math.floor(m / 12), m % 12, 1);
+    return { from: new Date(monthStart(month - HISTORY_PAGE_MONTHS + 1)), to: new Date(monthStart(month + 1)) };
+}
+
+export async function getIncidentHistory(page: number, now = Date.now()) {
+    const { from, to } = historyWindow(page, now);
+    const [components, incidents, older] = await Promise.all([
+        StatusComponent.find(),
+        StatusIncident.find({
+            where: { status: In(RESOLVED_INCIDENT_STATES), created_at: Between(from, new Date(to.getTime() - 1)) },
+            order: { created_at: "DESC" },
+            take: 500,
+        }),
+        StatusIncident.count({ where: { status: In(RESOLVED_INCIDENT_STATES), created_at: LessThan(from) } }),
+    ]);
+    return {
+        page,
+        from: from.toISOString(),
+        to: to.toISOString(),
+        has_newer: page > 0,
+        has_older: older > 0,
+        incidents: incidents.map((i) => serializeIncident(i, components)),
+    };
+}
+
+const atomDate = (date: Date | string) => new Date(date).toISOString();
+
+export async function statusAtomFeed(origin: string) {
+    const [components, incidents] = await Promise.all([StatusComponent.find(), StatusIncident.find({ order: { updated_at: "DESC" }, take: 50 })]);
+    const name = escapeHtml(instanceName());
+    const entries = incidents.map((incident) => {
+        const serialized = serializeIncident(incident, components);
+        const body = serialized.incident_updates
+            .map((u) => `<p><strong>${escapeHtml(u.status)}</strong> (${escapeHtml(atomDate(u.created_at))}): ${escapeHtml(u.body)}</p>`)
+            .join("");
+        return `<entry><id>${origin}/status/history#${incident.id}</id><title>${escapeHtml(incident.name)}</title><updated>${atomDate(incident.updated_at)}</updated><published>${atomDate(incident.created_at)}</published><link href="${origin}/status/history#${incident.id}"/><content type="html">${escapeHtml(body)}</content></entry>`;
+    });
+    const updated = incidents[0]?.updated_at ?? new Date(0);
+    return `<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"><id>${origin}/status</id><title>${name} Status</title><updated>${atomDate(updated)}</updated><link href="${origin}/status"/><link rel="self" href="${origin}/status/history.atom"/>${entries.join("")}</feed>`;
+}
+
+export async function validateComponentGroup(componentId: string | null, groupId: string | null | undefined) {
+    if (!groupId) return null;
+    if (groupId === componentId) throw new HTTPError("A component can't be its own group", 400);
+    const group = await StatusComponent.findOne({ where: { id: groupId }, select: { id: true, group_id: true } });
+    if (!group) throw new HTTPError("That group doesn't exist", 400);
+    if (group.group_id) throw new HTTPError("Groups can't be nested: that component is already in a group", 400);
+    if (componentId && (await StatusComponent.count({ where: { group_id: componentId } })))
+        throw new HTTPError("This component is a group. Move its components out before putting it in another group", 400);
+    return group.id;
 }
 
 export async function setComponentsStatus(ids: string[], status: StatusComponentStatus) {

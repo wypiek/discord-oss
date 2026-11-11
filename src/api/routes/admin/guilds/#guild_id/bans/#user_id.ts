@@ -2,7 +2,6 @@ import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
 import { assertCanActOnUser, banDeleteSeconds, banUser } from "@spacebar/api/util";
-import { assertMirrorGuildEditable } from "@spacebar/api/util/utility/federatedAdmin";
 import { auditLogReason } from "@spacebar/api/util/utility/fieldCaps";
 import { AuditLog, Ban, Guild, User } from "@spacebar/database";
 import { AuditLogEvents, BanCreateSchema } from "@spacebar/schemas";
@@ -11,9 +10,8 @@ import { emitEvent, GuildBanRemoveEvent } from "@spacebar/util";
 const router = Router({ mergeParams: true });
 
 const loadGuild = async (req: Request) => {
-    const guild = await Guild.findOne({ where: { id: req.params.guild_id as string }, select: { id: true, owner_id: true, federated_instance: true } });
+    const guild = await Guild.findOne({ where: { id: req.params.guild_id as string }, select: { id: true, owner_id: true } });
     if (!guild) throw new HTTPError("Unknown server", 404);
-    assertMirrorGuildEditable(guild);
     await assertCanActOnUser(req, req.params.user_id as string);
     return guild;
 };

@@ -10,7 +10,8 @@ The dashboard is at `/admin`. Operators see every page, and [setup.md](../self-h
 | Instance         | Site settings          | `OPERATOR`        | Instance configuration, see [Site settings](#site-settings).                                        |
 | Instance         | Official inbox         | `OPERATOR`        | Direct messages to and from the official account.                                                   |
 | Instance         | Announcements          | `OPERATOR`        | Encrypted announcements from the official account, see [announcements.md](announcements.md).        |
-| Instance         | Federation             | `OPERATOR`        | Peers, blocks and federated servers, see [federation.md](federation.md).                            |
+| Public pages     | Blog                   | `OPERATOR`        | Posts and categories on `/blog`, see [blog-and-help.md](blog-and-help.md).                          |
+| Public pages     | Help centre            | `OPERATOR`        | Categories, sections and articles on `/support`, see [blog-and-help.md](blog-and-help.md).          |
 | People & servers | Users & profiles       | `VIEW_USERS`      | Accounts, addresses and IP bans.                                                                    |
 | People & servers | Instance invites       | `VIEW_USERS`      | Signup invites and invite trees, see [invites.md](invites.md).                                      |
 | People & servers | Servers                | `MANAGE_GUILDS`   | Servers, their channels and roles.                                                                  |
@@ -58,19 +59,15 @@ The server logs every successful staff action, with the actor, the target, the a
 
 ## Overview
 
-The Overview page shows counts of accounts, servers, messages, people online and open reports, with their change against the previous period, and activity charts over 24 hours, 7, 30 or 90 days. The reports and automod charts need `VIEW_MODERATION`, and the federation and upload charts need `OPERATOR`.
+The Overview page shows counts of accounts, servers, messages, people online and open reports, with their change against the previous period, and activity charts over 24 hours, 7, 30 or 90 days. The reports and automod charts need `VIEW_MODERATION`, and the upload charts need `OPERATOR`.
 
 ## Users
 
-The Users page has tabs for local accounts, accounts from other instances, IP addresses and IP bans, and can filter to suspended accounts, accounts waiting for approval and accounts with a join reason. The user drawer edits the account, its profile and cosmetics, rights, standing, violations, sessions, two-factor authentication, staff roles and invites, and each field needs the right listed above for it. The dashboard never shows password hashes, tokens, two-factor secrets, encryption keys or recovery codes.
+The Users page has tabs for accounts, IP addresses and IP bans, and can filter to suspended accounts, accounts waiting for approval and accounts with a join reason. The user drawer edits the account, its profile and cosmetics, rights, standing, violations, sessions, two-factor authentication, staff roles and invites, and each field needs the right listed above for it. The dashboard never shows password hashes, tokens, two-factor secrets, encryption keys or recovery codes.
 
 ### Removing spam accounts
 
 Select rows, or select the whole page and then every account that matches the search, up to the newest 5,000. The bar above the list then disables or deletes them. Disabling signs the accounts out and can also delete their messages, which needs `MANAGE_MESSAGES`. Deleting needs `MANAGE_USERS`, removes their messages, DMs and memberships, and hands each owned server to the member with the highest role. Your own account and accounts at or above your level are skipped.
-
-### Users and servers from other instances
-
-This instance stores the people its users meet on other instances as shadow users named `name@instance`, and the servers they join there as mirror servers. The Users and Servers pages list them in Other instances tabs with read-only drawers. Staff can disable, suspend, sign out, resolve violations of or delete a shadow user, and delete a mirror server. A deleted shadow user comes back the next time they talk to someone here, so block them on the Federation page instead.
 
 ## IP addresses and bans
 
@@ -79,11 +76,11 @@ The user drawer lists the address an account registered from and the last addres
 - Registration from a banned address gets HTTP 403. Sign-in checks the address after the password, so staff can still sign in from it.
 - A banned account that signs in from a new browser bans that browser one step further, and a spread ban expires after 7 days. Lifting a ban lifts the bans it spread.
 - Address and browser bans never catch staff.
-- Private, loopback and Cloudflare addresses, and your own address, can't be banned. Users from other instances arrive on loopback, so address bans never catch them.
+- Private, loopback and Cloudflare addresses, and your own address, can't be banned.
 
 ## Reports
 
-The Reports page lists reports newest first, filtered by status or reported user. A second report about the same thing updates the open one, and message reports save the 15 messages before and the 10 after the reported one. The report drawer shows other open reports about the same message or user and can close them all. [e2ee.md](e2ee.md#reporting-encrypted-messages) covers reports from encrypted conversations, and [automod.md](automod.md#federation) covers "Automod on another instance" reports.
+The Reports page lists reports newest first, filtered by status or reported user. A second report about the same thing updates the open one, and message reports save the 15 messages before and the 10 after the reported one. The report drawer shows other open reports about the same message or user and can close them all. [e2ee.md](e2ee.md#reporting-encrypted-messages) covers reports from encrypted conversations.
 
 ## Servers
 

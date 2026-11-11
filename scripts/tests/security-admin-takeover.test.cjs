@@ -24,7 +24,6 @@ function adminUsers({ protectedTarget = false } = {}) {
             effectiveRightsSync: (id, rights) => ({ bitfield: BigInt(rights ?? 0) | (roles.get(id) ?? 0n) }),
             loadStaffRoles: async () => ({}),
         },
-        "@spacebar/api/util/utility/federatedAdmin": { originClause: () => "", parseOrigin: () => null },
     });
 }
 

@@ -40,7 +40,7 @@ export type AutomodActionSource =
     | "direct_message"
     | "friend_request"
     | "admin";
-export type AutomodActionTaken = "suspend" | "delete" | "block" | "log" | "timeout" | "disable" | "federation_block" | "ban" | "hold" | "flag";
+export type AutomodActionTaken = "suspend" | "delete" | "block" | "log" | "timeout" | "disable" | "ban" | "hold" | "flag";
 
 @Entity({
     name: "automod_actions",

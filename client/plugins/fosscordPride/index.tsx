@@ -1,9 +1,10 @@
 import definePlugin, { StartAt } from "@utils/types";
-import { Checkbox, FluxDispatcher, ReactDOM, RestAPI, Text, UserProfileStore, UserStore, useEffect, useState } from "@webpack/common";
+import { Checkbox, FluxDispatcher, ReactDOM, RestAPI, Text, UserStore, useEffect, useState } from "@webpack/common";
 
 import { FosscordAuthor } from "../fosscordCore/shared";
 import { SettingsSection, Field, Button } from "../fosscordCore/ui";
 import managedStyle from "./style.css?managed";
+import { flagsFrom, PrideFlags, prepareUser } from "./flags";
 import { matches, SignupPridePicker, takeSignupSelection } from "./signup";
 
 type Badge = {
@@ -16,42 +17,10 @@ type Badge = {
 };
 
 type Selection = { flags: string[]; catalog: Badge[] };
-const pending = new Map<string, { signature?: string; dirty: boolean; promise: Promise<void> }>();
 
-function refreshProfile(id: string, signature?: string): Promise<void> {
-    const running = pending.get(id);
-    if (running) {
-        if (signature === undefined || signature !== running.signature) {
-            running.signature = signature ?? running.signature;
-            running.dirty = true;
-        }
-        return running.promise;
-    }
-    if (pending.size >= 32) return Promise.reject(new Error("Profile refresh capacity reached."));
-    const state = { signature, dirty: false, promise: Promise.resolve() };
-    pending.set(id, state);
-    state.promise = (async () => {
-        try {
-            do {
-                state.dirty = false;
-                try {
-                    const { body } = await RestAPI.get({ url: `/users/${id}/profile` });
-                    FluxDispatcher.dispatch({ type: "USER_PROFILE_FETCH_SUCCESS", userProfile: body });
-                } catch (error) {
-                    if (!state.dirty) throw error;
-                }
-            } while (state.dirty);
-        } finally {
-            pending.delete(id);
-        }
-    })();
-    return state.promise;
-}
-
-function profileChanged(event: { user?: { id: string; pride_badges?: string[] }; updates?: { user?: { id: string; pride_badges?: string[] } }[] }) {
-    for (const user of [event.user, ...(event.updates ?? []).map((update) => update.user)]) {
-        if (user?.pride_badges !== undefined && UserProfileStore.getUserProfile(user.id)) refreshProfile(user.id, JSON.stringify(user.pride_badges)).catch(() => {});
-    }
+function applyOwnFlags(flags: string[]) {
+    const user = UserStore.getCurrentUser();
+    if (user) FluxDispatcher.dispatch({ type: "CURRENT_USER_UPDATE", user: { ...user, pride_badges: flags } });
 }
 
 function PridePicker() {
@@ -115,7 +84,6 @@ function PridePicker() {
         setBusy(true);
         setError("");
         setMessage("");
-        let persisted = false;
         try {
             const { body } = await RestAPI.patch({
                 url: "/users/@me/pride-badges",
@@ -123,11 +91,10 @@ function PridePicker() {
             });
             setFlags(body.flags);
             setSaved(body.flags);
-            persisted = true;
-            await refreshProfile(UserStore.getCurrentUser().id);
+            applyOwnFlags(body.flags);
             setMessage(selection.length ? "Pride badges saved." : "Pride badges removed.");
         } catch {
-            setError(persisted ? "Pride badges saved, but the preview could not refresh. Reopen your profile." : "Could not save pride badges. Try again.");
+            setError("Could not save pride badges. Try again.");
         } finally {
             setBusy(false);
         }
@@ -215,7 +182,7 @@ function PridePicker() {
 
 export default definePlugin({
     name: "FosscordPride",
-    description: "Choose locally hosted pride flag badges in Profiles settings and on the signup form.",
+    description: "Choose locally hosted pride flags in Profiles settings and on the signup form and show them with the pronouns on profiles.",
     authors: [FosscordAuthor],
     required: true,
     managedStyle,
@@ -223,12 +190,49 @@ export default definePlugin({
     renderPicker: () => <PridePicker />,
     renderSignupPicker: () => <SignupPridePicker key="fosscord-pride-signup" />,
     takeSignupSelection,
-    flux: {
-        USER_UPDATE: profileChanged,
-        GUILD_MEMBER_UPDATE: profileChanged,
-        PRESENCE_UPDATES: profileChanged,
-    },
+    flagsFrom,
+    prepareUser,
+    hasFlags: (user: { prideBadges?: unknown } | undefined) => Array.isArray(user?.prideBadges) && user.prideBadges.length > 0,
+    pronounsWithFlags: (pronouns: string | undefined, pronounsElement: unknown, user: { id?: string } | undefined) => (
+        <span className="fosscord-pride-pronouns">
+            {pronouns?.length ? pronounsElement : null}
+            <PrideFlags userId={user?.id} max={8} className="fosscord-pride-flags-pronouns" />
+        </span>
+    ),
     patches: [
+        {
+            find: "has_bounced_email??",
+            replacement: {
+                match: /this\.displayNameStyles=\i\.displayNameStyles\?\?/,
+                replace: "this.prideBadges=$self.flagsFrom(arguments[0]),$&",
+            },
+        },
+        {
+            find: 'displayName="UserStore"',
+            replacement: [
+                {
+                    match: /(function \i\((\i)\)\{)(let \i=\2\.mfa_enabled;)/,
+                    replace: "$1$self.prepareUser($2);$3",
+                },
+                {
+                    match: /\["username","avatar","global_name"/,
+                    replace: '["pride_badges","username","avatar","global_name"',
+                },
+            ],
+        },
+        {
+            find: "onClickDisplayName:",
+            replacement: [
+                {
+                    match: /(\i)=(null!=(\i)&&\3\.length>0)(,\i=\(0,\i\.\i\)\((\i)\),)/,
+                    replace: "$1=($2||$self.hasFlags($5))$4",
+                },
+                {
+                    match: /\(0,\i\.jsx\)\(\i\.\i,\{text:\i\.intl\.string\(\i\.t\.GI2A8C\),delay:\i\.\i,ariaHidden:!0,children:\(0,\i\.jsx\)\("span",\{className:\i\.\i,children:\(0,\i\.jsx\)\(\i,\{pronouns:(\i)\}\)\}\)\}\)/,
+                    replace: "$self.pronounsWithFlags($1,$&,arguments[0]?.user)",
+                },
+            ],
+        },
         {
             find: "currentGlobalName:",
             replacement: {

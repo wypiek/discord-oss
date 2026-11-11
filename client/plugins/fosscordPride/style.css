@@ -350,3 +350,39 @@
     min-height: 100%;
     padding-block: 32px;
 }
+.fosscord-pride-flags {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.125em;
+    vertical-align: bottom;
+    line-height: 1;
+    white-space: nowrap;
+}
+.fosscord-pride-flag {
+    display: block;
+    width: 1.375em;
+    height: 1.375em;
+    object-fit: contain;
+}
+.fosscord-pride-more {
+    display: inline-flex;
+    align-items: center;
+    height: 1.833em;
+    padding: 0 0.4em;
+    border-radius: 0.4em;
+    background: var(--background-mod-normal, var(--background-modifier-accent));
+    color: var(--text-muted, var(--text-normal));
+    font-size: 0.75em;
+    font-weight: 600;
+    cursor: default;
+}
+.fosscord-pride-pronouns {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+.fosscord-pride-flags-pronouns {
+    font-size: 0.875rem;
+}

@@ -1,4 +1,4 @@
-export const DEFAULT_INSTANCE_NAME = "Meowcord";
+export const DEFAULT_INSTANCE_NAME = "Discord OSS";
 
 export class ClientConfiguration {
     useTestClient: boolean = true;

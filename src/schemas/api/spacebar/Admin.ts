@@ -1,3 +1,5 @@
+import { GuildBadgeType } from "../guilds/GuildProfileResponse";
+
 export interface AdminSettingsUpdateSchema {
     externalRequests?: {
         discordDecorations?: boolean;
@@ -7,7 +9,6 @@ export interface AdminSettingsUpdateSchema {
         discordTemplates?: boolean;
         discordStickerPacks?: boolean;
         discordBadDomains?: boolean;
-        steamAssetFallback?: boolean;
         thirdParty?: boolean;
     };
 
@@ -405,6 +406,29 @@ export interface AdminViolationUpdateSchema {
 
 export type AdminUserTag = "none" | "verified_bot" | "ai" | "verified_ai" | "official" | "system";
 
+export type AdminBadgeRarity = 1 | 2 | 3 | 5;
+
+export interface AdminBadgeOverridesSchema {
+    /**
+     * A Nitro badge level key such as "gold". The badge then keeps levelling up from there. null takes the Nitro badge away.
+     * @maxLength 32
+     */
+    nitro_tier?: string | null;
+    /**
+     * When the user's Nitro badge started counting. null takes the Nitro badge away.
+     * @format date-time
+     */
+    nitro_since?: string | null;
+    /**
+     * Rarity per badge id as the badge directory reports it: 1 common, 2 rare, 3 epic, 5 mythic. null goes back to the default.
+     */
+    rarity?: { [badge_id: string]: AdminBadgeRarity | null };
+    /**
+     * Level per levelled badge: 18 Account Age, 19 Streaming, 20 Game Time, 21 Game Variety, as a level key such as "five_years" or "star". The badge keeps levelling up from there. null goes back to the real progress.
+     */
+    levels?: { [badge_id: string]: string | null };
+}
+
 export interface AdminBadgeCreateSchema {
     /**
      * Tooltip text shown when hovering the badge
@@ -425,6 +449,15 @@ export interface AdminBadgeCreateSchema {
      * @maxLength 2048
      */
     link?: string | null;
+    /**
+     * 1 common, 2 rare, 3 epic, 5 mythic. Shown in the badge directory.
+     */
+    rarity?: AdminBadgeRarity | null;
+    /**
+     * What the badge directory says the badge was unlocked by. {instance} becomes the instance name.
+     * @maxLength 300
+     */
+    details?: string | null;
 }
 
 export interface AdminBadgeUpdateSchema {
@@ -442,6 +475,11 @@ export interface AdminBadgeUpdateSchema {
      * @maxLength 2048
      */
     link?: string | null;
+    rarity?: AdminBadgeRarity | null;
+    /**
+     * @maxLength 300
+     */
+    details?: string | null;
 }
 
 export interface AdminGuildUpdateSchema {
@@ -497,11 +535,9 @@ export interface AdminGuildUpdateSchema {
      */
     tag?: string | null;
     /**
-     * Server tag badge type: one of the client's (0-40) or the instance's own (10000 and up, some staff only)
-     * @minimum 0
-     * @maximum 99999
+     * Server tag badge type, one of the client's badges from 0 to 40
      */
-    badge?: number;
+    badge?: GuildBadgeType;
     /**
      * Badge colours as #rrggbb; null uses the badge's own colours
      * @pattern ^#[0-9a-fA-F]{6}$
@@ -532,6 +568,10 @@ export interface AdminStatusComponentSchema {
      * @maximum 2147483647
      */
     position?: number;
+    /**
+     * @pattern ^[0-9]{1,20}$
+     */
+    group_id?: string | null;
 }
 
 export interface AdminStatusComponentUpdateSchema {
@@ -551,6 +591,10 @@ export interface AdminStatusComponentUpdateSchema {
      * @maximum 2147483647
      */
     position?: number;
+    /**
+     * @pattern ^[0-9]{1,20}$
+     */
+    group_id?: string | null;
 }
 
 export type AdminStatusIncidentImpact = "none" | "minor" | "major" | "critical" | "maintenance";

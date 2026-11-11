@@ -3,7 +3,6 @@ import { HTTPError } from "lambert-server/HTTPError";
 import { In } from "typeorm";
 import { route } from "@spacebar/api/middlewares";
 import { assertCanActOnUser } from "@spacebar/api/util";
-import { assertMirrorGuildEditable } from "@spacebar/api/util/utility/federatedAdmin";
 import { auditLogReason } from "@spacebar/api/util/utility/fieldCaps";
 import { AuditLog, Guild, Member, Role, VoiceChannels } from "@spacebar/database";
 import { AdminGuildMemberUpdateSchema, AuditLogEvents } from "@spacebar/schemas";
@@ -15,9 +14,8 @@ const MAX_TIMEOUT_MS = 28 * 24 * 60 * 60 * 1000;
 const loadTarget = async (req: Request) => {
     const guild_id = req.params.guild_id as string;
     const member_id = req.params.member_id as string;
-    const guild = await Guild.findOne({ where: { id: guild_id }, select: { id: true, owner_id: true, federated_instance: true } });
+    const guild = await Guild.findOne({ where: { id: guild_id }, select: { id: true, owner_id: true } });
     if (!guild) throw new HTTPError("Unknown server", 404);
-    assertMirrorGuildEditable(guild);
     const member = await Member.findOne({ where: { id: member_id, guild_id }, relations: { roles: true, user: true } });
     if (!member) throw new HTTPError("This account isn't a member of the server", 404);
     await assertCanActOnUser(req, member_id);

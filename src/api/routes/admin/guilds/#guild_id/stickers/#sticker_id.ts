@@ -1,7 +1,6 @@
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
-import { assertMirrorGuildEditable } from "@spacebar/api/util/utility/federatedAdmin";
 import { auditLogReason } from "@spacebar/api/util/utility/fieldCaps";
 import { AuditLog, Guild, Sticker } from "@spacebar/database";
 import { AdminGuildStickerUpdateSchema, AuditLogEvents } from "@spacebar/schemas";
@@ -12,7 +11,7 @@ const AUDIT_KEYS = ["name", "description", "tags"];
 
 const loadSticker = async (req: Request) => {
     const guild_id = req.params.guild_id as string;
-    assertMirrorGuildEditable(await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true, federated_instance: true } }));
+    await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true } });
     const sticker = await Sticker.findOne({ where: { id: req.params.sticker_id as string, guild_id } });
     if (!sticker) throw new HTTPError("This server has no sticker with that ID", 404);
     return { guild_id, sticker };

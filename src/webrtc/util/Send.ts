@@ -27,18 +27,10 @@ const remember = (socket: WebRtcWebSocket, seq: number, data: string | Buffer) =
     if (socket.sentMessages.length > REPLAY_BUFFER_SIZE) socket.sentMessages.shift();
 };
 
-const inOrder = (socket: WebRtcWebSocket, send: () => Promise<unknown>) => {
-    const next = (socket.federationOutbox ?? Promise.resolve()).then(send).catch((error) => console.error("[WebRTC] could not send to a federated voice socket", error));
-    socket.federationOutbox = next;
-    return next;
-};
-
 export function Send(target: WebRtcWebSocket, data: VoicePayload): Promise<unknown> | undefined {
     const socket = currentSocket(target);
     if (process.env.WRTC_WS_VERBOSE) console.log(`[WebRTC] Outgoing message: ${JSON.stringify(data)}`);
     if (socket.encoding !== "json") return;
-    const { federation } = socket;
-    if (federation) return inOrder(socket, async () => sendJson(socket, { ...data, d: await federation.outgoing(data.d) }));
     return sendJson(socket, data);
 }
 
@@ -53,7 +45,6 @@ function sendJson(socket: WebRtcWebSocket, data: VoicePayload) {
 export function SendBinary(target: WebRtcWebSocket, op: VoiceOPCodes, payload: Buffer): Promise<unknown> {
     const socket = currentSocket(target);
     if (process.env.WRTC_WS_VERBOSE) console.log(`[WebRTC] Outgoing binary op ${op} (${payload.length} bytes)`);
-    if (socket.federation) return inOrder(socket, () => sendBinary(socket, op, payload));
     return sendBinary(socket, op, payload);
 }
 

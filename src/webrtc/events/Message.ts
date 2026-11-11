@@ -10,8 +10,6 @@ export async function onMessage(this: WebRtcWebSocket, buffer: Buffer, isBinary:
     try {
         const data: VoicePayload = isBinary ? { op: buffer[0], d: buffer.subarray(1) } : JSON.parse(buffer.toString());
         if (!Number.isInteger(data?.op)) return this.close(CLOSECODES.Decode_error);
-        if (this.federation && !isBinary && data.d !== undefined && ![VoiceOPCodes.HEARTBEAT, VoiceOPCodes.SELECT_PROTOCOL].includes(data.op))
-            data.d = await this.federation.incoming(data.d);
         if (![VoiceOPCodes.IDENTIFY, VoiceOPCodes.RESUME, VoiceOPCodes.HEARTBEAT].includes(data.op) && !this.user_id) return this.close(CLOSECODES.Not_authenticated);
 
         if (this.user_id && [VoiceOPCodes.IDENTIFY, VoiceOPCodes.RESUME].includes(data.op)) return this.close(4005, "Already authenticated");

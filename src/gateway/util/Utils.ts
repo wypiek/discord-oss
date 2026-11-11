@@ -42,13 +42,11 @@ export function generateStreamKey(type: "guild" | "call", guildId: string | unde
 
 let callStateCleanup: Promise<void> | undefined;
 
-const HOSTED_HERE = `NOT (COALESCE("guild_id" IN (SELECT "id" FROM "guilds" WHERE "federated_instance" IS NOT NULL), false) OR COALESCE("guild_id" IS NULL AND "channel_id" IN (SELECT "id" FROM "channels" WHERE "federated_instance" IS NOT NULL), false))`;
-
 export function clearCallStateOnStartup() {
     callStateCleanup ??= (async () => {
         console.log("[Gateway] Clearing voice states, streams and calls left from the last run...");
         await Promise.all([
-            VoiceState.createQueryBuilder().delete().where(HOSTED_HERE).execute(),
+            VoiceState.createQueryBuilder().delete().execute(),
             Stream.createQueryBuilder().delete().execute(),
             StageInstances.clear(),
             PrivateCalls.endStaleCalls(),

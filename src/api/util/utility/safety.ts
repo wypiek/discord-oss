@@ -176,9 +176,7 @@ export async function recordGuildJoin(guild_id: string, user_id?: string, invite
     if (!policy.enabled || policy.exemptGuildIds.includes(guild_id)) return;
     const now = Date.now();
     const joiner = user_id
-        ? await User.findOne({ where: { id: user_id }, select: { id: true, bot: true, verified: true, rights: true, federated_instance: true, created_at: true } }).catch(
-              () => null,
-          )
+        ? await User.findOne({ where: { id: user_id }, select: { id: true, bot: true, verified: true, rights: true, created_at: true } }).catch(() => null)
         : null;
     if (joiner && (await exemptionFrom("joinRaid", joiner, guild_id))) return;
     const created_at = user_id ? createdAtOf(joiner ?? { id: user_id }) : now;
@@ -253,7 +251,7 @@ export async function recordGuildMemberDm(guild_ids: string[], sender: string, r
         if (await moderatesGuild(guild_id, sender)) continue;
         const account = await User.findOne({
             where: { id: sender },
-            select: { id: true, bot: true, verified: true, rights: true, federated_instance: true, created_at: true },
+            select: { id: true, bot: true, verified: true, rights: true, created_at: true },
         }).catch(() => null);
         if (await exemptionFrom("dmRaid", account ?? { id: sender }, guild_id)) continue;
         if (policy.dryRun) {
@@ -357,7 +355,7 @@ export async function assertGuildVerification(guild_id: string, user_id: string,
     const [user, member] = await Promise.all([
         User.findOne({
             where: { id: user_id },
-            select: { id: true, bot: true, verified: true, phone: true, federated_instance: true, created_at: true, rights: true },
+            select: { id: true, bot: true, verified: true, phone: true, created_at: true, rights: true },
         }),
         known_member ??
             Member.findOne({
@@ -377,7 +375,7 @@ export async function assertGuildVerification(guild_id: string, user_id: string,
     if ((member.flags & BYPASSES_VERIFICATION) !== 0 || member.roles.some((role) => role.id !== guild_id)) return;
     const config = Config.get().automod.verification;
     if (!config.enforce) return;
-    const created = user.federated_instance && user.created_at ? new Date(user.created_at).getTime() : Snowflake.deconstruct(user.id).timestamp;
+    const created = Snowflake.deconstruct(user.id).timestamp;
     const facts = { verified: !!user.verified, phone: !!user.phone, accountAgeMs: Date.now() - created, memberAgeMs: Date.now() - new Date(member.joined_at).getTime() };
     const shortfall = verificationShortfall(level, facts, config.requirePhoneForHighest);
     if (!shortfall) return;
@@ -415,7 +413,7 @@ export async function applyExplicitContentFilter(
     const guild = await Guild.findOne({ where: { id: channel.guild_id }, select: { id: true, explicit_content_filter: true } });
     if (!explicitFilterApplies(guild?.explicit_content_filter, hasRoles)) return 0;
     const author = message.author_id
-        ? await User.findOne({ where: { id: message.author_id }, select: { id: true, bot: true, verified: true, rights: true, federated_instance: true, created_at: true } })
+        ? await User.findOne({ where: { id: message.author_id }, select: { id: true, bot: true, verified: true, rights: true, created_at: true } })
         : null;
     if (await exemptionFrom("explicitContent", author, channel.guild_id)) return 0;
     const dryRun = rulePolicy("explicitContent").dryRun;

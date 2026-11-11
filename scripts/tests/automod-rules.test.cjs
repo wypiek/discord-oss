@@ -44,7 +44,6 @@ test("the new automod rules have the documented defaults", () => {
     assert.deepEqual([config.quarantine.enabled, config.quarantine.hours, config.quarantine.maxMentions, config.quarantine.maxDms], [false, 24, 2, 3]);
     assert.deepEqual([config.verification.enforce, config.verification.requirePhoneForHighest], [true, false]);
     assert.deepEqual([config.explicitContent.enabled, config.explicitContent.flagAllMedia], [true, false]);
-    assert.deepEqual([config.federation.reportToHome, config.federation.acceptReports], [true, true]);
     assert.deepEqual([config.registration.maxAccountsPerIp, config.login.maxAccountsPerIp, config.login.sessionActiveDays, config.ipAllowList], [0, 0, 30, []]);
 });
 
@@ -516,7 +515,6 @@ test("the routes call the new checks", () => {
     assert.match(read("routes/channels/#channel_id/messages/index.ts"), /spamAttachmentHashes\(/);
     assert.match(read("routes/users/@me/channels.ts"), /checkContactSpam\(/);
     assert.match(read("routes/users/@me/relationships.ts"), /checkContactSpam\(/);
-    assert.match(read("util/utility/federationRelay.ts"), /enforceQuarantine\(/);
     assert.match(read("util/handlers/UserMessage.ts"), /applyExplicitContentFilter\(/);
 });
 

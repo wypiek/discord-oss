@@ -4,7 +4,6 @@ import { In } from "typeorm";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
 import { Guild, Member, User } from "@spacebar/database";
-import { originClause, parseOrigin } from "@spacebar/api/util/utility/federatedAdmin";
 import { cursorPage, decodeCursor, encodeCursor, keysetClause, listOffset } from "@spacebar/api/util/utility/adminCursor";
 
 const router = Router({ mergeParams: true });
@@ -53,11 +52,6 @@ router.get(
         description: "Search servers on this instance. `q` matches an exact id or part of the name.",
         query: {
             q: { type: "string", required: false },
-            origin: {
-                type: "string",
-                required: false,
-                description: "local (default) lists servers hosted here, remote lists mirrors of servers on other instances, all lists both. An exact id search ignores it",
-            },
             sort: { type: "string", required: false, description: "newest (default), oldest, name or members" },
             limit: { type: "number", required: false },
             offset: { type: "number", required: false, description: "Up to 10,000. Use after past that" },
@@ -73,7 +67,6 @@ router.get(
         const order = GUILD_SORTS[sort];
         const after = decodeCursor(req.query.after, order.length);
         const offset = after ? 0 : listOffset(req.query.offset);
-        const origin = parseOrigin(req.query.origin);
         if (/^\d{15,20}$/.test(q) && BigInt(q) > 9223372036854775807n) throw new HTTPError("The server id is outside the supported range", 400);
 
         const query = Guild.createQueryBuilder("guild").select([
@@ -84,7 +77,6 @@ router.get(
             "guild.features",
             "guild.description",
             "guild.profile",
-            "guild.federated_instance",
             "guild.member_count",
         ]);
         const [[firstColumn, firstOrder], ...tieBreaks] = order;
@@ -94,8 +86,6 @@ router.get(
         const exactId = /^\d{15,20}$/.test(q);
         if (exactId) query.where("guild.id = :id", { id: q });
         else if (q) query.where(`${sqlLike("guild.name", ":q")}`, { q: `%${q.replace(/[\\%_]/g, "\\$&")}%` });
-        const clause = exactId ? null : originClause("guild", origin);
-        if (clause) query.andWhere(clause);
 
         const page = query.clone();
         if (after) {
@@ -143,7 +133,6 @@ router.get(
                 description: g.description ?? null,
                 features: g.features,
                 member_count: membersByGuild.get(g.id) ?? 0,
-                federated_instance: g.federated_instance ?? null,
                 tag: g.profile?.tag ? { tag: g.profile.tag, badge_hash: g.profile.badge_hash ?? null } : null,
                 owner: g.owner_id
                     ? pickOwner(

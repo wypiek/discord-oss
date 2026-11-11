@@ -47,7 +47,7 @@ interface UserEntityPleaseRewriteThankYou {
     collectibles?: Collectibles;
     primary_guild?: PrimaryGuild;
     profile_collectibles?: ProfileCollectible[] | null;
-    avatar_corner_radius?: number | null;
+    pride_badges?: string[];
 }
 
 export interface PartialUser {
@@ -65,7 +65,7 @@ export interface PartialUser {
     banner?: string | null;
     accent_color?: number | null;
     public_flags?: number;
-    avatar_corner_radius?: number | null;
+    pride_badges?: string[];
 }
 
 export interface AvatarDecorationData {
@@ -132,7 +132,7 @@ export enum PublicUserEnum {
     display_name_styles,
     collectibles,
     primary_guild,
-    avatar_corner_radius,
+    pride_badges,
 }
 export type PublicUserKeys = keyof typeof PublicUserEnum;
 

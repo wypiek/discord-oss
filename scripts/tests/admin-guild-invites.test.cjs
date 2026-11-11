@@ -10,13 +10,12 @@ const users = [];
 const guilds = [];
 const emitted = [];
 
-test("invite routes need the server right and refuse mirrored servers", () => {
+test("invite routes need the server right", () => {
     for (const file of routes) {
         const source = fs.readFileSync(file, "utf8");
         const declared = source.match(/router\.(get|patch|put|post|delete)\(/g) ?? [];
         assert.ok(declared.length > 0, file);
         assert.equal((source.match(/right: "MANAGE_GUILDS"/g) ?? []).length, declared.length, file);
-        if (/router\.(post|delete)\(/.test(source)) assert.match(source, /assertMirrorGuildEditable\(/, file);
     }
 });
 

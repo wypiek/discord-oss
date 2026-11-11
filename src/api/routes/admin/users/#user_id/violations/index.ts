@@ -3,7 +3,6 @@ import { In } from "typeorm";
 import { route } from "@spacebar/api/middlewares";
 import { User } from "@spacebar/database";
 import { AdminViolationCreateSchema } from "@spacebar/schemas";
-import { assertShadowUserEditable } from "@spacebar/api/util/utility/federatedAdmin";
 import {
     accountStanding,
     assertCanActOnUser,
@@ -83,7 +82,7 @@ router.post(
     async (req: Request, res: Response) => {
         const body = req.body as AdminViolationCreateSchema;
         const user_id = req.params.user_id as string;
-        assertShadowUserEditable(await User.findOneOrFail({ where: { id: user_id }, select: { id: true, federated_instance: true } }), ["account standing"]);
+        await User.findOneOrFail({ where: { id: user_id }, select: { id: true } });
         await assertCanActOnUser(req, user_id);
         await issueViolation(user_id, body, req.user_id);
 

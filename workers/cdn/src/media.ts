@@ -22,6 +22,8 @@ const OUTPUT_FORMATS: Record<string, OutputFormat> = {
     jpeg: "image/jpeg",
     avif: "image/avif",
 };
+const SITE_IMAGE_EXTENSIONS: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/avif": "avif", "image/gif": "gif" };
+const SITE_IMAGE_FILE = /^[0-9a-f]{32}\.(png|jpg|webp|avif|gif)$/;
 const MAX_TRANSFORM_INPUT = 20 * 1024 * 1024;
 const DISCORD_CDN = "https://cdn.discordapp.com";
 const DEFAULT_SOUND_IDS = ["1", "2", "3", "4", "5", "6", "7"];
@@ -36,6 +38,7 @@ export const CDN_ROUTE_PREFIXES = [
     "guilds",
     "guild-space",
     "badge-icons",
+    "site-images",
     "content-assets",
     "avatar-decoration-presets",
     "krisp_browser_models",
@@ -114,6 +117,7 @@ const resolve = (segments: string[], url: URL): Lookup | null => {
             upstream: /^[0-9a-f]{32}\.png$/.test(first) ? { key: `badge-icons/${first}`, url: `${DISCORD_CDN}/badge-icons/${first}` } : undefined,
         };
     }
+    if (prefix === "site-images" && count === 2) return SITE_IMAGE_FILE.test(first) ? { keys: [`site-images/${first}`] } : null;
     if (prefix === "content-assets" && count === 2 && /^[\w.-]+$/.test(first))
         return { keys: [`content-assets/${first}`], upstream: { key: `content-assets/${first}`, url: `${DISCORD_CDN}/assets/content/${first}` } };
     if (prefix === "avatar-decoration-presets" && count === 2) {
@@ -347,6 +351,14 @@ const upload = async (env: CdnEnv, request: Request, url: URL, segments: string[
         const hash = await md5(buffer);
         await store(`${prefix}/${first}`, type);
         return reply({ id: !sound && ANIMATED_TYPES.includes(type) ? `a_${hash}` : hash, content_type: type, size, url: `${endpoint}/${prefix}/${first}` });
+    }
+
+    if (prefix === "site-images" && segments.length === 1) {
+        const extension = type ? SITE_IMAGE_EXTENSIONS[type] : undefined;
+        if (!type || !extension) return httpError("Invalid file type");
+        const file = `${await md5(buffer)}.${extension}`;
+        await store(`site-images/${file}`, type);
+        return reply({ id: file, content_type: type, size, url: `${endpoint}/site-images/${file}` });
     }
 
     if (!type || !IMAGE_TYPES.includes(type)) return httpError("Invalid file type");

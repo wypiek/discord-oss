@@ -16,4 +16,10 @@ export class Badge extends BaseClassWithoutId {
 
     @Column({ nullable: true })
     link?: string;
+
+    @Column({ type: "integer", nullable: true })
+    rarity?: number | null;
+
+    @Column({ type: "text", nullable: true })
+    details?: string | null;
 }

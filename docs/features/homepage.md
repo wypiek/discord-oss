@@ -4,11 +4,15 @@ The instance's own pages outside the client are the homepage at `/`, the link pr
 
 ## Homepage
 
-The homepage has the instance icon and name, a tagline, sign-up and sign-in buttons, 4 feature highlights and a FAQ of 7 questions. The footer links to `/status`, `/terms`, `/privacy` and `/guidelines` and keeps the Meowcord credit.
+The homepage is laid out like Discord's: a night sky with the instance logo, links to the page's sections, the [blog and help centre](blog-and-help.md), Status, Developers, Guidelines and Privacy, and an "Open <name>" button that opens the client. The hero has a large headline, the tagline and a drawing of the client on a monitor and a phone with the instance icon. Below it are "Create an account" and "Open <name> in your browser", or "Sign in" when registration is closed. Then come 4 feature sections, a FAQ of 7 questions, a closing call to action and a footer that links to `/blog`, `/support`, `/status`, `/developers`, `/terms`, `/privacy` and `/guidelines` and keeps the Discord OSS credit. There's no download button and nothing for sale.
+
+The header and footer show `client.logo` when it is set, and otherwise the instance icon and name. The header and footer are the same as on the blog. The header is 80 px tall with the links centred on the page, and below 1101 px the links move into a menu button that opens a blurple panel from the right. The footer has the logo and the Discord OSS credit on the left, 3 columns of links on the right, and the instance name drawn across the full width at the bottom, or `client.logo` when it is set.
+
+The page uses the fonts of the cached client: ABC Ginto Discord Nord for headlines, ABC Ginto Discord for the header, footer, tagline and buttons, and gg sans inside the drawing of the client. The sizes follow discord.com: a 56 px headline at 1906 px wide, a 20 px tagline and 64 px tall buttons with 12 px corners.
 
 | Setting                                              | Effect                                                                         |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `client.instanceName`, `client.icon`                 | The name and icon throughout the page.                                         |
+| `client.instanceName`, `client.icon`, `client.logo`  | The name, icon and logo throughout the page.                                   |
 | `general.instanceDescription`                        | Replaces the default tagline and the page's meta description.                  |
 | `register.disabled`, `register.allowNewRegistration` | Either one closes registration, and the page then says new accounts are closed. |
 | `register.requireInvite`                             | The page explains that joining needs an invite link.                           |

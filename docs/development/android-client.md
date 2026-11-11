@@ -1,6 +1,6 @@
 # Discord's Android client
 
-This page covers what Discord's React Native Android app does on the wire that the web client doesn't, what the server answers today, and how the Meowcord mobile bundle points the app at an instance. The wire details come from [docs.discord.food](https://docs.discord.food), the [Discord developer docs](https://discord.com/developers/docs), `scripts/dev/android-gateway-probe.mjs` and a run of Discord 349.9 Stable patched by KettuManager 1.2.2 in an Android 15 emulator on 2026-10-17. No APK or Discord code is in the repository.
+This page covers what Discord's React Native Android app does on the wire that the web client doesn't, what the server answers today, and how the Discord OSS mobile bundle points the app at an instance. The wire details come from [docs.discord.food](https://docs.discord.food), the [Discord developer docs](https://discord.com/developers/docs), `scripts/dev/android-gateway-probe.mjs` and a run of Discord 349.9 Stable patched by KettuManager 1.2.2 in an Android 15 emulator on 2026-10-17. No APK or Discord code is in the repository.
 
 ## How the app would reach an instance
 

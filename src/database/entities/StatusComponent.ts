@@ -19,6 +19,9 @@ export class StatusComponent extends BaseClass {
     @Column({ default: 0 })
     position: number = 0;
 
+    @Column({ type: "int8", nullable: true })
+    group_id?: string | null;
+
     @Column({ type: "timestamptz", default: () => "now()" })
     updated_at: Date = new Date();
 }

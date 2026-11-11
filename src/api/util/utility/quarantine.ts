@@ -1,4 +1,4 @@
-import { In, IsNull, MoreThan } from "typeorm";
+import { In, MoreThan } from "typeorm";
 import { RateLimit, User } from "@spacebar/database";
 import { Config, effectiveRightsSync, loadStaffRoles, Rights, Snowflake } from "@spacebar/util";
 import { quarantineEndsAt, quarantineMessage, QuarantineReason, quarantineViolation } from "@spacebar/util/util/Quarantine";
@@ -15,7 +15,6 @@ const clearedCache = new Map<string, { cleared: boolean; checked: number }>();
 
 export interface QuarantineSubject {
     user_id: string;
-    federated?: boolean;
     bot?: boolean;
     system?: boolean;
     rights?: Rights;
@@ -32,12 +31,12 @@ async function isCleared(user_id: string) {
 }
 
 export async function quarantineUntil(subject: QuarantineSubject, guild_id?: string | null) {
-    if (subject.federated || subject.system || subject.rights?.has("BYPASS_RATE_LIMITS")) return null;
+    if (subject.system || subject.rights?.has("BYPASS_RATE_LIMITS")) return null;
     const endsAt = quarantineEndsAt(Snowflake.deconstruct(subject.user_id).timestamp, Config.get().automod.quarantine);
     if (!endsAt || (await isCleared(subject.user_id))) return null;
     const account = await User.findOne({
         where: { id: subject.user_id },
-        select: { id: true, bot: true, verified: true, rights: true, federated_instance: true, created_at: true },
+        select: { id: true, bot: true, verified: true, rights: true, created_at: true },
     });
     if (await exemptionFrom("quarantine", account ?? { id: subject.user_id, bot: subject.bot }, guild_id)) return null;
     return endsAt;
@@ -107,7 +106,7 @@ export async function quarantinedAccounts(limit = 100) {
     const since = new Date(Date.now() - config.hours * 60 * 60 * 1000);
     const snap = await loadStaffRoles();
     const users = await User.find({
-        where: { created_at: MoreThan(since), federated_instance: IsNull(), bot: false, deleted: false },
+        where: { created_at: MoreThan(since), bot: false, deleted: false },
         select: { id: true, username: true, global_name: true, avatar: true, discriminator: true, created_at: true, rights: true, system: true },
         order: { created_at: "DESC" },
         take: Math.min(Math.max(limit, 1), 500),

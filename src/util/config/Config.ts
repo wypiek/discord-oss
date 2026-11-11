@@ -10,7 +10,6 @@ import {
     EndpointConfiguration,
     ExternalTokensConfiguration,
     ExternalRequestConfiguration,
-    FederationConfiguration,
     GeneralConfiguration,
     GifConfiguration,
     GuildConfiguration,
@@ -54,6 +53,5 @@ export class ConfigValue {
     embeds = new EmbedConfiguration();
     integrations = new IntegrationConfiguration();
     automod: AutomodConfiguration = new AutomodConfiguration();
-    federation: FederationConfiguration = new FederationConfiguration();
     defaultsRevision: number = 0;
 }

@@ -75,7 +75,7 @@ function fixture(execute, replace = async () => {}, clear = async () => {}) {
                 if (name === "@spacebar/database")
                     return {
                         Session: { createQueryBuilder: () => query },
-                        VoiceState: { createQueryBuilder: () => ({ delete: () => ({ where: () => ({ execute: clear }) }) }) },
+                        VoiceState: { createQueryBuilder: () => ({ delete: () => ({ execute: clear }) }) },
                         Stream: { createQueryBuilder: () => ({ delete: () => ({ execute: clear }) }) },
                         StageInstances: { clear },
                         PrivateCalls: { endStaleCalls: clear },

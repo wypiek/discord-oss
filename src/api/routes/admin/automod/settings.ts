@@ -86,7 +86,6 @@ router.patch(
         }
         assignKnown(automod.quarantine, body.quarantine);
         assignKnown(automod.verification, body.verification);
-        assignKnown(automod.federation, body.federation);
         if (body.explicitContent) {
             const { terms, blockedHashes } = body.explicitContent;
             assignKnown(automod.explicitContent, body.explicitContent, ["terms", "blockedHashes"]);

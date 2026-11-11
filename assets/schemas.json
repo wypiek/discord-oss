@@ -219,7 +219,7 @@
             "length": {
                 "type": "integer"
             },
-            "__@unscopables@757": {
+            "__@unscopables@754": {
                 "type": "object",
                 "additionalProperties": false,
                 "patternProperties": {
@@ -345,17 +345,17 @@
                     "with": {
                         "type": "boolean"
                     },
-                    "__@iterator@755": {
+                    "__@iterator@752": {
                         "type": "boolean"
                     },
-                    "__@unscopables@757": {
+                    "__@unscopables@754": {
                         "type": "boolean"
                     }
                 }
             }
         },
         "required": [
-            "__@unscopables@757",
+            "__@unscopables@754",
             "length"
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -2407,12 +2407,6 @@
             "activities": {
                 "type": "boolean"
             },
-            "members": {
-                "type": "array",
-                "items": {
-                    "type": "string"
-                }
-            },
             "channels": {
                 "type": "object",
                 "additionalProperties": {
@@ -2431,6 +2425,12 @@
             "typing": {
                 "const": true,
                 "type": "boolean"
+            },
+            "members": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
             },
             "member_updates": {
                 "type": "boolean"
@@ -4305,16 +4305,16 @@
             "icon": {
                 "type": "string"
             },
-            "members": {
-                "type": "array",
-                "items": {
-                    "$ref": "#/definitions/Member"
-                }
-            },
             "channels": {
                 "type": "array",
                 "items": {
                     "$ref": "#/definitions/Channel"
+                }
+            },
+            "members": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/definitions/Member"
                 }
             },
             "system_channel_id": {
@@ -4495,21 +4495,6 @@
             "discovery_excluded": {
                 "type": "boolean"
             },
-            "global_discovery": {
-                "type": "boolean"
-            },
-            "global_discovery_hidden": {
-                "type": "boolean"
-            },
-            "global_discovery_verified": {
-                "type": "boolean"
-            },
-            "federated_instance": {
-                "type": [
-                    "null",
-                    "string"
-                ]
-            },
             "vanity_url_code": {
                 "type": [
                     "null",
@@ -4659,9 +4644,6 @@
             "emojis",
             "features",
             "get_annotations",
-            "global_discovery",
-            "global_discovery_hidden",
-            "global_discovery_verified",
             "id",
             "insert",
             "invites",
@@ -4782,11 +4764,11 @@
             "primary_guild": {
                 "$ref": "#/definitions/PrimaryGuild"
             },
-            "avatar_corner_radius": {
-                "type": [
-                    "null",
-                    "integer"
-                ]
+            "pride_badges": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
             },
             "mfa_enabled": {
                 "type": "boolean"
@@ -7455,14 +7437,6 @@
                 "type": [
                     "null",
                     "string"
-                ]
-            },
-            "avatar_corner_radius": {
-                "minimum": 0,
-                "maximum": 50,
-                "type": [
-                    "null",
-                    "integer"
                 ]
             },
             "primary_guild_id": {
@@ -10294,6 +10268,178 @@
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
+    "GuildProfileResponse": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string"
+            },
+            "name": {
+                "type": "string"
+            },
+            "icon_hash": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "member_count": {
+                "type": "integer"
+            },
+            "online_count": {
+                "type": "integer"
+            },
+            "description": {
+                "type": "string"
+            },
+            "brand_color_primary": {
+                "type": "string"
+            },
+            "banner_hash": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "game_application_ids": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "game_activity": {
+                "type": "object",
+                "additionalProperties": {
+                    "$ref": "#/definitions/GameActivity"
+                }
+            },
+            "tag": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "badge": {
+                "anyOf": [
+                    {
+                        "enum": [
+                            0,
+                            1,
+                            10,
+                            11,
+                            12,
+                            13,
+                            14,
+                            15,
+                            16,
+                            17,
+                            18,
+                            19,
+                            2,
+                            20,
+                            21,
+                            22,
+                            23,
+                            24,
+                            25,
+                            26,
+                            27,
+                            28,
+                            29,
+                            3,
+                            30,
+                            31,
+                            32,
+                            33,
+                            34,
+                            35,
+                            36,
+                            37,
+                            38,
+                            39,
+                            4,
+                            40,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9
+                        ],
+                        "type": "number"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
+            "badge_color_primary": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "badge_color_secondary": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "badge_hash": {
+                "type": "string"
+            },
+            "traits": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/definitions/GuildTrait"
+                }
+            },
+            "features": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "visibility": {
+                "$ref": "#/definitions/GuildVisibilityLevel"
+            },
+            "custom_banner_hash": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "premium_subscription_count": {
+                "type": "integer"
+            },
+            "premium_tier": {
+                "$ref": "#/definitions/GuildPremiumTier"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "badge",
+            "badge_color_primary",
+            "badge_color_secondary",
+            "badge_hash",
+            "banner_hash",
+            "custom_banner_hash",
+            "description",
+            "features",
+            "game_activity",
+            "game_application_ids",
+            "icon_hash",
+            "id",
+            "member_count",
+            "name",
+            "online_count",
+            "premium_subscription_count",
+            "premium_tier",
+            "tag",
+            "traits",
+            "visibility"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
     "GuildThemeModifySchema": {
         "type": "object",
         "properties": {
@@ -10389,9 +10535,56 @@
                 ]
             },
             "badge": {
-                "type": [
-                    "null",
-                    "integer"
+                "anyOf": [
+                    {
+                        "enum": [
+                            0,
+                            1,
+                            10,
+                            11,
+                            12,
+                            13,
+                            14,
+                            15,
+                            16,
+                            17,
+                            18,
+                            19,
+                            2,
+                            20,
+                            21,
+                            22,
+                            23,
+                            24,
+                            25,
+                            26,
+                            27,
+                            28,
+                            29,
+                            3,
+                            30,
+                            31,
+                            32,
+                            33,
+                            34,
+                            35,
+                            36,
+                            37,
+                            38,
+                            39,
+                            4,
+                            40,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9
+                        ],
+                        "type": "number"
+                    },
+                    {
+                        "type": "null"
+                    }
                 ]
             },
             "badge_color_primary": {
@@ -10481,168 +10674,6 @@
         "additionalProperties": false,
         "required": [
             "action"
-        ],
-        "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "GuildProfileResponse": {
-        "type": "object",
-        "properties": {
-            "id": {
-                "type": "string"
-            },
-            "name": {
-                "type": "string"
-            },
-            "icon_hash": {
-                "type": [
-                    "null",
-                    "string"
-                ]
-            },
-            "member_count": {
-                "type": "integer"
-            },
-            "online_count": {
-                "type": "integer"
-            },
-            "description": {
-                "type": "string"
-            },
-            "brand_color_primary": {
-                "type": "string"
-            },
-            "banner_hash": {
-                "type": [
-                    "null",
-                    "string"
-                ]
-            },
-            "game_application_ids": {
-                "type": "array",
-                "items": {
-                    "type": "string"
-                }
-            },
-            "game_activity": {
-                "type": "object",
-                "additionalProperties": {
-                    "$ref": "#/definitions/GameActivity"
-                }
-            },
-            "tag": {
-                "type": [
-                    "null",
-                    "string"
-                ]
-            },
-            "badge": {
-                "anyOf": [
-                    {
-                        "enum": [
-                            0,
-                            1,
-                            10,
-                            11,
-                            12,
-                            13,
-                            14,
-                            15,
-                            16,
-                            17,
-                            18,
-                            19,
-                            2,
-                            20,
-                            21,
-                            22,
-                            23,
-                            24,
-                            25,
-                            26,
-                            27,
-                            28,
-                            29,
-                            3,
-                            30,
-                            4,
-                            5,
-                            6,
-                            7,
-                            8,
-                            9
-                        ],
-                        "type": "number"
-                    },
-                    {
-                        "type": "null"
-                    }
-                ]
-            },
-            "badge_color_primary": {
-                "type": [
-                    "null",
-                    "string"
-                ]
-            },
-            "badge_color_secondary": {
-                "type": [
-                    "null",
-                    "string"
-                ]
-            },
-            "badge_hash": {
-                "type": "string"
-            },
-            "traits": {
-                "type": "array",
-                "items": {
-                    "$ref": "#/definitions/GuildTrait"
-                }
-            },
-            "features": {
-                "type": "array",
-                "items": {
-                    "type": "string"
-                }
-            },
-            "visibility": {
-                "$ref": "#/definitions/GuildVisibilityLevel"
-            },
-            "custom_banner_hash": {
-                "type": [
-                    "null",
-                    "string"
-                ]
-            },
-            "premium_subscription_count": {
-                "type": "integer"
-            },
-            "premium_tier": {
-                "$ref": "#/definitions/GuildPremiumTier"
-            }
-        },
-        "additionalProperties": false,
-        "required": [
-            "badge",
-            "badge_color_primary",
-            "badge_color_secondary",
-            "badge_hash",
-            "banner_hash",
-            "custom_banner_hash",
-            "description",
-            "features",
-            "game_activity",
-            "game_application_ids",
-            "icon_hash",
-            "id",
-            "member_count",
-            "name",
-            "online_count",
-            "premium_subscription_count",
-            "premium_tier",
-            "tag",
-            "traits",
-            "visibility"
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
@@ -11064,9 +11095,6 @@
                         "type": "boolean"
                     },
                     "discordBadDomains": {
-                        "type": "boolean"
-                    },
-                    "steamAssetFallback": {
                         "type": "boolean"
                     },
                     "thirdParty": {
@@ -11800,6 +11828,59 @@
         "additionalProperties": false,
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
+    "AdminBadgeOverridesSchema": {
+        "type": "object",
+        "properties": {
+            "nitro_tier": {
+                "description": "A Nitro badge level key such as \"gold\". The badge then keeps levelling up from there. null takes the Nitro badge away.",
+                "maxLength": 32,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "nitro_since": {
+                "description": "When the user's Nitro badge started counting. null takes the Nitro badge away.",
+                "format": "date-time",
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "rarity": {
+                "description": "Rarity per badge id as the badge directory reports it: 1 common, 2 rare, 3 epic, 5 mythic. null goes back to the default.",
+                "type": "object",
+                "additionalProperties": {
+                    "anyOf": [
+                        {
+                            "enum": [
+                                1,
+                                2,
+                                3,
+                                5
+                            ],
+                            "type": "number"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "levels": {
+                "description": "Level per levelled badge: 18 Account Age, 19 Streaming, 20 Game Time, 21 Game Variety, as a level key such as \"five_years\" or \"star\". The badge keeps levelling up from there. null goes back to the real progress.",
+                "type": "object",
+                "additionalProperties": {
+                    "type": [
+                        "null",
+                        "string"
+                    ]
+                }
+            }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
     "AdminBadgeCreateSchema": {
         "type": "object",
         "properties": {
@@ -11820,6 +11901,31 @@
             },
             "link": {
                 "maxLength": 2048,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "rarity": {
+                "description": "1 common, 2 rare, 3 epic, 5 mythic. Shown in the badge directory.",
+                "anyOf": [
+                    {
+                        "enum": [
+                            1,
+                            2,
+                            3,
+                            5
+                        ],
+                        "type": "number"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
+            "details": {
+                "description": "What the badge directory says the badge was unlocked by. {instance} becomes the instance name.",
+                "maxLength": 300,
                 "type": [
                     "null",
                     "string"
@@ -11849,6 +11955,29 @@
             },
             "link": {
                 "maxLength": 2048,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "rarity": {
+                "anyOf": [
+                    {
+                        "enum": [
+                            1,
+                            2,
+                            3,
+                            5
+                        ],
+                        "type": "number"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
+            "details": {
+                "maxLength": 300,
                 "type": [
                     "null",
                     "string"
@@ -11959,10 +12088,51 @@
                 ]
             },
             "badge": {
-                "description": "Server tag badge type: one of the client's (0-40) or the instance's own (10000 and up, some staff only)",
-                "minimum": 0,
-                "maximum": 99999,
-                "type": "integer"
+                "description": "Server tag badge type, one of the client's badges from 0 to 40",
+                "enum": [
+                    0,
+                    1,
+                    10,
+                    11,
+                    12,
+                    13,
+                    14,
+                    15,
+                    16,
+                    17,
+                    18,
+                    19,
+                    2,
+                    20,
+                    21,
+                    22,
+                    23,
+                    24,
+                    25,
+                    26,
+                    27,
+                    28,
+                    29,
+                    3,
+                    30,
+                    31,
+                    32,
+                    33,
+                    34,
+                    35,
+                    36,
+                    37,
+                    38,
+                    39,
+                    4,
+                    40,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9
+                ],
+                "type": "number"
             },
             "badge_color_primary": {
                 "description": "Badge colours as #rrggbb; null uses the badge's own colours",
@@ -12012,6 +12182,13 @@
                 "type": "integer",
                 "minimum": -2147483648,
                 "maximum": 2147483647
+            },
+            "group_id": {
+                "pattern": "^[0-9]{1,20}$",
+                "type": [
+                    "null",
+                    "string"
+                ]
             }
         },
         "additionalProperties": false,
@@ -12049,6 +12226,13 @@
                 "type": "integer",
                 "minimum": -2147483648,
                 "maximum": 2147483647
+            },
+            "group_id": {
+                "pattern": "^[0-9]{1,20}$",
+                "type": [
+                    "null",
+                    "string"
+                ]
             }
         },
         "additionalProperties": false,
@@ -14519,23 +14703,6 @@
                 },
                 "additionalProperties": false
             },
-            "federation": {
-                "type": "object",
-                "properties": {
-                    "reportToHome": {
-                        "type": "boolean"
-                    },
-                    "acceptReports": {
-                        "type": "boolean"
-                    },
-                    "reportsPerHourPerInstance": {
-                        "minimum": 0,
-                        "maximum": 100000,
-                        "type": "integer"
-                    }
-                },
-                "additionalProperties": false
-            },
             "registration": {
                 "type": "object",
                 "properties": {
@@ -14754,137 +14921,6 @@
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
-    "GuildGlobalDiscoverySchema": {
-        "type": "object",
-        "properties": {
-            "enabled": {
-                "type": "boolean"
-            }
-        },
-        "additionalProperties": false,
-        "required": [
-            "enabled"
-        ],
-        "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "AdminFederationSettingsSchema": {
-        "type": "object",
-        "properties": {
-            "enabled": {
-                "type": "boolean"
-            },
-            "registryUrl": {
-                "maxLength": 512,
-                "type": "string"
-            },
-            "registryPublicKey": {
-                "maxLength": 64,
-                "type": "string"
-            },
-            "announce": {
-                "type": "boolean"
-            },
-            "announceStats": {
-                "type": "boolean"
-            },
-            "allowUnlistedPeers": {
-                "type": "boolean"
-            },
-            "peers": {
-                "maxItems": 200,
-                "type": "array",
-                "items": {
-                    "type": "string",
-                    "maxLength": 300
-                }
-            },
-            "contacts": {
-                "maxItems": 10,
-                "type": "array",
-                "items": {
-                    "type": "string",
-                    "maxLength": 300
-                }
-            },
-            "previousIds": {
-                "maxItems": 10,
-                "type": "array",
-                "items": {
-                    "type": "string",
-                    "maxLength": 300
-                }
-            },
-            "verification": {
-                "enum": [
-                    "instance",
-                    "registry"
-                ],
-                "type": "string"
-            }
-        },
-        "additionalProperties": false,
-        "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "AdminFederationBlockSchema": {
-        "type": "object",
-        "properties": {
-            "kind": {
-                "enum": [
-                    "guild",
-                    "instance",
-                    "user"
-                ],
-                "type": "string"
-            },
-            "target": {
-                "minLength": 1,
-                "maxLength": 300,
-                "type": "string"
-            },
-            "reason": {
-                "maxLength": 1000,
-                "type": "string"
-            }
-        },
-        "additionalProperties": false,
-        "required": [
-            "kind",
-            "target"
-        ],
-        "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "AdminFederationGuildSchema": {
-        "type": "object",
-        "properties": {
-            "verified": {
-                "type": "boolean"
-            },
-            "hidden": {
-                "type": "boolean"
-            }
-        },
-        "additionalProperties": false,
-        "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "AdminFederationVerifySchema": {
-        "type": "object",
-        "properties": {
-            "id": {
-                "minLength": 1,
-                "maxLength": 300,
-                "type": "string"
-            },
-            "verified": {
-                "type": "boolean"
-            }
-        },
-        "additionalProperties": false,
-        "required": [
-            "id",
-            "verified"
-        ],
-        "$schema": "http://json-schema.org/draft-07/schema#"
-    },
     "AdminStaffRoleCreateSchema": {
         "type": "object",
         "properties": {
@@ -14987,6 +15023,375 @@
         "required": [
             "role_ids"
         ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminSiteOrderSchema": {
+        "type": "object",
+        "properties": {
+            "ids": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 500,
+                "items": {
+                    "type": "string",
+                    "maxLength": 20
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "ids"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminSiteImageUploadSchema": {
+        "type": "object",
+        "properties": {
+            "image": {
+                "minLength": 1,
+                "maxLength": 10000000,
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "image"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminMarkdownPreviewSchema": {
+        "type": "object",
+        "properties": {
+            "markdown": {
+                "maxLength": 100000,
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "markdown"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminBlogCategoryCreateSchema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "minLength": 1,
+                "maxLength": 60,
+                "type": "string"
+            },
+            "slug": {
+                "maxLength": 80,
+                "type": "string"
+            },
+            "description": {
+                "maxLength": 300,
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminBlogCategoryUpdateSchema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "minLength": 1,
+                "maxLength": 60,
+                "type": "string"
+            },
+            "slug": {
+                "maxLength": 80,
+                "type": "string"
+            },
+            "description": {
+                "maxLength": 300,
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminBlogPostCreateSchema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+            },
+            "slug": {
+                "maxLength": 80,
+                "type": "string"
+            },
+            "excerpt": {
+                "maxLength": 500,
+                "type": "string"
+            },
+            "body": {
+                "maxLength": 100000,
+                "type": "string"
+            },
+            "cover_image": {
+                "maxLength": 80,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "category_id": {
+                "maxLength": 20,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "author_name": {
+                "maxLength": 80,
+                "type": "string"
+            },
+            "published": {
+                "type": "boolean"
+            },
+            "published_at": {
+                "maxLength": 64,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "featured": {
+                "type": "boolean"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "title"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminBlogPostUpdateSchema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+            },
+            "slug": {
+                "maxLength": 80,
+                "type": "string"
+            },
+            "excerpt": {
+                "maxLength": 500,
+                "type": "string"
+            },
+            "body": {
+                "maxLength": 100000,
+                "type": "string"
+            },
+            "cover_image": {
+                "maxLength": 80,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "category_id": {
+                "maxLength": 20,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "author_name": {
+                "maxLength": 80,
+                "type": "string"
+            },
+            "published": {
+                "type": "boolean"
+            },
+            "published_at": {
+                "maxLength": 64,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "featured": {
+                "type": "boolean"
+            }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminHelpCategoryCreateSchema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "minLength": 1,
+                "maxLength": 80,
+                "type": "string"
+            },
+            "slug": {
+                "maxLength": 80,
+                "type": "string"
+            },
+            "description": {
+                "maxLength": 300,
+                "type": "string"
+            },
+            "icon": {
+                "maxLength": 16,
+                "type": "string"
+            },
+            "icon_image": {
+                "maxLength": 80,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminHelpCategoryUpdateSchema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "minLength": 1,
+                "maxLength": 80,
+                "type": "string"
+            },
+            "slug": {
+                "maxLength": 80,
+                "type": "string"
+            },
+            "description": {
+                "maxLength": 300,
+                "type": "string"
+            },
+            "icon": {
+                "maxLength": 16,
+                "type": "string"
+            },
+            "icon_image": {
+                "maxLength": 80,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminHelpSectionCreateSchema": {
+        "type": "object",
+        "properties": {
+            "category_id": {
+                "maxLength": 20,
+                "type": "string"
+            },
+            "name": {
+                "minLength": 1,
+                "maxLength": 120,
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "category_id",
+            "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminHelpSectionUpdateSchema": {
+        "type": "object",
+        "properties": {
+            "category_id": {
+                "maxLength": 20,
+                "type": "string"
+            },
+            "name": {
+                "minLength": 1,
+                "maxLength": 120,
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminHelpArticleCreateSchema": {
+        "type": "object",
+        "properties": {
+            "section_id": {
+                "maxLength": 20,
+                "type": "string"
+            },
+            "title": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+            },
+            "slug": {
+                "maxLength": 80,
+                "type": "string"
+            },
+            "body": {
+                "maxLength": 100000,
+                "type": "string"
+            },
+            "published": {
+                "type": "boolean"
+            },
+            "promoted": {
+                "type": "boolean"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "section_id",
+            "title"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminHelpArticleUpdateSchema": {
+        "type": "object",
+        "properties": {
+            "section_id": {
+                "maxLength": 20,
+                "type": "string"
+            },
+            "title": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+            },
+            "slug": {
+                "maxLength": 80,
+                "type": "string"
+            },
+            "body": {
+                "maxLength": 100000,
+                "type": "string"
+            },
+            "published": {
+                "type": "boolean"
+            },
+            "promoted": {
+                "type": "boolean"
+            }
+        },
+        "additionalProperties": false,
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "IdentifySchema": {
@@ -15990,7 +16395,7 @@
                     "length": {
                         "type": "integer"
                     },
-                    "__@unscopables@757": {
+                    "__@unscopables@754": {
                         "type": "object",
                         "additionalProperties": false,
                         "patternProperties": {
@@ -16116,17 +16521,17 @@
                             "with": {
                                 "type": "boolean"
                             },
-                            "__@iterator@755": {
+                            "__@iterator@752": {
                                 "type": "boolean"
                             },
-                            "__@unscopables@757": {
+                            "__@unscopables@754": {
                                 "type": "boolean"
                             }
                         }
                     }
                 },
                 "required": [
-                    "__@unscopables@757",
+                    "__@unscopables@754",
                     "length"
                 ]
             },
@@ -16438,11 +16843,11 @@
             "primary_guild": {
                 "$ref": "#/definitions/PrimaryGuild"
             },
-            "avatar_corner_radius": {
-                "type": [
-                    "null",
-                    "integer"
-                ]
+            "pride_badges": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
             }
         },
         "additionalProperties": false,
@@ -16596,11 +17001,11 @@
             "public_flags": {
                 "type": "integer"
             },
-            "avatar_corner_radius": {
-                "type": [
-                    "null",
-                    "integer"
-                ]
+            "pride_badges": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
             }
         },
         "additionalProperties": false,
@@ -17580,12 +17985,6 @@
                 "type": "integer",
                 "default": 0
             },
-            "federated_instance": {
-                "type": [
-                    "null",
-                    "string"
-                ]
-            },
             "default_thread_rate_limit_per_user": {
                 "type": "integer",
                 "default": 0
@@ -18007,6 +18406,16 @@
                     }
                 ]
             },
+            "badge_overrides": {
+                "anyOf": [
+                    {
+                        "$ref": "#/definitions/BadgeOverrides"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
             "private_channel_settings": {
                 "anyOf": [
                     {
@@ -18036,59 +18445,11 @@
                     }
                 ]
             },
-            "avatar_corner_radius": {
-                "type": [
-                    "null",
-                    "integer"
-                ]
-            },
             "avatar_decoration": {
                 "$ref": "#/definitions/AvatarDecoration"
             },
             "avatar_decoration_id": {
                 "type": "string"
-            },
-            "federated_instance": {
-                "type": [
-                    "null",
-                    "string"
-                ]
-            },
-            "remote_badges": {
-                "anyOf": [
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {
-                                    "type": "string"
-                                },
-                                "kind": {
-                                    "type": "string"
-                                },
-                                "description": {
-                                    "type": "string"
-                                },
-                                "pride_flag": {
-                                    "type": "string"
-                                },
-                                "icon": {
-                                    "type": "string"
-                                }
-                            },
-                            "additionalProperties": false,
-                            "required": [
-                                "description",
-                                "id",
-                                "kind"
-                            ]
-                        }
-                    },
-                    {
-                        "type": "null"
-                    }
-                ]
             },
             "tag": {
                 "type": "string"
@@ -18881,6 +19242,28 @@
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
+    "BadgeOverrides": {
+        "type": "object",
+        "properties": {
+            "nitro_since": {
+                "type": "string"
+            },
+            "account_age_since": {
+                "type": "string"
+            },
+            "progress_offsets": {
+                "$ref": "#/definitions/Record%3Cstring%2Cnumber%3E"
+            },
+            "levels_set_at": {
+                "$ref": "#/definitions/Record%3Cstring%2Cstring%3E"
+            },
+            "rarity": {
+                "$ref": "#/definitions/Record%3Cstring%2Cnumber%3E"
+            }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
     "UserGuildSettings": {
         "type": "object",
         "properties": {
@@ -19615,24 +19998,6 @@
                 "type": "boolean",
                 "default": false
             },
-            "global_discovery": {
-                "type": "boolean",
-                "default": false
-            },
-            "global_discovery_hidden": {
-                "type": "boolean",
-                "default": false
-            },
-            "global_discovery_verified": {
-                "type": "boolean",
-                "default": false
-            },
-            "federated_instance": {
-                "type": [
-                    "null",
-                    "string"
-                ]
-            },
             "vanity_url_code": {
                 "type": [
                     "null",
@@ -19750,9 +20115,6 @@
             "discovery_weight",
             "emojis",
             "features",
-            "global_discovery",
-            "global_discovery_hidden",
-            "global_discovery_verified",
             "id",
             "invites",
             "members",
@@ -21865,12 +22227,6 @@
                     {
                         "type": "null"
                     }
-                ]
-            },
-            "authorship": {
-                "type": [
-                    "null",
-                    "string"
                 ]
             },
             "soundboard_sounds": {

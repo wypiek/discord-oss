@@ -169,6 +169,8 @@ export class E2eeError extends Error {
             | "BAD_ENVELOPE"
             | "NO_KEY"
             | "BAD_SIGNATURE"
+            | "UNKNOWN_SENDER"
+            | "NOT_RECIPIENT"
             | "RESET",
         message: string,
         readonly userId?: string,
@@ -204,22 +206,8 @@ export const snowflakeTime = (id: string) => {
 
 const binding = (mid: string | undefined, nonce: string | undefined) => (mid ? `m:${mid}` : `n:${nonce ?? ""}`);
 
-const canonicalInstance = (canonical: string) => canonical.slice(canonical.indexOf("@", 1) + 1);
-
-const canonicalSnowflake = (canonical: string) => canonical.slice(1, canonical.indexOf("@", 1));
-
-const MAX_BINDING_VARIANTS = 8;
-
-const MOVES_TTL = 10 * 60 * 1000;
-
-const isCanonical = (value: unknown): value is string => typeof value === "string" && /^@\d{1,20}@[a-z0-9.:-]+$/.test(value);
-
-const LOCAL_REFERENCE = /<(@!?|@&|#)(\d{15,20})>|<(a?):(\w{1,32}):(\d{15,20})>/g;
-
-const CANONICAL_REFERENCE = /<(@!?|@&|#)(@\d{1,20}@[a-z0-9.:-]+)>|<(a?):(\w{1,32}):(@\d{1,20}@[a-z0-9.:-]+)>/g;
-
 interface Binding {
-    v: 1 | 2;
+    v: 1;
     channel: string;
     sender: string;
     mid?: string;
@@ -349,11 +337,6 @@ export class Engine {
     private directory = new BoundedMap<string, Promise<DirectoryEntry>>(2000);
     private members = new BoundedMap<string, Promise<string[]>>(500);
     private profiles = new BoundedMap<string, Promise<ChannelMember>>(1000);
-    private canonical = new BoundedMap<string, Promise<string | null>>(5000);
-    private resolvedCanonical = new BoundedMap<string, string>(5000);
-    private localOf = new BoundedMap<string, Promise<string | null>>(5000);
-    private federation = true;
-    private moves: { at: number; aliases: Promise<Map<string, string[]>> } | null = null;
     private plaintext = new BoundedMap<string, Payload>(PLAINTEXT_CACHE_SIZE);
     private contentKeys = new BoundedMap<string, string>(PLAINTEXT_CACHE_SIZE);
     private listeners = new Set<() => void>();
@@ -1145,7 +1128,7 @@ export class Engine {
             } else if (
                 contact.identityKey !== identityKey &&
                 previous?.public_key === contact.identityKey &&
-                (await verify(previous.public_key, rotationMessage(await this.signedUserId(userId), previous.public_key, identityKey), previous.signature))
+                (await verify(previous.public_key, rotationMessage(userId, previous.public_key, identityKey), previous.signature))
             ) {
                 contact.previousKeys = [...new Set([...(contact.previousKeys ?? []), contact.identityKey])].slice(-16);
                 contact.identityKey = identityKey;
@@ -1172,13 +1155,12 @@ export class Engine {
         }
         const devices: DirectoryDevice[] = [];
         let backupKey: string | null = null;
-        const signedId = await this.signedUserId(userId);
         if (identityKey) {
             const known = this.knownKeys(userId, identityKey);
             for (const device of keys.devices) {
                 if (!device.identity_signature) continue;
                 if ((await deviceIdFor(device.signing_key)) !== device.device_id) continue;
-                const message = deviceMessage(signedId, device.device_id, device.signing_key);
+                const message = deviceMessage(userId, device.device_id, device.signing_key);
                 const signers = device.status === "revoked" ? known : [identityKey];
                 let signed = false;
                 for (const key of signers) if (!signed) signed = await verify(key, message, device.identity_signature);
@@ -1195,7 +1177,7 @@ export class Engine {
                 });
             }
             const backup = keys.backup_key;
-            if (backup && (await verify(identityKey, backupKeyMessage(signedId, backup.public_key), backup.signature))) backupKey = backup.public_key;
+            if (backup && (await verify(identityKey, backupKeyMessage(userId, backup.public_key), backup.signature))) backupKey = backup.public_key;
         }
         const identityCreatedAt = keys.identity_created_at ? Date.parse(keys.identity_created_at) : null;
         return {
@@ -1239,164 +1221,8 @@ export class Engine {
         this.pushTrust([userId]).catch((error) => console.error("[e2ee] couldn't sync the verification", error));
     }
 
-    knownCanonical(id: string) {
-        return this.resolvedCanonical.get(id);
-    }
-
-    private async canonicalIds(ids: string[]) {
-        if (!this.federation) return null;
-        const missing = [...new Set(ids)].filter((id) => !this.canonical.has(id));
-        for (let i = 0; i < missing.length; i += 100) {
-            const chunk = missing.slice(i, i + 100);
-            const batch = this.api.request<Record<string, string>>("get", `/federation/objects?ids=${chunk.join(",")}`);
-            for (const id of chunk) {
-                const entry = batch.then(
-                    (res) => {
-                        if (!isCanonical(res?.[id])) return null;
-                        this.resolvedCanonical.set(id, res[id]);
-                        return res[id];
-                    },
-                    (error: { status?: number }) => {
-                        this.canonical.delete(id);
-                        if (error?.status === 404) {
-                            this.federation = false;
-                            return null;
-                        }
-                        throw error;
-                    },
-                );
-                this.canonical.set(id, entry);
-            }
-        }
-        const values = await Promise.all(ids.map((id) => this.canonical.get(id) ?? Promise.resolve(null)));
-        if (!this.federation || values.some((value) => !value)) return null;
-        return new Map(ids.map((id, i) => [id, values[i] as string]));
-    }
-
-    private async localIds(canonicals: string[]) {
-        const wanted = [...new Set(canonicals.filter(isCanonical))];
-        const missing = this.federation ? wanted.filter((id) => !this.localOf.has(id)) : [];
-        for (let i = 0; i < missing.length; i += 100) {
-            const chunk = missing.slice(i, i + 100);
-            const batch = this.api.request<Record<string, string>>("get", `/federation/objects?canonical=${chunk.map(encodeURIComponent).join(",")}`);
-            for (const id of chunk)
-                this.localOf.set(
-                    id,
-                    batch.then(
-                        (res) => {
-                            const local = res?.[id];
-                            if (typeof local !== "string" || !/^\d{1,20}$/.test(local)) return null;
-                            this.resolvedCanonical.set(local, id);
-                            this.canonical.set(local, Promise.resolve(id));
-                            return local;
-                        },
-                        () => {
-                            this.localOf.delete(id);
-                            return null;
-                        },
-                    ),
-                );
-        }
-        const values = await Promise.all(wanted.map((id) => this.localOf.get(id) ?? Promise.resolve(null)));
-        return new Map(wanted.flatMap((id, i) => (values[i] ? [[id, values[i] as string] as const] : [])));
-    }
-
-    private async canonicalPayload(payload: Payload): Promise<Payload> {
-        const ids = [...payload.content.matchAll(LOCAL_REFERENCE)].map((match) => match[2] ?? match[5]);
-        const stickers = payload.stickers?.map((sticker) => sticker.id) ?? [];
-        if (!ids.length && !stickers.length) return payload;
-        const map = await this.canonicalIds([...ids, ...stickers]);
-        if (!map) return payload;
-        return {
-            ...payload,
-            content: payload.content.replace(LOCAL_REFERENCE, (match, prefix, id, animated, name, emoji) =>
-                prefix ? `<${prefix}${map.get(id) ?? id}>` : `<${animated}:${name}:${map.get(emoji) ?? emoji}>`,
-            ),
-            ...(payload.stickers && { stickers: payload.stickers.map((sticker) => ({ ...sticker, id: map.get(sticker.id) ?? sticker.id })) }),
-        };
-    }
-
-    private async localPayload(raw: unknown) {
-        if (!raw || typeof raw !== "object") return raw;
-        const value = raw as Record<string, unknown>;
-        const content = typeof value.content === "string" ? value.content : "";
-        const stickers = Array.isArray(value.stickers) ? (value.stickers as Record<string, unknown>[]) : [];
-        const wanted = [...content.matchAll(CANONICAL_REFERENCE)].map((match) => match[2] ?? match[5]);
-        for (const sticker of stickers) if (isCanonical(sticker?.id)) wanted.push(sticker.id);
-        if (!wanted.length) return raw;
-        const map = await this.localIds(wanted);
-        return {
-            ...value,
-            content: content.replace(CANONICAL_REFERENCE, (match, prefix, id, animated, name, emoji) => {
-                const local = map.get(prefix ? id : emoji);
-                if (local) return prefix ? `<${prefix}${local}>` : `<${animated}:${name}:${local}>`;
-                return prefix ? `${prefix === "#" ? "#" : "@"}${canonicalSnowflake(id)}@${canonicalInstance(id)}` : `:${name}:`;
-            }),
-            ...(stickers.length && { stickers: stickers.map((sticker) => (isCanonical(sticker?.id) ? { ...sticker, id: map.get(sticker.id) ?? "" } : sticker)) }),
-        };
-    }
-
-    private async signedUserId(userId: string) {
-        if (userId === this.userId || !this.userId) return userId;
-        const ids = await this.canonicalIds([this.userId, userId]).catch(() => null);
-        if (!ids) return userId;
-        const theirs = ids.get(userId)!;
-        return canonicalInstance(theirs) === canonicalInstance(ids.get(this.userId)!) ? userId : canonicalSnowflake(theirs);
-    }
-
-    private async bindingFor(channelId: string, senderId: string, members: string[], mid: string | undefined, version?: number): Promise<Binding> {
-        const local: Binding = { v: 1, channel: channelId, sender: senderId, mid, user: (id) => id };
-        if (version === 1) return local;
-        const ids = await this.canonicalIds([channelId, senderId, ...members, ...(mid ? [mid] : [])]);
-        if (!ids) {
-            if (version === 2) throw new E2eeError("BAD_ENVELOPE", t("This message came from another instance and can't be checked here"));
-            return local;
-        }
-        const own = canonicalInstance(ids.get(this.userId!) ?? ids.get(senderId)!);
-        const federated = version === 2 || [...ids.values()].some((id) => canonicalInstance(id) !== own);
-        if (!federated) return local;
-        return {
-            v: 2,
-            channel: ids.get(channelId)!,
-            sender: ids.get(senderId)!,
-            mid: mid ? ids.get(mid) : undefined,
-            user: (id) => ids.get(id) ?? id,
-        };
-    }
-
-    private previousInstances() {
-        if (this.moves && Date.now() - this.moves.at < MOVES_TTL) return this.moves.aliases;
-        const aliases = this.api
-            .request<{ instance?: string | null; previous?: string[]; moved?: Record<string, string> }>("get", "/federation/moves")
-            .then((body) => {
-                const map = new Map<string, string[]>();
-                const add = (to: string, from: string) => map.set(to, [...(map.get(to) ?? []), from]);
-                if (body?.instance) for (const from of body.previous ?? []) add(body.instance, from);
-                for (const [from, to] of Object.entries(body?.moved ?? {})) add(to, from);
-                return map;
-            })
-            .catch(() => new Map<string, string[]>());
-        this.moves = { at: Date.now(), aliases };
-        return aliases;
-    }
-
-    private async bindingVariants(ids: Binding): Promise<Binding[]> {
-        if (ids.v !== 2) return [ids];
-        const aliases = await this.previousInstances();
-        const instances = [...new Set([ids.channel, ids.sender, ids.user(this.userId!), ...(ids.mid ? [ids.mid] : [])].filter(isCanonical).map(canonicalInstance))].filter(
-            (instance) => aliases.has(instance),
-        );
-        if (!instances.length) return [ids];
-        let swaps: Map<string, string>[] = [new Map()];
-        for (const instance of instances)
-            swaps = swaps.flatMap((swap) => [swap, ...aliases.get(instance)!.map((from) => new Map([...swap, [instance, from]]))]).slice(0, MAX_BINDING_VARIANTS);
-        return swaps.map((swap) => {
-            const rename = (canonical: string) => {
-                const from = isCanonical(canonical) && swap.get(canonicalInstance(canonical));
-                return from ? `@${canonicalSnowflake(canonical)}@${from}` : canonical;
-            };
-            return { v: 2, channel: rename(ids.channel), sender: rename(ids.sender), mid: ids.mid && rename(ids.mid), user: (id) => rename(ids.user(id)) };
-        });
+    private bindingFor(channelId: string, senderId: string, mid: string | undefined): Binding {
+        return { v: 1, channel: channelId, sender: senderId, mid, user: (id) => id };
     }
 
     async encrypt(channelId: string, payload: Payload, opts: { nonce?: string; mid?: string }): Promise<Envelope> {
@@ -1430,12 +1256,12 @@ export class Engine {
             });
         }
 
-        const ids = await this.bindingFor(channelId, this.userId, members, opts.mid);
+        const ids = this.bindingFor(channelId, this.userId, opts.mid);
         const bind = binding(ids.mid, opts.nonce);
         const aad = messageAad(ids.channel, ids.sender, this.device.deviceId, bind);
         const contentKey = randomBytes(32);
         const iv = randomBytes(12);
-        const ct = await aesEncrypt(contentKey, iv, utf8(JSON.stringify(ids.v === 2 ? await this.canonicalPayload(payload) : payload)), aad);
+        const ct = await aesEncrypt(contentKey, iv, utf8(JSON.stringify(payload)), aad);
         const keys = await Promise.all(
             targets.map(async ({ userId, device }) => ({
                 user_id: ids.user(userId),
@@ -1473,9 +1299,7 @@ export class Engine {
 
     cached(message: RawMessage) {
         const env = message.encrypted;
-        return env
-            ? (this.plaintext.get(`${message.id}:${env.sig}`) ?? this.plaintext.get(`${env.mid && env.v === 1 ? env.mid : env.mid ? message.id : ""}:${env.sig}`))
-            : undefined;
+        return env ? (this.plaintext.get(`${message.id}:${env.sig}`) ?? this.plaintext.get(`${env.mid ?? ""}:${env.sig}`)) : undefined;
     }
 
     async contentKey(message: RawMessage) {
@@ -1487,7 +1311,7 @@ export class Engine {
 
     async decrypt(message: RawMessage, remember = true): Promise<Payload> {
         const env = message.encrypted;
-        if (!env || (env.v !== 1 && env.v !== 2) || env.alg !== ALGORITHM || !Array.isArray(env.keys)) throw new E2eeError("BAD_ENVELOPE", "Unsupported envelope");
+        if (env?.v !== 1 || env.alg !== ALGORITHM || !Array.isArray(env.keys)) throw new E2eeError("BAD_ENVELOPE", "Unsupported envelope");
         const hit = this.cached(message);
         if (remember && hit !== undefined) {
             this.plaintext.set(`${message.id}:${env.sig}`, hit);
@@ -1496,7 +1320,7 @@ export class Engine {
         if (!this.device) throw new E2eeError("NOT_READY", t("Encryption is still starting up"));
         const senderId = message.author?.id;
         if (!senderId) throw new E2eeError("BAD_ENVELOPE", "Missing author");
-        if (env.v === 1 && env.mid && env.mid !== message.id) throw new E2eeError("BAD_ENVELOPE", "Envelope belongs to another message");
+        if (env.mid && env.mid !== message.id) throw new E2eeError("BAD_ENVELOPE", "Envelope belongs to another message");
         const nonce = message.nonce == null ? undefined : String(message.nonce);
         if (!env.mid && !nonce) throw new E2eeError("BAD_ENVELOPE", "Missing nonce");
 
@@ -1509,21 +1333,13 @@ export class Engine {
         const sentAt = snowflakeTime(message.id);
         if (!sender) {
             if (entry.identityCreatedAt && sentAt < entry.identityCreatedAt) throw new E2eeError("RESET", t("Sent before encryption was reset"));
-            throw new E2eeError("BAD_SIGNATURE", t("The sender's device couldn't be verified"));
+            throw new E2eeError("UNKNOWN_SENDER", t("The sender's device couldn't be verified"));
         }
         if (sender.status === "revoked" && (!sender.revokedAt || sentAt >= sender.revokedAt)) throw new E2eeError("BAD_SIGNATURE", t("Sent from a device that was removed"));
-        const variants = await this.bindingVariants(await this.bindingFor(message.channel_id, senderId, [this.userId!], env.mid ? message.id : undefined, env.v));
-        const matching = env.v === 2 && env.mid ? variants.filter((variant) => variant.mid === env.mid) : variants;
-        if (!matching.length) throw new E2eeError("BAD_ENVELOPE", "Envelope belongs to another message");
+        const ids = this.bindingFor(message.channel_id, senderId, env.mid ? message.id : undefined);
         const { sig, ...unsigned } = env;
-        let ids: Binding | null = null;
-        for (const variant of matching) {
-            if (!(await verify(sender.signingKey, signedPayload(variant.channel, variant.sender, binding(variant.mid, nonce), unsigned), sig))) continue;
-            ids = variant;
-            break;
-        }
-        if (!ids) throw new E2eeError("BAD_SIGNATURE", t("Signature check failed"));
         const bind = binding(ids.mid, nonce);
+        if (!(await verify(sender.signingKey, signedPayload(ids.channel, ids.sender, bind, unsigned), sig))) throw new E2eeError("BAD_SIGNATURE", t("Signature check failed"));
 
         const aad = messageAad(ids.channel, ids.sender, env.sender_device, bind);
         const mine = env.keys.find((k) => k.device_id === this.device!.deviceId);
@@ -1542,10 +1358,11 @@ export class Engine {
         if (!contentKey) {
             if (!this.linked || !backupKey) throw new E2eeError("LOCKED", t("This browser isn't unlocked yet"));
             if (this.identityCreatedAt && sentAt < this.identityCreatedAt) throw new E2eeError("RESET", t("Sent before encryption was reset"));
+            if (!env.keys.some((k) => k.user_id === ownId) && !backupEntry) throw new E2eeError("NOT_RECIPIENT", t("This message wasn't encrypted for you"));
             throw new E2eeError("NO_KEY", t("Sent before this browser was set up"));
         }
         const opened = JSON.parse(fromUtf8(await aesDecrypt(contentKey, fromB64u(env.iv), fromB64u(env.ct), aad)));
-        const payload = parsePayload(env.v === 2 ? await this.localPayload(opened) : opened);
+        const payload = parsePayload(opened);
         this.contentKeys.set(`${message.id}:${sig}`, toB64u(contentKey));
         if (mine && prekey && backupKey) {
             const covered = !!backupEntry && !!(await hpkeOpen(backupKey.keyPair, backupEntry.enc, backupEntry.wrapped, BACKUP_INFO, `${aad}\nbackup:${ownId}`).catch(() => null));
@@ -1657,7 +1474,7 @@ export class Engine {
             }
             return out;
         };
-        const [own, other] = await Promise.all([part(this.userId, mine), part(await this.signedUserId(userId), theirs)]);
+        const [own, other] = await Promise.all([part(this.userId, mine), part(userId, theirs)]);
         return own < other ? own + other : other + own;
     }
 }

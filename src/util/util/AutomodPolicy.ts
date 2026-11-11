@@ -34,7 +34,6 @@ export interface PolicySubject {
     user_id: string;
     bot?: boolean | null;
     verified?: boolean | null;
-    federated?: boolean | null;
     staff?: boolean | null;
     createdAt?: number | null;
 }
@@ -47,7 +46,7 @@ export function policyExemption(policy: AutomodRulePolicy, subject: PolicySubjec
     if (policy.exemptUserIds.includes(subject.user_id)) return "user";
     if (policy.exemptStaff && subject.staff) return "staff";
     if (policy.exemptBots && subject.bot) return "bot";
-    if (policy.exemptVerifiedEmail && subject.verified && !subject.federated) return "verified_email";
+    if (policy.exemptVerifiedEmail && subject.verified) return "verified_email";
     if (policy.exemptAccountAgeDays > 0 && typeof subject.createdAt === "number" && now - subject.createdAt >= policy.exemptAccountAgeDays * DAY) return "account_age";
     return null;
 }

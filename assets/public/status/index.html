@@ -5,268 +5,373 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>__INSTANCE_NAME__ Status</title>
     <link rel="icon" href="/favicon.svg" />
+    <link rel="alternate" type="application/atom+xml" title="__INSTANCE_NAME__ Status" href="/status/history.atom" />
     <style>
-      * {
-        scrollbar-width: thin;
-        scrollbar-color: color-mix(in oklab, currentColor 32%, transparent) transparent;
-      }
-
-      @font-face {
-        font-family: "gg sans";
-        font-style: normal;
-        font-weight: 400;
-        font-display: swap;
-        src: url(/assets/66d715454104d24e.woff2) format("woff2");
-      }
-      @font-face {
-        font-family: "gg sans";
-        font-style: normal;
-        font-weight: 500;
-        font-display: swap;
-        src: url(/assets/b272b33815319bae.woff2) format("woff2");
-      }
-      @font-face {
-        font-family: "gg sans";
-        font-style: normal;
-        font-weight: 600;
-        font-display: swap;
-        src: url(/assets/2df2c3ff74408972.woff2) format("woff2");
-      }
-      @font-face {
-        font-family: "gg sans";
-        font-style: normal;
-        font-weight: 700;
-        font-display: swap;
-        src: url(/assets/189422196a4f8b53.woff2) format("woff2");
-      }
-      @font-face {
-        font-family: "gg sans";
-        font-style: normal;
-        font-weight: 800;
-        font-display: swap;
-        src: url(/assets/b2fdbe507d6ce9ef.woff2) format("woff2");
-      }
       :root {
-        color-scheme: dark;
-        --bg: #121214;
-        --panel: #1a1a1e;
-        --border: #2b2b31;
-        --text: #dfe0e2;
-        --muted: #94959c;
-        --empty-bar: #3a3a41;
+        color-scheme: light;
         --brand: #5865f2;
-        --ok: #23a55a;
-        --warn: #f0b232;
-        --orange: #f57731;
-        --danger: #f23f43;
-        --info: #5865f2;
-        font-family: "gg sans", "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
-      }
-      @media (prefers-color-scheme: light) {
-        :root {
-          color-scheme: light;
-          --bg: #f3f3f5;
-          --panel: #ffffff;
-          --border: #e1e2e5;
-          --text: #2f3035;
-          --muted: #5c5d64;
-          --empty-bar: #d4d5da;
-        }
+        --brand-hover: #4752c4;
+        --text: #2e3338;
+        --muted: #72767d;
+        --border: #e0e0e0;
+        --grid: #efefef;
+        --page: #ffffff;
+        --empty-bar: #d7d9dc;
+        --ok: #3ba55c;
+        --minor: #faa81a;
+        --major: #f26522;
+        --critical: #ed4245;
+        --maintenance: #5865f2;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
       }
       * {
         box-sizing: border-box;
       }
       body {
         margin: 0;
-        background: var(--bg);
+        background: var(--page);
         color: var(--text);
+        font-size: 16px;
         line-height: 1.5;
-        font-size: 15px;
         -webkit-font-smoothing: antialiased;
       }
       [hidden] {
         display: none !important;
       }
-      main {
-        max-width: 860px;
-        margin: 0 auto;
-        padding: 40px 16px 64px;
-        display: flex;
-        flex-direction: column;
-        gap: 32px;
+      a {
+        color: var(--brand);
+        text-decoration: none;
       }
-      header {
+      a:hover {
+        text-decoration: underline;
+      }
+      :focus-visible {
+        outline: 2px solid var(--brand);
+        outline-offset: 2px;
+      }
+      .masthead {
+        background: var(--brand);
         display: flex;
         align-items: center;
-        gap: 14px;
+        justify-content: center;
+        min-height: 300px;
+        padding: 48px 20px;
       }
-      .brand-icon {
-        width: 48px;
-        height: 48px;
+      .masthead a {
+        display: inline-flex;
+        color: #fff;
+        text-decoration: none;
+      }
+      .brand-logo {
+        display: block;
+        max-width: min(520px, 80vw);
+        max-height: 120px;
+      }
+      .brand-lockup {
+        display: inline-flex;
+        align-items: center;
+        gap: 28px;
+        min-width: 0;
+      }
+      .brand-lockup .brand-icon {
+        width: 112px;
+        height: 112px;
         flex: none;
-        border-radius: 16px;
+        border-radius: 32px;
         object-fit: cover;
       }
-      header h1 {
-        margin: 0;
-        font-size: 24px;
+      .brand-name {
+        font-size: clamp(40px, 8vw, 84px);
         font-weight: 800;
-        min-width: 0;
+        letter-spacing: -0.02em;
+        line-height: 1;
         overflow-wrap: anywhere;
       }
-      header a {
-        margin-left: auto;
-        flex: none;
-        padding: 8px 16px;
-        border-radius: 8px;
+      .container {
+        max-width: 890px;
+        margin: 0 auto;
+        padding: 0 20px 48px;
+      }
+      .subscribe-row {
+        display: flex;
+        justify-content: flex-end;
+        padding: 10px 0 12px;
+        position: relative;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--brand);
+        border-radius: 3px;
         background: var(--brand);
         color: #fff;
-        font-size: 14px;
-        font-weight: 500;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        padding: 10px 14px;
+        cursor: pointer;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+      }
+      .button:hover {
+        background: var(--brand-hover);
         text-decoration: none;
-        transition: background-color 0.15s ease;
       }
-      header a:hover {
-        background: #4752c4;
+      .subscribe-menu {
+        position: absolute;
+        top: calc(100% - 4px);
+        right: 0;
+        z-index: 5;
+        width: min(340px, 100%);
+        padding: 18px 20px;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+        font-size: 14px;
       }
-      h2 {
-        font-size: 18px;
-        font-weight: 700;
+      .subscribe-menu p {
         margin: 0 0 12px;
+        color: var(--muted);
+      }
+      .subscribe-menu ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+      .subscribe-menu code {
+        display: block;
+        margin-top: 12px;
+        padding: 8px 10px;
+        border-radius: 3px;
+        background: #f6f6f7;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+        user-select: all;
       }
       .banner {
-        display: flex;
-        align-items: center;
-        gap: 12px;
         padding: 18px 20px;
-        border-radius: 8px;
-        font-size: 18px;
-        font-weight: 600;
-        color: #fff;
+        border-radius: 4px;
         background: var(--ok);
-        transition: background-color 0.2s ease;
+        color: #fff;
+        font-size: 20px;
+        font-weight: 600;
+        line-height: 1.5;
       }
       .banner.loading {
-        background: var(--panel);
+        background: #f6f6f7;
         color: var(--muted);
         border: 1px solid var(--border);
       }
       .banner.minor {
-        background: var(--warn);
-        color: #1b1300;
+        background: var(--minor);
       }
       .banner.major {
-        background: var(--orange);
+        background: var(--major);
       }
       .banner.critical,
       .banner.unreachable {
-        background: var(--danger);
+        background: var(--critical);
       }
       .banner.maintenance {
-        background: var(--info);
+        background: var(--maintenance);
       }
-      .box {
-        background: var(--panel);
+      .incident-box {
+        margin-top: 24px;
         border: 1px solid var(--border);
-        border-radius: 8px;
+        border-radius: 4px;
         overflow: hidden;
       }
-      .caption {
-        display: flex;
-        justify-content: space-between;
+      .incident-box > h3 {
+        margin: 0;
+        padding: 14px 20px;
+        color: #fff;
+        font-size: 18px;
+        font-weight: 600;
+        background: var(--text);
+      }
+      .incident-box.i-minor > h3 {
+        background: var(--minor);
+      }
+      .incident-box.i-major > h3 {
+        background: var(--major);
+      }
+      .incident-box.i-critical > h3 {
+        background: var(--critical);
+      }
+      .incident-box.i-maintenance > h3 {
+        background: var(--maintenance);
+      }
+      .incident-box .updates {
+        padding: 4px 20px 16px;
+      }
+      .incident-box .affected {
+        margin-top: 12px;
         color: var(--muted);
-        font-size: 13px;
-        margin: 0 0 8px;
+        font-size: 14px;
+      }
+      .uptime-caption {
+        margin: 96px 0 6px;
+        text-align: right;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .components {
+        border: 1px solid var(--border);
+        border-radius: 4px;
       }
       .component {
-        padding: 16px 20px;
+        padding: 20px;
         border-bottom: 1px solid var(--border);
       }
       .component:last-child {
         border-bottom: none;
       }
+      .component .component {
+        padding: 18px 0 0;
+        margin-top: 18px;
+        border-bottom: none;
+        border-top: 1px solid var(--border);
+      }
       .component-head {
         display: flex;
-        align-items: baseline;
-        gap: 12px;
+        align-items: center;
+        gap: 6px;
+        min-height: 24px;
       }
-      .component .name {
-        flex: 1;
-        min-width: 0;
-        font-weight: 600;
-      }
-      .component .desc {
-        color: var(--muted);
-        font-size: 13px;
-        font-weight: 400;
-      }
-      .state {
-        font-size: 14px;
+      .component-name {
+        font-size: 16px;
         font-weight: 500;
+        overflow-wrap: anywhere;
+      }
+      .component-state {
+        margin-left: auto;
+        padding-left: 12px;
+        font-size: 14px;
         white-space: nowrap;
       }
       .s-operational {
         color: var(--ok);
       }
       .s-degraded_performance {
-        color: var(--warn);
+        color: #c27c0e;
       }
       .s-partial_outage {
-        color: var(--orange);
+        color: var(--major);
       }
       .s-major_outage {
-        color: var(--danger);
+        color: var(--critical);
       }
       .s-under_maintenance {
-        color: var(--info);
+        color: var(--maintenance);
+      }
+      .info {
+        position: relative;
+        display: inline-grid;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        border: 1px solid var(--text);
+        border-radius: 50%;
+        font-size: 10px;
+        font-weight: 600;
+        cursor: help;
+        flex: none;
+      }
+      .info::after {
+        content: attr(data-tip);
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        z-index: 4;
+        width: max-content;
+        max-width: 260px;
+        padding: 8px 10px;
+        border-radius: 4px;
+        background: var(--text);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 400;
+        line-height: 1.4;
+        transform: translateX(-50%);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.12s;
+      }
+      .info:hover::after,
+      .info:focus-visible::after {
+        opacity: 1;
+      }
+      .group-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .group-toggle svg {
+        width: 12px;
+        height: 12px;
+        color: var(--muted);
+        flex: none;
+      }
+      .group-toggle .minus,
+      .group-toggle[aria-expanded="true"] .plus {
+        display: none;
+      }
+      .group-toggle[aria-expanded="true"] .minus {
+        display: inline;
+      }
+      .group-children {
+        padding-left: 20px;
       }
       .bars {
         display: flex;
-        gap: 2px;
+        gap: 3px;
         height: 34px;
         margin-top: 10px;
       }
       .bars span {
         flex: 1;
-        border-radius: 2px;
+        min-width: 2px;
         background: var(--ok);
+        border-radius: 1px;
+      }
+      .bars span:hover {
+        opacity: 0.7;
       }
       .bars .d-null {
         background: var(--empty-bar);
       }
       .bars .d-minor {
-        background: var(--warn);
+        background: var(--minor);
       }
       .bars .d-major {
-        background: var(--orange);
+        background: var(--major);
       }
       .bars .d-critical {
-        background: var(--danger);
+        background: var(--critical);
       }
       .legend {
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-top: 6px;
+        gap: 16px;
+        margin-top: 8px;
         color: var(--muted);
-        font-size: 12px;
+        font-size: 14px;
       }
-      .legend::before,
-      .legend::after {
-        content: "";
-        order: 1;
+      .legend .rule {
         flex: 1;
         height: 1px;
-        background: var(--border);
-      }
-      .legend::after {
-        order: 3;
-      }
-      .legend .uptime {
-        order: 2;
-      }
-      .legend .end {
-        order: 4;
+        background: #aaacb0;
       }
       .short {
         display: none;
@@ -282,119 +387,373 @@
           display: inline;
         }
       }
-      .day {
-        padding: 16px 20px;
-        border-bottom: 1px solid var(--border);
+      .tooltip {
+        position: fixed;
+        z-index: 10;
+        width: 240px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: #fff;
+        box-shadow: 0 6px 18px rgb(0 0 0 / 14%);
+        font-size: 14px;
+        pointer-events: none;
       }
-      .day:last-child {
-        border-bottom: none;
+      .tooltip strong {
+        display: block;
+        margin-bottom: 4px;
       }
-      .day h3 {
+      .tooltip span {
+        color: var(--muted);
+      }
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 64px 0 20px;
+      }
+      .section-title {
         margin: 0;
         font-size: 15px;
         font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.01em;
       }
-      .day .none {
-        margin: 4px 0 0;
+      .tabs {
+        display: flex;
+        gap: 4px;
+      }
+      .tabs button {
+        padding: 3px 18px;
+        border: none;
+        border-radius: 999px;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        cursor: pointer;
+      }
+      .tabs button[aria-selected="true"] {
+        background: var(--brand);
+        color: #fff;
+      }
+      .metric {
+        padding: 24px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      .metric-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        font-size: 20px;
+        font-weight: 500;
+      }
+      .metric-head output {
+        color: var(--muted);
+      }
+      .chart {
+        position: relative;
+        height: 140px;
+        margin-top: 16px;
+      }
+      .chart svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+      .chart text {
+        fill: var(--muted);
+        font-size: 11px;
+      }
+      .chart .empty-chart {
+        position: absolute;
+        inset: 0 48px 24px 0;
+        display: grid;
+        place-items: center;
         color: var(--muted);
         font-size: 14px;
       }
-      .incident {
-        padding: 16px 20px;
+      .day {
+        margin-bottom: 36px;
+      }
+      .day > h3,
+      .month > h3 {
+        margin: 0 0 16px;
+        padding-bottom: 6px;
         border-bottom: 1px solid var(--border);
+        font-size: 20px;
+        font-weight: 500;
       }
-      .incident:last-child {
-        border-bottom: none;
+      .none {
+        margin: 0;
+        color: var(--muted);
       }
-      .day .incident {
-        padding: 10px 0 0;
-        border: none;
+      .incident {
+        margin-bottom: 20px;
       }
-      .incident h4 {
+      .incident-title {
+        margin: 0 0 8px;
+        font-size: 20px;
+        font-weight: 500;
+        color: var(--text);
+      }
+      .i-minor .incident-title {
+        color: #e0950b;
+      }
+      .i-major .incident-title {
+        color: var(--major);
+      }
+      .i-critical .incident-title {
+        color: var(--critical);
+      }
+      .i-maintenance .incident-title {
+        color: var(--maintenance);
+      }
+      .update {
+        margin: 10px 0;
+      }
+      .update p {
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .update small,
+      .incident small {
+        display: block;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .page-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 40px 0 32px;
+      }
+      .page-title h2 {
+        margin: 0;
+        font-size: 28px;
+        font-weight: 500;
+      }
+      .pager {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+      }
+      .pager button {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: #fff;
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      .pager button:disabled {
+        color: var(--border);
+        cursor: default;
+      }
+      .month {
+        margin-bottom: 40px;
+      }
+      .month .incident p {
         margin: 0 0 4px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .uptime-picker {
+        min-width: 220px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: #fff;
+        color: var(--text);
+        font: inherit;
+      }
+      .calendars {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 28px;
+      }
+      @media (max-width: 760px) {
+        .calendars {
+          grid-template-columns: 1fr;
+        }
+      }
+      .calendar {
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      .calendar-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 12px;
+      }
+      .calendar-head h3 {
+        margin: 0;
         font-size: 16px;
         font-weight: 600;
       }
-      .i-minor h4 {
-        color: var(--warn);
-      }
-      .i-major h4 {
-        color: var(--orange);
-      }
-      .i-critical h4 {
-        color: var(--danger);
-      }
-      .i-maintenance h4 {
-        color: var(--info);
-      }
-      .meta {
+      .calendar-head span {
         color: var(--muted);
-        font-size: 13px;
-      }
-      .update {
-        margin-top: 10px;
-      }
-      .update p {
-        margin: 2px 0 0;
-        white-space: pre-wrap;
-      }
-      .update strong {
         font-size: 14px;
       }
-      .empty {
-        padding: 18px 20px;
-        color: var(--muted);
+      .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 4px;
       }
-      footer {
+      .calendar-grid span {
+        aspect-ratio: 1;
+        border-radius: 2px;
+        background: var(--ok);
+      }
+      .calendar-grid .blank {
+        background: none;
+      }
+      .calendar-grid .d-null {
+        background: var(--empty-bar);
+      }
+      .calendar-grid .d-minor {
+        background: var(--minor);
+      }
+      .calendar-grid .d-major {
+        background: var(--major);
+      }
+      .calendar-grid .d-critical {
+        background: var(--critical);
+      }
+      .page-footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-top: 48px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
         color: var(--muted);
-        font-size: 13px;
-        text-align: center;
+        font-size: 14px;
+      }
+      .page-footer a.muted {
+        color: var(--muted);
       }
       .error {
-        color: var(--danger);
+        color: var(--critical);
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
       }
     </style>
   </head>
   <body data-instance="__INSTANCE_NAME__">
-    <main>
-      <header>
-        __INSTANCE_ICON__
-        <h1>__INSTANCE_NAME__ Status</h1>
-        <a id="home" href="/" hidden>Open __INSTANCE_NAME__</a>
-      </header>
-      <div id="banner" class="banner loading" role="status"><span>Checking status…</span></div>
-      <section id="active-section" hidden>
-        <h2>Active incidents</h2>
-        <div class="box" id="active"></div>
-      </section>
-      <section id="maintenance-section" hidden>
-        <h2>Scheduled maintenance</h2>
-        <div class="box" id="maintenance"></div>
-      </section>
-      <section id="components-section" hidden>
-        <p class="caption">
-          <span
-            >Uptime over the past <span class="long">90</span
-            ><span class="short">30</span> days</span
-          >
-        </p>
-        <div class="box" id="components"></div>
-      </section>
-      <section>
-        <h2>Past incidents</h2>
-        <div class="box" id="history"><div class="empty">Loading…</div></div>
-      </section>
-      <footer id="updated"></footer>
-    </main>
+    <header class="masthead">
+      <a href="/status" aria-label="__INSTANCE_NAME__ Status">__INSTANCE_LOGO__</a>
+    </header>
+    <div class="container">
+      <div class="subscribe-row">
+        <button class="button" id="subscribe" type="button" aria-expanded="false" aria-controls="subscribe-menu">Subscribe to updates</button>
+        <div class="subscribe-menu" id="subscribe-menu" hidden>
+          <p>Get a notification in your feed reader whenever an incident is opened, updated or resolved.</p>
+          <ul>
+            <li><a href="/status/history.atom">Atom feed</a></li>
+            <li><a href="/api/v9/status/summary.json">JSON summary for status tools</a></li>
+          </ul>
+          <code id="feed-url"></code>
+        </div>
+      </div>
+
+      <main id="overview" hidden>
+        <div id="banner" class="banner loading" role="status">Checking status…</div>
+        <div id="active"></div>
+        <div id="maintenance"></div>
+        <section id="components-section" hidden>
+          <p class="uptime-caption">
+            Uptime over the past <span class="long">90</span><span class="short">30</span> days.
+            <a href="/status/uptime">View historical uptime.</a>
+          </p>
+          <div class="components" id="components"></div>
+        </section>
+        <section aria-labelledby="metrics-title">
+          <div class="section-head">
+            <h2 class="section-title" id="metrics-title">System metrics</h2>
+            <div class="tabs" role="tablist" aria-label="Metrics period">
+              <button type="button" role="tab" data-period="day" aria-selected="true">Day</button>
+              <button type="button" role="tab" data-period="week" aria-selected="false">Week</button>
+              <button type="button" role="tab" data-period="month" aria-selected="false">Month</button>
+            </div>
+          </div>
+          <div class="metric">
+            <div class="metric-head">
+              <span>API Response Time</span>
+              <output id="metric-value">…</output>
+            </div>
+            <div class="chart" id="chart"></div>
+          </div>
+        </section>
+        <section aria-labelledby="past-title">
+          <div class="section-head">
+            <h2 class="section-title" id="past-title">Past incidents</h2>
+          </div>
+          <div id="past"></div>
+        </section>
+      </main>
+
+      <main id="history" hidden>
+        <div class="page-title">
+          <h2>Incident History</h2>
+          <div class="pager">
+            <button type="button" id="history-newer" aria-label="Newer incidents">&larr;</button>
+            <span id="history-range"></span>
+            <button type="button" id="history-older" aria-label="Older incidents">&rarr;</button>
+          </div>
+        </div>
+        <div id="history-months"><p class="none">Loading…</p></div>
+      </main>
+
+      <main id="uptime" hidden>
+        <div class="page-title">
+          <h2>Uptime</h2>
+          <label>
+            <span class="sr-only">Component</span>
+            <select class="uptime-picker" id="uptime-component"></select>
+          </label>
+        </div>
+        <div class="calendars" id="calendars"></div>
+        <p class="none" id="uptime-note"></p>
+      </main>
+
+      <footer class="page-footer">
+        <a id="footer-link" href="/status/history">&larr; Incident History</a>
+        <span>Powered by <a class="muted" href="https://github.com/meowcorded/meowcord">Discord OSS</a></span>
+      </footer>
+    </div>
+    <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
     <script>
       "use strict";
       const INSTANCE = document.body.dataset.instance;
+      const DAY = 86400000;
+      const HISTORY_DAYS = 15;
       const STATE_LABELS = {
         operational: "Operational",
-        degraded_performance: "Degraded performance",
-        partial_outage: "Partial outage",
-        major_outage: "Major outage",
-        under_maintenance: "Under maintenance",
+        degraded_performance: "Degraded Performance",
+        partial_outage: "Partial Outage",
+        major_outage: "Major Outage",
+        under_maintenance: "Under Maintenance",
         investigating: "Investigating",
         identified: "Identified",
         monitoring: "Monitoring",
@@ -405,171 +764,409 @@
         completed: "Completed",
       };
       const DAY_LABELS = {
-        none: "No downtime recorded",
-        minor: "Degraded performance",
-        major: "Partial outage",
-        critical: "Major outage",
-        null: "No data",
+        none: "No downtime recorded on this day.",
+        minor: "Degraded performance on this day.",
+        major: "Partial outage on this day.",
+        critical: "Major outage on this day.",
+        null: "No data exists for this day.",
       };
-      const HISTORY_DAYS = 14;
-      let loaded = false;
 
       const el = (tag, attrs = {}, ...children) => {
         const node = document.createElement(tag);
-        for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
-        for (const child of children.flat())
-          if (child != null && child !== false)
-            node.append(child instanceof Node ? child : String(child));
+        for (const [key, value] of Object.entries(attrs)) if (value != null && value !== false) node.setAttribute(key, value);
+        for (const child of children.flat()) if (child != null && child !== false) node.append(child instanceof Node ? child : String(child));
         return node;
       };
-      const fmt = (d) =>
-        d ? new Date(d).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "";
-      const fmtDay = (d) =>
-        new Date(d).toLocaleDateString(undefined, { dateStyle: "medium", timeZone: "UTC" });
-      const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
+      const svg = (tag, attrs = {}, ...children) => {
+        const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+        for (const child of children.flat()) if (child != null) node.append(child instanceof Node ? child : String(child));
+        return node;
+      };
+      const fill = (id, ...nodes) => document.getElementById(id).replaceChildren(...nodes.flat());
+      const getJson = async (path) => {
+        const res = await fetch(path, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      };
+      const dayKey = (date) => new Date(date).toISOString().slice(0, 10);
+      const fmtDay = (date) => new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+      const fmtStamp = (date) =>
+        new Date(date).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
+      const fmtMonth = (date) => new Date(date).toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+      const fmtShortMonth = (date) => new Date(date).toLocaleDateString(undefined, { month: "short", year: "numeric", timeZone: "UTC" });
 
-      const incident = (i) => {
-        const meta = [];
-        if (i.scheduled_for)
-          meta.push(`Scheduled ${fmt(i.scheduled_for)} to ${fmt(i.scheduled_until)}`);
-        if (i.components.length) meta.push(`Affects ${i.components.map((c) => c.name).join(", ")}`);
+      const tooltip = document.getElementById("tooltip");
+      const showTooltip = (target, ...content) => {
+        tooltip.replaceChildren(...content);
+        tooltip.hidden = false;
+        const box = target.getBoundingClientRect();
+        const left = Math.min(Math.max(8, box.left + box.width / 2 - 120), innerWidth - 248);
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${box.bottom + 8}px`;
+      };
+      const hideTooltip = () => (tooltip.hidden = true);
+
+      const subscribe = document.getElementById("subscribe");
+      const subscribeMenu = document.getElementById("subscribe-menu");
+      document.getElementById("feed-url").textContent = `${location.origin}/status/history.atom`;
+      subscribe.addEventListener("click", () => {
+        subscribeMenu.hidden = !subscribeMenu.hidden;
+        subscribe.setAttribute("aria-expanded", String(!subscribeMenu.hidden));
+      });
+      document.addEventListener("click", (event) => {
+        if (subscribeMenu.hidden || subscribeMenu.contains(event.target) || subscribe.contains(event.target)) return;
+        subscribeMenu.hidden = true;
+        subscribe.setAttribute("aria-expanded", "false");
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || subscribeMenu.hidden) return;
+        subscribeMenu.hidden = true;
+        subscribe.setAttribute("aria-expanded", "false");
+        subscribe.focus();
+      });
+
+      const updates = (incident) =>
+        incident.incident_updates.map((update) =>
+          el(
+            "div",
+            { class: "update" },
+            el("p", {}, el("strong", {}, STATE_LABELS[update.status] ?? update.status), ` - ${update.body}`),
+            el("small", {}, fmtStamp(update.created_at)),
+          ),
+        );
+
+      const incidentEntry = (incident) =>
+        el("article", { class: `incident i-${incident.impact}`, id: `incident-${incident.id}` }, el("h4", { class: "incident-title" }, incident.name), updates(incident));
+
+      const incidentBox = (incident) => {
+        const affected = incident.components.map((c) => c.name);
+        const window = incident.scheduled_for ? `Scheduled for ${fmtStamp(incident.scheduled_for)} to ${fmtStamp(incident.scheduled_until)}` : null;
         return el(
-          "article",
-          { class: `incident i-${i.impact}` },
-          el("h4", {}, i.name),
-          meta.length ? el("div", { class: "meta" }, meta.join(" · ")) : null,
-          i.incident_updates.map((u) =>
-            el(
-              "div",
-              { class: "update" },
-              el("strong", {}, STATE_LABELS[u.status] ?? u.status),
-              " ",
-              el("span", { class: "meta" }, fmt(u.created_at)),
-              el("p", {}, u.body),
-            ),
+          "section",
+          { class: `incident-box i-${incident.impact}` },
+          el("h3", {}, incident.name),
+          el(
+            "div",
+            { class: "updates" },
+            updates(incident),
+            window ? el("div", { class: "affected" }, window) : null,
+            affected.length ? el("div", { class: "affected" }, `This affects ${affected.join(", ")}.`) : null,
           ),
         );
       };
 
-      const component = (c) =>
-        el(
-          "div",
-          { class: "component" },
+      const bars = (component) => {
+        const row = el("div", { class: "bars", role: "img", "aria-label": `${component.uptime}% uptime over the past 90 days` });
+        for (const day of component.uptime_days) {
+          const bar = el("span", { class: `d-${day.indicator}` });
+          const show = () => showTooltip(bar, el("strong", {}, fmtDay(day.date)), el("span", {}, DAY_LABELS[day.indicator] ?? day.indicator));
+          bar.addEventListener("pointerenter", show);
+          bar.addEventListener("pointerleave", hideTooltip);
+          row.append(bar);
+        }
+        return [
+          row,
           el(
             "div",
-            { class: "component-head" },
-            el(
-              "div",
-              { class: "name" },
-              c.name,
-              c.description ? el("div", { class: "desc" }, c.description) : null,
-            ),
-            el("span", { class: `state s-${c.status}` }, STATE_LABELS[c.status] ?? c.status),
+            { class: "legend", "aria-hidden": "true" },
+            el("span", {}, el("span", { class: "long" }, "90 days ago"), el("span", { class: "short" }, "30 days ago")),
+            el("span", { class: "rule" }),
+            el("span", {}, `${component.uptime} % uptime`),
+            el("span", { class: "rule" }),
+            el("span", {}, "Today"),
           ),
-          c.uptime_days
-            ? [
-                el(
-                  "div",
-                  {
-                    class: "bars",
-                    role: "img",
-                    "aria-label": `${c.uptime}% uptime over the past 90 days`,
-                  },
-                  c.uptime_days.map((d) =>
-                    el("span", {
-                      class: `d-${d.indicator}`,
-                      title: `${fmtDay(d.date)}: ${DAY_LABELS[d.indicator] ?? d.indicator}`,
-                    }),
-                  ),
-                ),
-                el(
-                  "div",
-                  { class: "legend", "aria-hidden": "true" },
-                  el(
-                    "span",
-                    {},
-                    el("span", { class: "long" }, "90 days ago"),
-                    el("span", { class: "short" }, "30 days ago"),
-                  ),
-                  el("span", { class: "uptime" }, `${c.uptime} % uptime`),
-                  el("span", { class: "end" }, "Today"),
-                ),
-              ]
-            : null,
+        ];
+      };
+
+      const SQUARE = (sign) =>
+        svg(
+          "svg",
+          { viewBox: "0 0 12 12", class: sign, "aria-hidden": "true" },
+          svg("rect", { x: "0.5", y: "0.5", width: "11", height: "11", rx: "1.5", fill: "none", stroke: "currentColor" }),
+          svg("path", { d: sign === "plus" ? "M3 6h6M6 3v6" : "M3 6h6", stroke: "currentColor", "stroke-linecap": "round" }),
         );
 
-      const history = (incidents) => {
-        const byDay = Map.groupBy(incidents, (i) => dayKey(i.created_at));
-        const today = Date.UTC(
-          new Date().getUTCFullYear(),
-          new Date().getUTCMonth(),
-          new Date().getUTCDate(),
+      const componentRow = (component) => {
+        const state = el("span", { class: `component-state s-${component.status}` }, STATE_LABELS[component.status] ?? component.status);
+        const info = component.description ? el("span", { class: "info", tabindex: "0", role: "note", "data-tip": component.description, "aria-label": component.description }, "?") : null;
+        if (!component.group) return el("div", { class: "component" }, el("div", { class: "component-head" }, el("span", { class: "component-name" }, component.name), info, state), bars(component));
+        const children = el("div", { class: "group-children", id: `group-${component.id}`, hidden: "" }, component.components.map(componentRow));
+        const toggle = el(
+          "button",
+          { class: "group-toggle", type: "button", "aria-expanded": "false", "aria-controls": `group-${component.id}` },
+          SQUARE("plus"),
+          SQUARE("minus"),
+          el("span", { class: "component-name" }, component.name),
         );
+        toggle.addEventListener("click", () => {
+          children.hidden = !children.hidden;
+          toggle.setAttribute("aria-expanded", String(!children.hidden));
+        });
+        return el("div", { class: "component" }, el("div", { class: "component-head" }, toggle, info, state), bars(component), children);
+      };
+
+      const pastIncidents = (incidents) => {
+        const byDay = Map.groupBy(incidents, (incident) => dayKey(incident.created_at));
+        const today = Math.floor(Date.now() / DAY) * DAY;
         return Array.from({ length: HISTORY_DAYS }, (_, n) => {
-          const key = dayKey(today - n * 86400000);
+          const key = dayKey(today - n * DAY);
           const items = byDay.get(key) ?? [];
           return el(
             "div",
             { class: "day" },
             el("h3", {}, fmtDay(key)),
-            items.length
-              ? items.map(incident)
-              : el("p", { class: "none" }, "No incidents reported."),
+            items.length ? items.map(incidentEntry) : el("p", { class: "none" }, n === 0 ? "No incidents reported today." : "No incidents reported."),
           );
         });
       };
 
-      const fill = (id, nodes) => document.getElementById(id).replaceChildren(...nodes);
+      const niceMax = (value) => {
+        if (value <= 0) return 100;
+        const step = 10 ** Math.floor(Math.log10(value));
+        for (const factor of [1, 2, 2.5, 5, 10]) if (factor * step >= value) return factor * step;
+        return 10 * step;
+      };
+      const chartLabel = (date, period) => {
+        if (period === "day")
+          return date.getHours() < 3
+            ? date.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+            : date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+        return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+      };
+      const tickKey = (date, period) => (period === "day" ? `${date.toDateString()} ${Math.floor(date.getHours() / 3)}` : date.toDateString());
 
-      async function load() {
+      let metricData = null;
+      const drawChart = () => {
+        const chart = document.getElementById("chart");
+        if (!metricData) return;
+        const width = chart.clientWidth;
+        const height = chart.clientHeight;
+        const right = 44;
+        const bottom = 24;
+        const plotWidth = Math.max(10, width - right);
+        const plotHeight = height - bottom;
+        const values = metricData.points.map((p) => p.ms).filter((v) => v != null);
+        const max = niceMax(Math.max(0, ...values) * 1.15);
+        const x = (i) => (i / Math.max(1, metricData.points.length - 1)) * plotWidth;
+        const y = (ms) => plotHeight - (ms / max) * plotHeight;
+        const nodes = [];
+        for (const tick of [0, max / 2, max]) {
+          nodes.push(svg("line", { x1: 0, x2: plotWidth, y1: y(tick), y2: y(tick), stroke: "#efefef" }));
+          nodes.push(svg("text", { x: plotWidth + 8, y: y(tick) + 4 }, String(Math.round(tick))));
+        }
+        metricData.points.forEach((point, i) => {
+          if (i === 0) return;
+          const at = new Date(point.at);
+          if (tickKey(at, metricData.period) === tickKey(new Date(metricData.points[i - 1].at), metricData.period)) return;
+          if (metricData.period === "month" && at.getDate() % 5 !== 0) return;
+          if (x(i) < 16 || x(i) > plotWidth - 16) return;
+          nodes.push(svg("line", { x1: x(i), x2: x(i), y1: plotHeight, y2: plotHeight + 4, stroke: "#c4c6c9" }));
+          nodes.push(svg("text", { x: x(i), y: height - 4, "text-anchor": "middle" }, chartLabel(at, metricData.period)));
+        });
+        let path = "";
+        metricData.points.forEach((point, i) => {
+          if (point.ms == null) return;
+          const previous = metricData.points[i - 1];
+          path += `${previous?.ms == null ? "M" : "L"}${x(i).toFixed(1)} ${y(point.ms).toFixed(1)}`;
+        });
+        nodes.push(svg("path", { d: path, fill: "none", stroke: "#5865f2", "stroke-width": "1.5", "stroke-linejoin": "round" }));
+        const guide = svg("line", { y1: 0, y2: plotHeight, stroke: "#72767d", "stroke-dasharray": "3 3", visibility: "hidden" });
+        const dot = svg("circle", { r: 3.5, fill: "#5865f2", visibility: "hidden" });
+        const hit = svg("rect", { x: 0, y: 0, width: plotWidth, height: plotHeight, fill: "transparent" });
+        hit.addEventListener("pointermove", (event) => {
+          const box = hit.getBoundingClientRect();
+          const i = Math.round(((event.clientX - box.left) / box.width) * (metricData.points.length - 1));
+          const point = metricData.points[Math.min(metricData.points.length - 1, Math.max(0, i))];
+          guide.setAttribute("x1", x(i));
+          guide.setAttribute("x2", x(i));
+          guide.setAttribute("visibility", "visible");
+          if (point.ms != null) {
+            dot.setAttribute("cx", x(i));
+            dot.setAttribute("cy", y(point.ms));
+            dot.setAttribute("visibility", "visible");
+          } else dot.setAttribute("visibility", "hidden");
+          showTooltip(dot.getAttribute("visibility") === "visible" ? dot : guide, el("strong", {}, fmtStamp(point.at)), el("span", {}, point.ms == null ? "No requests" : `${point.ms} ms median`));
+        });
+        hit.addEventListener("pointerleave", () => {
+          guide.setAttribute("visibility", "hidden");
+          dot.setAttribute("visibility", "hidden");
+          hideTooltip();
+        });
+        nodes.push(guide, dot, hit);
+        const graph = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `Median API response time over the past ${metricData.period}` }, nodes);
+        chart.replaceChildren(graph, ...(values.length ? [] : [el("div", { class: "empty-chart" }, "No requests recorded in this period yet.")]));
+      };
+
+      const loadMetrics = async (period) => {
+        for (const tab of document.querySelectorAll("[data-period]")) tab.setAttribute("aria-selected", String(tab.dataset.period === period));
+        try {
+          metricData = await getJson(`/api/v9/status/metrics.json?period=${period}`);
+          document.getElementById("metric-value").textContent = metricData.average_ms == null ? "No data" : `${metricData.average_ms} ms`;
+          drawChart();
+        } catch (error) {
+          document.getElementById("metric-value").textContent = "Unavailable";
+          fill("chart", el("div", { class: "empty-chart error" }, `Couldn't load response times (${error.message}).`));
+        }
+      };
+
+      let loadedOverview = false;
+      async function loadOverview() {
         const banner = document.getElementById("banner");
         try {
-          const res = await fetch("/api/v9/status/summary.json", { cache: "no-store" });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const s = await res.json();
-
-          const home = document.getElementById("home");
-          if (s.page.url && /^https?:\/\//.test(s.page.url)) home.href = s.page.url;
-          home.hidden = false;
-
-          banner.className = `banner ${s.status.indicator}`;
-          banner.replaceChildren(el("span", {}, s.status.description));
-
-          document.getElementById("active-section").hidden = !s.incidents.length;
-          fill("active", s.incidents.map(incident));
-          document.getElementById("maintenance-section").hidden = !s.scheduled_maintenances.length;
-          fill("maintenance", s.scheduled_maintenances.map(incident));
-          document.getElementById("components-section").hidden = !s.components.length;
-          fill("components", s.components.map(component));
-          fill("history", history(s.history));
-          document.getElementById("updated").textContent = `Last checked ${fmt(new Date())}`;
-          loaded = true;
-          setTimeout(load, 60000);
-        } catch (e) {
+          const summary = await getJson("/api/v9/status/summary.json");
+          banner.className = `banner ${summary.status.indicator}`;
+          banner.textContent = summary.status.description;
+          fill("active", summary.incidents.map(incidentBox));
+          fill("maintenance", summary.scheduled_maintenances.map(incidentBox));
+          document.getElementById("components-section").hidden = !summary.components.length;
+          const expanded = new Set([...document.querySelectorAll(".group-toggle[aria-expanded=true]")].map((t) => t.getAttribute("aria-controls")));
+          fill("components", summary.components.map(componentRow));
+          for (const id of expanded) document.querySelector(`[aria-controls="${id}"]`)?.click();
+          fill("past", pastIncidents(summary.history));
+          loadedOverview = true;
+          setTimeout(loadOverview, 60000);
+        } catch (error) {
           banner.className = "banner unreachable";
-          banner.replaceChildren(el("span", {}, `Can't reach ${INSTANCE} right now`));
-          if (!loaded)
-            fill("history", [
-              el(
-                "div",
-                { class: "empty" },
-                "Incident history shows up once the server responds again.",
-              ),
-            ]);
-          document
-            .getElementById("updated")
-            .replaceChildren(
-              el(
-                "span",
-                { class: "error" },
-                `Couldn't load the current status (${e.message}). Retrying every 30 seconds…`,
-              ),
-            );
-          setTimeout(load, 30000);
+          banner.textContent = `Can't reach ${INSTANCE} right now. Retrying in 30 seconds.`;
+          if (!loadedOverview) fill("past", el("p", { class: "none" }, "Incident history shows up once the server responds again."));
+          setTimeout(loadOverview, 30000);
         }
       }
 
-      load();
+      let historyPage = Number(new URLSearchParams(location.search).get("page")) || 0;
+      async function loadHistory() {
+        try {
+          const history = await getJson(`/api/v9/status/incidents.json?page=${historyPage}`);
+          const byMonth = Map.groupBy(history.incidents, (incident) => dayKey(incident.created_at).slice(0, 7));
+          const months = [];
+          for (let at = new Date(history.to); at > new Date(history.from); ) {
+            at = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() - 1, 1));
+            months.push(at);
+          }
+          fill(
+            "history-months",
+            months.map((month) => {
+              const items = byMonth.get(dayKey(month).slice(0, 7)) ?? [];
+              return el(
+                "section",
+                { class: "month" },
+                el("h3", {}, fmtMonth(month)),
+                items.length
+                  ? items.map((incident) => {
+                      const latest = incident.incident_updates[0];
+                      return el(
+                        "article",
+                        { class: `incident i-${incident.impact}`, id: incident.id },
+                        el("h4", { class: "incident-title" }, incident.name),
+                        latest ? el("p", {}, latest.body) : null,
+                        el("small", {}, `${fmtStamp(incident.created_at)} to ${fmtStamp(incident.resolved_at ?? incident.updated_at)}`),
+                      );
+                    })
+                  : el("p", { class: "none" }, "No incidents reported for this month."),
+              );
+            }),
+          );
+          document.getElementById("history-range").textContent = `${fmtShortMonth(months.at(-1))} to ${fmtShortMonth(months[0])}`;
+          document.getElementById("history-newer").disabled = !history.has_newer;
+          document.getElementById("history-older").disabled = !history.has_older;
+          if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+        } catch (error) {
+          fill("history-months", el("p", { class: "none error" }, `Couldn't load the incident history (${error.message}).`));
+        }
+      }
+      const pageHistory = (delta) => {
+        historyPage = Math.max(0, historyPage + delta);
+        history.replaceState(null, "", historyPage ? `?page=${historyPage}` : location.pathname);
+        loadHistory();
+      };
+
+      async function loadUptime() {
+        const picker = document.getElementById("uptime-component");
+        try {
+          const summary = await getJson("/api/v9/status/summary.json");
+          const all = summary.components.flatMap((c) => [c, ...(c.components ?? [])]);
+          if (!all.length) {
+            fill("uptime-note", "This status page doesn't track any components yet.");
+            picker.hidden = true;
+            return;
+          }
+          picker.replaceChildren(
+            ...summary.components.map((c) =>
+              c.group ? el("optgroup", { label: c.name }, el("option", { value: c.id }, `${c.name} (all)`), c.components.map((child) => el("option", { value: child.id }, child.name))) : el("option", { value: c.id }, c.name),
+            ),
+          );
+          const wanted = new URLSearchParams(location.search).get("component");
+          if (all.some((c) => c.id === wanted)) picker.value = wanted;
+          const render = () => {
+            const component = all.find((c) => c.id === picker.value) ?? all[0];
+            const days = new Map(component.uptime_days.map((d) => [d.date, d.indicator]));
+            const now = new Date();
+            const calendars = [2, 1, 0].map((back) => {
+              const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1));
+              const length = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+              const cells = Array.from({ length: (first.getUTCDay() + 6) % 7 }, () => el("span", { class: "blank" }));
+              let tracked = 0;
+              let healthy = 0;
+              for (let d = 1; d <= length; d++) {
+                const date = dayKey(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), d));
+                const indicator = days.has(date) ? days.get(date) : null;
+                const future = date > dayKey(now);
+                if (indicator != null && !future) {
+                  tracked++;
+                  if (indicator === "none") healthy++;
+                }
+                const cell = el("span", { class: future ? "blank" : `d-${indicator}` });
+                if (!future) {
+                  cell.addEventListener("pointerenter", () => showTooltip(cell, el("strong", {}, fmtDay(date)), el("span", {}, DAY_LABELS[indicator] ?? indicator)));
+                  cell.addEventListener("pointerleave", hideTooltip);
+                }
+                cells.push(cell);
+              }
+              const share = tracked ? `${Math.round((healthy / tracked) * 10000) / 100}% of days without incidents` : "No data";
+              return el(
+                "section",
+                { class: "calendar", "aria-label": `${fmtMonth(first)}: ${share}` },
+                el("div", { class: "calendar-head" }, el("h3", {}, fmtMonth(first)), el("span", {}, tracked ? `${Math.round((healthy / tracked) * 1000) / 10}%` : "")),
+                el("div", { class: "calendar-grid", "aria-hidden": "true" }, cells),
+              );
+            });
+            fill("calendars", calendars);
+            fill("uptime-note", `${component.name} had ${component.uptime} % uptime over the past 90 days.`);
+          };
+          picker.addEventListener("change", () => {
+            history.replaceState(null, "", `?component=${picker.value}`);
+            render();
+          });
+          render();
+        } catch (error) {
+          fill("uptime-note", el("span", { class: "error" }, `Couldn't load uptime (${error.message}).`));
+        }
+      }
+
+      const view = location.pathname.replace(/\/+$/, "").split("/").pop();
+      const footerLink = document.getElementById("footer-link");
+      if (view === "history") {
+        document.title = `Incident History - ${INSTANCE} Status`;
+        document.getElementById("history").hidden = false;
+        footerLink.href = "/status";
+        footerLink.textContent = "← Current Status";
+        document.getElementById("history-newer").addEventListener("click", () => pageHistory(-1));
+        document.getElementById("history-older").addEventListener("click", () => pageHistory(1));
+        loadHistory();
+      } else if (view === "uptime") {
+        document.title = `Uptime - ${INSTANCE} Status`;
+        document.getElementById("uptime").hidden = false;
+        footerLink.href = "/status";
+        footerLink.textContent = "← Current Status";
+        loadUptime();
+      } else {
+        document.getElementById("overview").hidden = false;
+        for (const tab of document.querySelectorAll("[data-period]")) tab.addEventListener("click", () => loadMetrics(tab.dataset.period));
+        new ResizeObserver(drawChart).observe(document.getElementById("chart"));
+        loadOverview();
+        loadMetrics("day");
+      }
     </script>
   </body>
 </html>

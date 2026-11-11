@@ -41,7 +41,7 @@ await cp(path.join(root, "assets", "locales"), path.join(bundle, "assets", "loca
 await cp(path.join(root, "assets", "activities"), path.join(bundle, "assets", "activities"), { recursive: true });
 await mkdir(path.join(bundle, "assets", "public"), { recursive: true });
 const groupAvatars = (await readdir(path.join(root, "assets", "public"))).filter((file) => /^[0-9a-f]{32}\.png$/.test(file)).map((file) => `public/${file}`);
-for (const asset of ["icon.png", "icon_white.png", "logo.png", "public/index.html", "public/legal.html", "public/widget.html", ...groupAvatars])
+for (const asset of ["icon.png", "icon_white.png", "logo.png", "public/index.html", "public/legal.html", "public/site.html", "public/widget.html", ...groupAvatars])
     await cp(path.join(root, "assets", asset), path.join(bundle, "assets", asset));
 await cp(path.join(dist, "default-avatars"), path.join(bundle, "dist", "default-avatars"), { recursive: true });
 for (const font of ["open-sans-8-white", "open-sans-16-white", "open-sans-32-white"])
@@ -67,7 +67,7 @@ const trees: [string, string, (relative: string) => boolean][] = [
         "cdn/routes",
         (relative) => {
             const root = relative.split("/")[0].replace(/\.js$/, "");
-            return (CDN_FALLBACK_ROOTS.has(root) && root !== "federation-upload") || API_FALLBACK_PREFIXES.has(root);
+            return CDN_FALLBACK_ROOTS.has(root) || API_FALLBACK_PREFIXES.has(root);
         },
     ],
 ];

@@ -69,22 +69,21 @@ try {
     await picker.getByText("Pride badges saved.", { exact: true }).waitFor();
     assert.equal((await api("GET", "/users/@me/pride-badges")).flags.length, count);
     const savedProfile = await api("GET", "/users/@me/profile");
-    assert.equal(savedProfile.badges.filter((badge) => catalogIds.has(badge.id)).length, count);
-    assert.deepEqual(
-        savedProfile.badges.filter((badge) => !catalogIds.has(badge.id)),
-        assigned,
-    );
+    assert.equal(savedProfile.badges.filter((badge) => catalogIds.has(badge.id)).length, 0, "pride flags are not profile badges");
+    assert.deepEqual(savedProfile.badges, assigned);
+    assert.equal(savedProfile.user.pride_badges.length, count);
     await friendPage.waitForFunction(
-        ({ id, count }) =>
-            Vencord.Webpack.findStore("UserProfileStore")
-                .getUserProfile(id)
-                ?.badges?.filter((badge) => badge.icon?.startsWith("pride_")).length === count,
+        ({ id, count }) => Vencord.Webpack.Common.UserStore.getUser(id)?.prideBadges?.length === count,
         { id: profile.user.id, count },
         { timeout: 15000 },
     );
-    const icons = friendPage.locator('img[src*="badge-icons/pride_"]');
-    assert.equal(await icons.count(), count, "ordinary friend profile renders every flag");
-    assert.ok(await icons.evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0)), "flag images load locally");
+    const flags = friendPage.locator(".fosscord-pride-flags-pronouns").first();
+    await flags.waitFor({ timeout: 15000 });
+    const icons = flags.locator('img[src*="badge-icons/pride_"]');
+    assert.equal(await icons.count(), 7, "the friend's profile panel shows the first seven flags after the name");
+    assert.equal(await flags.locator(".fosscord-pride-more").textContent(), `+${count - 7}`, "the rest are counted");
+    await icons.evaluateAll((images) => Promise.all(images.map((image) => image.decode().catch(() => {}))));
+    assert.ok(await icons.evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0 && image.alt)), "flag images load locally and have labels");
     assert.ok(
         await icons.evaluateAll((images) =>
             images.every((image) => {
@@ -92,20 +91,14 @@ try {
                 return rect.left >= 0 && rect.right <= innerWidth;
             }),
         ),
-        "all badges fit the viewport",
+        "all flags fit the viewport",
     );
     if (process.env.PRIDE_SMOKE_SCREENSHOT) await friendPage.screenshot({ path: process.env.PRIDE_SMOKE_SCREENSHOT });
     await picker.getByRole("button", { name: "Remove all", exact: true }).click();
     await picker.getByText("Pride badges removed.", { exact: true }).waitFor();
     assert.equal((await api("GET", "/users/@me/pride-badges")).flags.length, 0);
-    await friendPage.waitForFunction(
-        (id) =>
-            Vencord.Webpack.findStore("UserProfileStore")
-                .getUserProfile(id)
-                ?.badges?.filter((badge) => badge.icon?.startsWith("pride_")).length === 0,
-        profile.user.id,
-        { timeout: 15000 },
-    );
+    await friendPage.waitForFunction((id) => Vencord.Webpack.Common.UserStore.getUser(id)?.prideBadges?.length === 0, profile.user.id, { timeout: 15000 });
+    await friendPage.locator(".fosscord-pride-flags-pronouns").waitFor({ state: "detached", timeout: 15000 });
     await picker.getByRole("searchbox", { name: "Search flags", exact: true }).fill("transgender");
     assert.equal(await picker.getByRole("checkbox").count(), 1);
     await picker.getByRole("checkbox", { name: "Transgender", exact: true }).check();
@@ -117,7 +110,7 @@ try {
             catalog: count,
             upstreamFlags: manifest.flags.length,
             selectedAll: count,
-            ordinaryProfileImages: count,
+            profileFlagsShown: 7,
             cachedFriendUpdated: true,
             cleared: true,
             searchSubsetSaved: true,

@@ -1,7 +1,6 @@
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
-import { assertMirrorGuildEditable } from "@spacebar/api/util/utility/federatedAdmin";
 import { auditLogReason } from "@spacebar/api/util/utility/fieldCaps";
 import { AuditLog, Emoji, Guild } from "@spacebar/database";
 import { AdminGuildEmojiUpdateSchema, AuditLogEvents } from "@spacebar/schemas";
@@ -11,7 +10,7 @@ const router = Router({ mergeParams: true });
 
 const loadEmoji = async (req: Request) => {
     const guild_id = req.params.guild_id as string;
-    assertMirrorGuildEditable(await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true, federated_instance: true } }));
+    await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true } });
     const emoji = await Emoji.findOne({ where: { id: req.params.emoji_id as string, guild_id } });
     if (!emoji) throw new HTTPError("This server has no emoji with that ID", 404);
     if (emoji.managed) throw new HTTPError("This emoji belongs to an integration, so change it there", 400);

@@ -113,8 +113,6 @@ test("leaving, being removed or the server going away takes the server tag off",
         "src/api/routes/guilds/#guild_id/delete.ts": /dropGuildTags\(guild_id\)/,
         "src/api/routes/admin/guilds/#guild_id/index.ts": /dropGuildTags\(guild_id\)/,
         "src/api/util/utility/bans.ts": /dropGuildTags\(\s*guild_id,\s*humans\.map/,
-        "src/api/util/utility/federationMirrors.ts": /dropGuildTags\(guild_id\);/,
-        "src/api/util/utility/federationRelay.ts": /dropGuildTags\(plan\.id, \[req\.user_id\]\)/,
         "src/api/util/utility/accountRemoval.ts": /dropGuildTags\(guild\.id\)/,
     };
     for (const [file, pattern] of Object.entries(calls)) assert.match(fs.readFileSync(file, "utf8"), pattern, file);

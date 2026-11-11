@@ -56,7 +56,9 @@ const harness = ({ members = [], existing = null, viewable = ["200"] } = {}) => 
                 exists: async () => true,
             },
             E2eeDevice: {},
-            Channel: {},
+            Channel: { findOne: async ({ where }) => (where.id === "200" ? { id: "200", type: 0 } : null) },
+            Recipient: { exists: async () => false },
+            FormerRecipient: { exists: async () => false },
         },
         "@spacebar/schemas": {
             ReportMenuType: {
@@ -85,7 +87,6 @@ const harness = ({ members = [], existing = null, viewable = ["200"] } = {}) => 
         },
         "../handlers/ApplicationWidgets": { snapshotWidget: async () => null },
         "./e2ee": { verifyEd25519: () => false },
-        "./federationIds": { canonicalOf: async (id) => id },
         "./reportMenus": { getReportingMenu: () => ({ nodes: {} }) },
         "./instanceAutomod": { automodVerifiedReport: async () => undefined },
     });

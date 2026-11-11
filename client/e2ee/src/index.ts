@@ -65,7 +65,8 @@ const api: Api = {
 };
 
 interface NativeChannelStore {
-    getChannel(id: string): { type?: number; e2ee_enabled?: boolean } | undefined;
+    getChannel(id: string): { type?: number; e2ee_enabled?: boolean; recipients?: string[] } | undefined;
+    getDMFromUserId?(userId: string): string | null | undefined;
 }
 let nativeChannels: NativeChannelStore | null = null;
 const classifyChannel = (channelId: string) => {
@@ -74,11 +75,17 @@ const classifyChannel = (channelId: string) => {
     if (channel?.e2ee_enabled) return true;
     return channel ? channel.type === 1 || channel.type === 3 : location.pathname === `/channels/@me/${channelId}`;
 };
+const conversationWith = (userId: string) => {
+    nativeChannels ??= findStore<NativeChannelStore>(loader.reqs, ["getChannel", "getDMFromUserId"]);
+    const open = /^\/channels\/@me\/(\d+)/.exec(location.pathname)?.[1];
+    if (open && nativeChannels?.getChannel(open)?.recipients?.includes(userId)) return open;
+    return nativeChannels?.getDMFromUserId?.(userId) ?? null;
+};
 const trustsServer = () =>
     (window as unknown as { GLOBAL_ENV?: { E2EE_TRUST_SERVER?: boolean } }).GLOBAL_ENV?.E2EE_TRUST_SERVER !== false &&
     browserStorage?.getItem("fosscord-e2ee-strict-safety") !== "true";
 const engine = new Engine(api, classifyChannel, trustsServer);
-const attachments = createAttachments((id) => engine.knownCanonical(id));
+const attachments = createAttachments();
 attachments.start();
 
 interface StickerStore {
@@ -233,6 +240,7 @@ const hooks = createHooks({
         }
     },
     onError: (error, channelId) => ui.showError(error, channelId),
+    conversationWith,
 });
 
 const selfTest = async () => {
@@ -344,6 +352,7 @@ const custom = {
         count("E2EE_DEVICES_UPDATE");
         engine.invalidateUser(String(data.user_id));
         refreshSelf(String(data.user_id));
+        hooks.retryFailed(String(data.user_id));
         ui.refresh();
     },
     E2EE_IDENTITY_UPDATE: (data: Record<string, unknown>) => {
@@ -352,6 +361,7 @@ const custom = {
         engine.invalidateUser(userId);
         refreshSelf(userId);
         if (initialized && !signedOut && userId !== engine.userId) engine.keysFor([userId]).catch((error) => console.error("[e2ee] couldn't check the new safety number", error));
+        hooks.retryFailed(userId);
         ui.refresh();
     },
     E2EE_TRUST_UPDATE: () => {
@@ -392,12 +402,15 @@ const tick = () => {
         });
         targets.dispatcher.subscribe("CONNECTION_OPEN", (action) => {
             if (loggedOut) return location.reload();
+            engine.invalidateAll();
             const user = action.user as { id?: string } | undefined;
             if (user?.id) start(user.id);
             else startWhenReady();
         });
         targets.dispatcher.subscribe("CHANNEL_RECIPIENT_ADD", (action) => engine.invalidateChannel(String(action.channelId)));
         targets.dispatcher.subscribe("CHANNEL_RECIPIENT_REMOVE", (action) => engine.invalidateChannel(String(action.channelId)));
+        targets.dispatcher.subscribe("CHANNEL_CREATE", (action) => engine.invalidateChannel(String((action.channel as { id?: string } | undefined)?.id)));
+        targets.dispatcher.subscribe("CHANNEL_DELETE", (action) => engine.invalidateChannel(String((action.channel as { id?: string } | undefined)?.id)));
     }
     if (targets.gateway && !installed.gateway && targets.gateway.getSocket().dispatcher.getDispatchHandler) {
         installed.gateway = true;

@@ -476,15 +476,6 @@ export interface AdminAutomodSettingsSchema {
          */
         blockedHashes?: string[];
     };
-    federation?: {
-        reportToHome?: boolean;
-        acceptReports?: boolean;
-        /**
-         * @minimum 0
-         * @maximum 100000
-         */
-        reportsPerHourPerInstance?: number;
-    };
     registration?: {
         joinReasonRequired?: boolean;
         /**

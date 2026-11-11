@@ -119,7 +119,6 @@ async function runConcurrently(job, env) {
         runs,
         events: runs.flatMap(({ lines }) => lines.filter((line) => line.kind === "event").map((line) => line.value)),
         sends: runs.flatMap(({ lines }) => lines.filter((line) => line.kind === "send").map((line) => line.value)),
-        federated: runs.flatMap(({ lines }) => lines.filter((line) => line.kind === "federated").map((line) => line.value.id)),
         deletes: [...deletes],
     };
 }
@@ -259,112 +258,6 @@ test("one of two processes rebuilds the discovery search index per interval and 
         again.runs.map(({ lines }) => lines.find((line) => line.kind === "done").value.held),
         [false, false],
     );
-});
-
-test("two processes queue federated events at the same moment without losing any to an id collision", options, async () => {
-    const users = [];
-    for (let index = 0; index < 100; index++) users.push((await owner()).id);
-    await client.query(`DELETE FROM "federation_outbox"`);
-    const { runs } = await runConcurrently("federation-enqueue", { SCHEDULER_USERS: JSON.stringify(users) });
-    assert.deepEqual(
-        runs.map(({ lines }) => lines.find((line) => line.kind === "done").value),
-        [0, 0],
-    );
-    const queued = await client.query(`SELECT count(*)::int AS count FROM "federation_outbox" WHERE "instance" = 'peer.test'`);
-    assert.equal(queued.rows[0].count, users.length * PROCESSES);
-});
-
-test("two processes deliver each queued federated event once", options, async () => {
-    await client.query(`DELETE FROM "federation_outbox"`);
-    for (let index = 0; index < 150; index++)
-        await client.query(`INSERT INTO "federation_outbox" ("id", "instance", "wire", "created_at") VALUES ($1, 'peer.test', $2, now())`, [
-            String(1_000_000 + index),
-            JSON.stringify({ event: "PRESENCE_UPDATE", data: {}, recipients: [] }),
-        ]);
-    const { federated } = await runConcurrently("federation-delivery");
-    assert.deepEqual(duplicates(federated), [], "each event is sent once");
-    const left = await client.query(`SELECT count(*)::int AS count FROM "federation_outbox"`);
-    assert.equal(left.rows[0].count + federated.length, 150);
-});
-
-test("when the other instance is down, one process tries it and the other waits out the same backoff", options, async () => {
-    await client.query(`DELETE FROM "federation_outbox"`);
-    await client.query(`DELETE FROM "job_leases"`);
-    for (let index = 0; index < 20; index++)
-        await client.query(`INSERT INTO "federation_outbox" ("id", "instance", "wire", "created_at") VALUES ($1, 'peer.test', $2, now())`, [
-            String(2_000_000 + index),
-            JSON.stringify({ event: "PRESENCE_UPDATE", data: {}, recipients: [] }),
-        ]);
-    const { runs } = await runConcurrently("federation-delivery", { SCHEDULER_FEDERATION_DOWN: "1" });
-    const attempts = runs.flatMap(({ lines }) => lines.filter((line) => line.kind === "attempt"));
-    assert.equal(attempts.length, 1);
-    const lease = await client.query(`SELECT "holder", "expires_at" FROM "job_leases" WHERE "name" = 'federation-outbox:peer.test'`);
-    assert.equal(lease.rows[0].holder, "paused");
-    assert.ok(Number(lease.rows[0].expires_at) > Date.now());
-    const left = await client.query(`SELECT count(*)::int AS count FROM "federation_outbox"`);
-    assert.equal(left.rows[0].count, 20);
-});
-
-test("events that several processes queued for an instance that is down are trimmed to the 10,000 newest", options, async () => {
-    await client.query(`DELETE FROM "federation_outbox"`);
-    await client.query(`DELETE FROM "job_leases"`);
-    await client.query(
-        `INSERT INTO "federation_outbox" ("id", "instance", "wire", "created_at") SELECT 3000000 + n, 'peer.test', '{"event":"PRESENCE_UPDATE","data":{},"recipients":[]}', now() FROM generate_series(1, 25000) AS n`,
-    );
-    const { runs } = await runConcurrently("federation-delivery", { SCHEDULER_FEDERATION_DOWN: "1" });
-    assert.equal(runs.flatMap(({ lines }) => lines.filter((line) => line.kind === "attempt")).length, 1);
-    const left = await client.query(`SELECT count(*)::int AS count, min("id")::text AS oldest FROM "federation_outbox"`);
-    assert.equal(left.rows[0].count, 10_000);
-    assert.equal(left.rows[0].oldest, String(3000000 + 15001));
-    const stats = await client.query(`SELECT "dropped" FROM "federation_deliveries" WHERE "instance" = 'peer.test'`);
-    assert.ok(Number(stats.rows[0].dropped) >= 15_000);
-});
-
-test("two processes counting deliveries for one instance at once keep every increment", options, async () => {
-    await client.query(`DELETE FROM "federation_deliveries"`);
-    const rounds = 40;
-    await runConcurrently("federation-count", { SCHEDULER_ROUNDS: String(rounds) });
-    const stats = await client.query(`SELECT "delivered"::int AS delivered, "dropped"::int AS dropped FROM "federation_deliveries" WHERE "instance" = 'peer.test'`);
-    assert.deepEqual(stats.rows[0], { delivered: 2 * rounds * PROCESSES, dropped: rounds * PROCESSES });
-});
-
-async function queueMove(from, to, status) {
-    const id = snowflake(Date.now(), Math.floor(Math.random() * 4000));
-    await client.query(
-        `INSERT INTO "federation_moves" ("id", "from_id", "to_id", "at", "source", "status", "created_at") VALUES ($1, $2, $3, now() - interval '1 hour', 'registry', $4, now())`,
-        [id, from, to, status],
-    );
-    await client.query(
-        `INSERT INTO "federated_objects" ("canonical", "local_id", "instance", "created_at") SELECT '@' || n || '@' || $1::text, $2::text || '-' || n, $1::text, now() FROM generate_series(1, 1500) AS n`,
-        [from, id.slice(0, 10)],
-    );
-    return id;
-}
-
-const moved = (runs) => runs.flatMap(({ lines }) => lines.filter((line) => line.kind === "moved"));
-
-test("two processes resuming the same instance move run its rewrite once", options, async () => {
-    await client.query(`DELETE FROM "job_leases"`);
-    const id = await queueMove("old-a.test", "new-a.test", "pending");
-    const { runs } = await runConcurrently("federation-move-resume");
-    assert.equal(moved(runs).length, 1, JSON.stringify(moved(runs)));
-    const row = await client.query(`SELECT "status" FROM "federation_moves" WHERE "id" = $1`, [id]);
-    assert.equal(row.rows[0].status, "applied");
-    const left = await client.query(`SELECT count(*)::int AS count FROM "federated_objects" WHERE "instance" = 'old-a.test'`);
-    assert.equal(left.rows[0].count, 0);
-});
-
-test("a move that a stopped process left running finishes once its claim expires", options, async () => {
-    await client.query(`DELETE FROM "job_leases"`);
-    const id = await queueMove("old-b.test", "new-b.test", "running");
-    await client.query(`INSERT INTO "job_leases" ("name", "holder", "expires_at") VALUES ($1, 'stopped-process', $2)`, [`federation-move:${id}`, Date.now() + 60_000]);
-    const blocked = await runConcurrently("federation-move-resume");
-    assert.equal(moved(blocked.runs).length, 0);
-    assert.equal((await client.query(`SELECT "status" FROM "federation_moves" WHERE "id" = $1`, [id])).rows[0].status, "running");
-    await client.query(`UPDATE "job_leases" SET "expires_at" = $2 WHERE "name" = $1`, [`federation-move:${id}`, Date.now() - 1]);
-    const { runs } = await runConcurrently("federation-move-resume");
-    assert.equal(moved(runs).length, 1);
-    assert.equal((await client.query(`SELECT "status" FROM "federation_moves" WHERE "id" = $1`, [id])).rows[0].status, "applied");
 });
 
 async function guildChannel(name) {

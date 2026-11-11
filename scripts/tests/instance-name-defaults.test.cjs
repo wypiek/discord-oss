@@ -42,23 +42,23 @@ function currentRevision() {
     return config.defaultsRevision;
 }
 
-test("fresh client and general defaults use the configured Meowcord name", () => {
-    assert.equal(client.DEFAULT_INSTANCE_NAME, "Meowcord");
-    assert.equal(new client.ClientConfiguration().instanceName, "Meowcord");
-    assert.equal(new GeneralConfiguration().instanceName, "Meowcord");
+test("fresh client and general defaults use the Discord OSS name", () => {
+    assert.equal(client.DEFAULT_INSTANCE_NAME, "Discord OSS");
+    assert.equal(new client.ClientConfiguration().instanceName, "Discord OSS");
+    assert.equal(new GeneralConfiguration().instanceName, "Discord OSS");
 });
 
 test("previous default names migrate once on a serialized older configuration", () => {
     const config = JSON.parse(
         JSON.stringify({
-            defaultsRevision: currentRevision() - 2,
+            defaultsRevision: currentRevision() - 4,
             client: { instanceName: "Fosscord", icon: "/owned.png" },
             general: { instanceName: "Fosscord" },
         }),
     );
     migrate(config);
-    assert.equal(config.client.instanceName, "Meowcord");
-    assert.equal(config.general.instanceName, "Meowcord");
+    assert.equal(config.client.instanceName, "Discord OSS");
+    assert.equal(config.general.instanceName, "Discord OSS");
     assert.equal(config.client.icon, "/owned.png");
     assert.equal(config.defaultsRevision, currentRevision());
     config.client.instanceName = "Fosscord";
@@ -68,15 +68,32 @@ test("previous default names migrate once on a serialized older configuration", 
     assert.equal(config.general.instanceName, "Fosscord");
 });
 
+test("the previous Meowcord default name migrates once", () => {
+    const config = {
+        defaultsRevision: currentRevision() - 2,
+        client: { instanceName: "Meowcord" },
+        general: { instanceName: "Meowcord" },
+    };
+    migrate(config);
+    assert.equal(config.client.instanceName, "Discord OSS");
+    assert.equal(config.general.instanceName, "Discord OSS");
+    config.client.instanceName = "Meowcord";
+    migrate(config);
+    assert.equal(config.client.instanceName, "Meowcord");
+});
+
 test("default-name migration preserves custom client and general names independently", () => {
     for (const names of [
         ["Owned chat", "Owned server"],
         ["Owned chat", "Fosscord"],
         ["Fosscord", "Owned server"],
+        ["Meowcord", "Owned server"],
+        ["Owned chat", "Meowcord"],
     ]) {
         const config = { client: { instanceName: names[0] }, general: { instanceName: names[1] } };
         migrate(config);
-        assert.equal(config.client.instanceName, names[0] === "Fosscord" ? "Meowcord" : names[0]);
-        assert.equal(config.general.instanceName, names[1] === "Fosscord" ? "Meowcord" : names[1]);
+        const defaulted = (name) => (name === "Fosscord" || name === "Meowcord" ? "Discord OSS" : name);
+        assert.equal(config.client.instanceName, defaulted(names[0]));
+        assert.equal(config.general.instanceName, defaulted(names[1]));
     }
 });

@@ -15,7 +15,6 @@ interface ClientBundle {
 
 export interface InstanceSettings {
     instanceName: string;
-    instanceId: string | null;
     iconUrl: string | null;
     logoUrl: string | null;
     helpUrl: string | null;
@@ -32,7 +31,6 @@ export interface InstanceSettings {
 
 const DEFAULT_SETTINGS: InstanceSettings = {
     instanceName: DEFAULT_INSTANCE_NAME,
-    instanceId: null,
     iconUrl: null,
     logoUrl: null,
     helpUrl: null,
@@ -49,7 +47,14 @@ const DEFAULT_SETTINGS: InstanceSettings = {
 
 const SETTINGS_TTL = 60_000;
 const NO_CACHE = { "Cache-Control": "no-cache" };
-const PAGES: Record<string, string> = { "/admin": "admin", "/status": "status", "/appeal": "appeal", "/verify-email": "verify" };
+const PAGES: Record<string, string> = {
+    "/admin": "admin",
+    "/status": "status",
+    "/status/history": "status",
+    "/status/uptime": "status",
+    "/appeal": "appeal",
+    "/verify-email": "verify",
+};
 
 let bundle: Promise<ClientBundle | null> | null = null;
 let remoteSettings: { at: number; value: Promise<Partial<InstanceSettings> | null> } | null = null;
@@ -65,28 +70,11 @@ const loadBundle = (env: RouterEnv, url: URL) => {
 
 const isWebUrl = (value: unknown): value is string => typeof value === "string" && /^https?:\/\//i.test(value.trim());
 
-const instanceIdFromUrl = (value: string | null | undefined) => {
-    if (!value || !URL.canParse(value)) return null;
-    const url = new URL(value);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-    const port = url.port || (url.protocol === "https:" ? "443" : "80");
-    return port === "443" ? url.hostname.toLowerCase() : `${url.hostname.toLowerCase()}:${port}`;
-};
-
-const instanceUrl = ({ general, api }: InstanceConfig) => {
-    const server = general?.serverName?.trim();
-    if (server && /^https?:\/\//.test(server) && URL.canParse(server)) return new URL(server).origin;
-    if (server && /^[a-z0-9.-]+(?::\d+)?$/i.test(server)) return `https://${server.toLowerCase()}`;
-    const endpoint = api?.endpointPublic;
-    return endpoint && URL.canParse(endpoint) ? new URL(endpoint).origin : null;
-};
-
 const settingsFromConfig = (config: InstanceConfig): Partial<InstanceSettings> => {
     const { client, general, limits, register, cdn } = config;
     const joinReason = register?.joinReason;
     const settings: Partial<InstanceSettings> = {
         instanceName: client?.instanceName || general?.instanceName || undefined,
-        instanceId: instanceIdFromUrl(instanceUrl(config)),
         iconUrl: client?.icon || general?.image || null,
         logoUrl: client?.logo ?? null,
         helpUrl: client?.helpUrl ?? null,
@@ -177,7 +165,6 @@ const renderClient = async (client: ClientBundle, settings: InstanceSettings) =>
     const images = await brandImageUrls(settings);
     const envSettings: ClientEnvSettings = {
         instanceName: settings.instanceName,
-        instanceId: settings.instanceId,
         activityApplicationHost: settings.activityApplicationHost,
         loadingTips: settings.loadingTips,
         loadingSvg: settings.loadingSvg,
@@ -204,7 +191,8 @@ const html = (body: string, status = 200, headers: Record<string, string> = {}) 
 const brandPage = async (env: RouterEnv, url: URL, name: string, settings: InstanceSettings) => {
     const page = await asset(env, `/_meowcord/pages/${name}.html`, url);
     if (!page.ok) return null;
-    return brandPageMarkup(await page.text(), settings.instanceName, (await brandImageUrls(settings)).icon);
+    const { icon, logo } = await brandImageUrls(settings);
+    return brandPageMarkup(await page.text(), settings.instanceName, icon, logo);
 };
 
 const appManifest = async (settings: InstanceSettings) => {

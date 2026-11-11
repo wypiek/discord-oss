@@ -4,7 +4,7 @@ import { FosscordAuthor, hideNotices, redirectHome } from "../fosscordCore/share
 
 export default definePlugin({
     name: "FosscordNoQuests",
-    description: "Removes Quests, Orbs and sponsored content from the client.",
+    description: "Removes Quests, the Orb balance and sponsored content from the client.",
     authors: [FosscordAuthor],
     required: true,
 
@@ -43,14 +43,14 @@ export default definePlugin({
         {
             find: /\[\i\.\i\.SHOP_ORBS_TAB\]:\[/,
             replacement: {
-                match: /(\[\i\.\i\.(?:SHOP_ORBS_TAB|QUEST_ORBS|QUEST_HOME)\]:)\[(?:\i\.intl\.string\(\i\.t(?:\.[\w$]+|\["[^"]+"\])\),?)+\]/g,
+                match: /(\[\i\.\i\.(?:QUEST_ORBS|QUEST_HOME)\]:)\[(?:\i\.intl\.string\(\i\.t(?:\.[\w$]+|\["[^"]+"\])\),?)+\]/g,
                 replace: "$1null",
             },
         },
         {
-            find: /key:\i\.\i\.ORBS,text:/,
+            find: "ORBS_BADGE_REDEMPTION_MODAL,ctaObject:",
             replacement: {
-                match: /,\{type:"page",key:(\i\.\i)\.ORBS,text:.{0,160}?onClick:\(\)=>\i\(\1\.ORBS\)\}(?=\])/,
+                match: /,\{text:[^{}]{0,80},variant:"secondary",onClick:\(\)=>\{[^{}]{0,40}\(\{pageType:\i\.\i\.SHOP_ORBS_TAB,sectionType:\i\.\i\.ORBS_BADGE_REDEMPTION_MODAL[^{}]{0,80}\}\),\(0,\i\.\i\)\(\{[^{}]{0,60}\}\)\}\}/,
                 replace: "",
             },
         },

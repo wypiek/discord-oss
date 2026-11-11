@@ -8,7 +8,6 @@ const color = (value: string | null | undefined, fallback: string) => (value && 
 
 // previews for picking a badge (the admin panel), in any colours: /clan-badges/preview lists the badges,
 // /clan-badges/preview/<badge>?primary=%23rrggbb&secondary=%23rrggbb draws one. Registered before /:guild_id/:hash
-// the list and previews change whenever the instance's badges are edited, so they're only cached briefly
 router.get("/preview", (req: Request, res: Response) => {
     res.set("Cache-Control", "no-cache");
     res.json(listClanBadges());

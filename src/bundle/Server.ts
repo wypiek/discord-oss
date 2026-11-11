@@ -11,8 +11,7 @@ import { SpacebarServer } from "@spacebar/api";
 import { CDNServer } from "@spacebar/cdn";
 import { initDatabase } from "@spacebar/database";
 import { clearCallStateOnStartup, GatewayServer } from "@spacebar/gateway";
-import { Config, FEDERATED_VOICE_PATH, HOST_VOICE_PATH, homePage, requestOrigin } from "@spacebar/util";
-import { homeVoiceUpgrade, hostVoiceUpgrade } from "@spacebar/api/util/utility/federationVoice";
+import { Config, homePage, requestOrigin } from "@spacebar/util";
 import { WebrtcServer } from "@spacebar/webrtc";
 import { ProcessLifecycle } from "../util/util/ProcessLifecycle";
 import { Monitoring } from "../util/monitoring/Monitoring";
@@ -40,8 +39,6 @@ const webrtc = new WebrtcServer({
     noServer: !wrtcWsPort,
 });
 if (!wrtcWsPort) gateway.upgradeRoutes.set("/voice", (request, socket, head) => webrtc.handleUpgrade(request, socket, head));
-gateway.upgradeRoutes.set(HOST_VOICE_PATH, hostVoiceUpgrade(webrtc));
-gateway.upgradeRoutes.set(FEDERATED_VOICE_PATH, homeVoiceUpgrade);
 
 ProcessLifecycle.eventEmitter.on("stopping", async () => {
     await gateway.stop();

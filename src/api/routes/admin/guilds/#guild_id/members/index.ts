@@ -25,7 +25,7 @@ router.get(
         const q = searchText(req.query.q);
         const after = snowflakeCursor(req.query.after, "after");
         const limit = cursorLimit(req.query.limit, 50, 100);
-        const guild = await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true, owner_id: true, federated_instance: true } });
+        const guild = await Guild.findOneOrFail({ where: { id: guild_id }, select: { id: true, owner_id: true } });
 
         const ids = Member.createQueryBuilder("member")
             .innerJoin("member.user", "user")
@@ -51,7 +51,7 @@ router.get(
                       .innerJoin("member.user", "user")
                       .leftJoin("member.roles", "role")
                       .select(["member.index", "member.id", "member.nick", "member.joined_at", "member.communication_disabled_until", "member.pending", "role.id"])
-                      .addSelect(["user.id", "user.username", "user.discriminator", "user.global_name", "user.avatar", "user.bot", "user.rights", "user.federated_instance"])
+                      .addSelect(["user.id", "user.username", "user.discriminator", "user.global_name", "user.avatar", "user.bot", "user.rights"])
                       .where("member.guild_id = :guild_id", { guild_id })
                       .andWhere("member.id IN (:...page)", { page })
                       .orderBy("member.id", "ASC")
@@ -74,7 +74,6 @@ router.get(
                     global_name: member.user.global_name ?? null,
                     avatar: member.user.avatar ?? null,
                     bot: member.user.bot,
-                    federated_instance: member.user.federated_instance ?? null,
                 },
                 nick: member.nick ?? null,
                 roles: member.roles.map((role) => role.id).filter((id) => id !== guild_id),

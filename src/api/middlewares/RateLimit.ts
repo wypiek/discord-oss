@@ -187,7 +187,6 @@ export default function rateLimit(opts: {
         if (opts.onlyUsers && !req.user_id) return next();
         if (opts.onlyAnonymous && req.user_id) return next();
         if (req.rights?.has("BYPASS_RATE_LIMITS")) return next();
-        if (opts.onlyIp && req.federationRelay) return next();
 
         const bucket_id = opts.bucket || routeBucket(req);
         const executor_id = !opts.onlyIp && req.user_id ? req.user_id : addressBucket(req.ip);
@@ -304,7 +303,6 @@ export async function initRateLimits(app: Router) {
     const userProfile = rateLimit({ bucket: "PATCH users/@me", ...routes.userProfile });
     app.patch("/users/:user_id", (req, res, next) => ([req.user_id, "@me"].includes(`${req.params.user_id}`) ? userProfile(req, res, next) : next()));
     app.use("/users/@me/instance-invites", rateLimit({ bucket: "users/@me/instance-invites", ...routes.instanceInvite }));
-    app.get(["/federation/discovery", "/federation/discovery/guilds/:guild_id"], rateLimit({ bucket: "GET federation/discovery", count: 60, window: 30 }));
     const userWrites = rateLimit({ onlyWrites: true, ...routes.user });
     app.use("/users/:user_id", (req, res, next) =>
         ![req.user_id, "@me"].includes(`${req.params.user_id}`) || req.path.startsWith("/e2ee/") ? next() : userWrites(req, res, next),
@@ -368,11 +366,9 @@ export const topLevelRouteLimits: RouteLimit[] = [
     { paths: ["/_spacebar/api"], count: 60, window: 30 },
     { paths: ["/__development"], onlyIp: true, count: 15, window: 30 },
     { paths: ["/widget"], onlyIp: true, count: 30, window: 30 },
-    { paths: ["/admin", "/appeal", "/developers", "/status", "/guidelines", "/privacy", "/terms", "/tos"], onlyIp: true, count: 60, window: 30 },
+    { paths: ["/admin", "/appeal", "/blog", "/developers", "/status", "/support", "/guidelines", "/privacy", "/terms", "/tos"], onlyIp: true, count: 60, window: 30 },
     { paths: ["/"], method: "get", onlyIp: true, count: 60, window: 30 },
 ];
-
-export const topLevelRateLimitExemptions = ["/federation/v2"];
 
 function applyRouteLimits(app: Router, limits: RouteLimit[]) {
     for (const { paths, method = "use", ...options } of limits) app[method](paths, rateLimit(options));

@@ -6,7 +6,6 @@ import { fileTypeFromBuffer } from "file-type";
 import { Config, DEFAULT_AVATARS_FOLDER, defaultAvatarSvg, isRequestSignature } from "@spacebar/util";
 import { HTTPError } from "lambert-server/HTTPError";
 import { storage, internalUpload, setCacheControl, safeMediaType } from "../util";
-import { sendRemoteFallback } from "../util/federationMedia";
 
 // TODO: generate different sizes of icon
 // TODO: generate different image types of icon
@@ -68,7 +67,6 @@ export const getAvatar = async (req: Request, res: Response) => {
     const path = `avatars/${user_id}/${hash}`;
 
     const file = await storage.get(path);
-    if (!file && (await sendRemoteFallback(req, res, user_id, (remote) => `/avatars/${remote}/${req.params.hash}`))) return;
     if (!file && user_id === CLIENT_WUMPUS_USER_ID) {
         const fallback = join(DEFAULT_AVATARS_FOLDER, "0.png");
         if (await fs.stat(fallback).catch(() => null)) return res.type("png").sendFile(fallback, { cacheControl: false, dotfiles: "allow" });

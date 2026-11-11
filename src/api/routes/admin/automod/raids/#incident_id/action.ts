@@ -4,7 +4,7 @@ import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
 import { InstanceBan, RaidIncident, Session, User } from "@spacebar/database";
 import { AdminRaidIncidentActionSchema } from "@spacebar/schemas";
-import { applySpamAction, blockFederatedUser, canActOn, deleteAuthoredMessages, endUserSessions, ipVariants, normalizeIp, recordAutomodAction } from "@spacebar/api/util";
+import { applySpamAction, canActOn, deleteAuthoredMessages, endUserSessions, ipVariants, normalizeIp, recordAutomodAction } from "@spacebar/api/util";
 import { serializeIncidents } from "../index";
 import { findIncident } from "./index";
 
@@ -19,7 +19,7 @@ router.post(
         spacebarOnly: true,
         requestBody: "AdminRaidIncidentActionSchema",
         description:
-            "Act on every account in an incident, or on `user_ids` from it: delete every message they sent, suspend them, disable them or ban the IP addresses they registered and signed in from. Accounts from other instances are blocked from federating instead of suspended, disabled or IP banned. Your own account and staff at or above your own role are skipped.",
+            "Act on every account in an incident, or on `user_ids` from it: delete every message they sent, suspend them, disable them or ban the IP addresses they registered and signed in from. Your own account and staff at or above your own role are skipped.",
     }),
     async (req: Request, res: Response) => {
         const body = req.body as AdminRaidIncidentActionSchema;
@@ -30,7 +30,7 @@ router.post(
         if (!wanted.length) throw new HTTPError("Nobody in this incident matches", 400);
         const reason = body.reason?.trim() || `Raid response from the admin dashboard by ${req.user?.username ?? req.user_id}`;
 
-        const users = await User.find({ where: { id: In(wanted) }, select: { id: true, username: true, rights: true, federated_instance: true, registration_ip: true } });
+        const users = await User.find({ where: { id: In(wanted) }, select: { id: true, username: true, rights: true, registration_ip: true } });
         const skipped: { id: string; reason: "unknown" | "self" | "operator" }[] = [];
         const targets: User[] = [];
         for (const id of wanted) {
@@ -42,7 +42,6 @@ router.post(
         }
 
         let messages_deleted = 0;
-        let federation_blocked = 0;
         const ips_banned: string[] = [];
         const ips_skipped: { ip: string; reason: "self" | "already_banned" | "shared" }[] = [];
         const ids = targets.map((user) => user.id);
@@ -55,7 +54,6 @@ router.post(
             if (body.action === "suspend" || body.action === "disable") {
                 for (const user of batch) {
                     const result = await applySpamAction(user, body.action, { guild_ids: [], reason, actor_id: req.user_id });
-                    if (result.taken === "federation_block") federation_blocked++;
                     await recordAutomodAction({
                         user_id: user.id,
                         username: user.username,
@@ -70,17 +68,11 @@ router.post(
                 }
                 continue;
             }
-            const remote = batch.filter((user) => user.federated_instance);
-            for (const user of remote) {
-                await blockFederatedUser(user.id, reason, req.user_id);
-                federation_blocked++;
-            }
-            const local = batch.filter((user) => !user.federated_instance);
-            const sessions = local.length ? await Session.find({ where: { user_id: In(local.map((user) => user.id)) }, select: { session_id: true, last_seen_ip: true } }) : [];
+            const sessions = batch.length ? await Session.find({ where: { user_id: In(batch.map((user) => user.id)) }, select: { session_id: true, last_seen_ip: true } }) : [];
             const own = normalizeIp(req.ip);
             const ips = [
                 ...new Set(
-                    [...local.map((user) => normalizeIp(user.registration_ip)), ...sessions.map((session) => normalizeIp(session.last_seen_ip))].filter((ip): ip is string => !!ip),
+                    [...batch.map((user) => normalizeIp(user.registration_ip)), ...sessions.map((session) => normalizeIp(session.last_seen_ip))].filter((ip): ip is string => !!ip),
                 ),
             ];
             for (const ip of ips) {
@@ -100,7 +92,7 @@ router.post(
                 ips_banned.push(ip);
             }
             await endUserSessions(
-                local.map((user) => user.id),
+                batch.map((user) => user.id),
                 "IP address banned",
             );
             for (const user of batch)
@@ -109,7 +101,7 @@ router.post(
                     username: user.username,
                     rule: incident.kind,
                     source: "admin",
-                    action: user.federated_instance ? "federation_block" : "ban",
+                    action: "ban",
                     text: reason,
                     guild_id: incident.guild_id,
                     incident_id: incident.id,
@@ -131,7 +123,7 @@ router.post(
         await RaidIncident.update({ id: incident.id }, { actions: incident.actions });
         console.log(`[Admin] User ${req.user_id} ran ${body.action} on ${targets.length} account(s) of incident ${incident.id}: ${ids.join(", ")}`);
         const [serialized] = await serializeIncidents([incident]);
-        res.json({ processed: ids, skipped, messages_deleted, federation_blocked, ips_banned, ips_skipped, incident: serialized });
+        res.json({ processed: ids, skipped, messages_deleted, ips_banned, ips_skipped, incident: serialized });
     },
 );
 

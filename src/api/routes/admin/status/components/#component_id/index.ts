@@ -3,7 +3,7 @@ import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
 import { StatusComponent, StatusIncident } from "@spacebar/database";
 import { AdminStatusComponentUpdateSchema } from "@spacebar/schemas";
-import { serializeComponent } from "@spacebar/api/util";
+import { serializeComponent, validateComponentGroup } from "@spacebar/api/util";
 
 const router = Router({ mergeParams: true });
 
@@ -24,6 +24,7 @@ router.patch(
         if (body.description !== undefined) component.description = body.description?.trim() || null;
         if (body.status !== undefined) component.status = body.status;
         if (body.position !== undefined) component.position = body.position;
+        if (body.group_id !== undefined) component.group_id = await validateComponentGroup(component.id, body.group_id);
         component.updated_at = new Date();
         await component.save();
         res.json(serializeComponent(component));
@@ -42,6 +43,7 @@ router.delete(
         const id = req.params.component_id as string;
         await StatusComponent.findOneOrFail({ where: { id }, select: { id: true } });
         await StatusIncident.query(`UPDATE "status_incidents" SET "component_ids" = ${sqlArrayRemove('"component_ids"', "CAST($1 AS bigint)")}`, [id]);
+        await StatusComponent.update({ group_id: id }, { group_id: null });
         await StatusComponent.delete({ id });
         res.sendStatus(204);
     },

@@ -49,7 +49,7 @@ function SidebarFrame({ Frame, frame }: { Frame: (props: { frame: ProfileFrame }
 
 export default definePlugin({
     name: "FosscordFrames",
-    description: "Draws profile frames around the whole side profile in DMs, with room above and below the card for the art, instead of only their top layers in its footer, and lines Steam avatar frames up with the avatar.",
+    description: "Draws profile frames around the whole side profile in DMs, with room above and below the card for the art, instead of only their top layers in its footer.",
     authors: [FosscordAuthor],
     required: true,
     managedStyle,

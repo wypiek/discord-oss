@@ -1,10 +1,20 @@
 import { route } from "@spacebar/api/middlewares";
-import { User } from "@spacebar/database";
-import { mutualFriendIds, remoteMutualFriends } from "@spacebar/api/util/utility/federationRelay";
+import { Relationship, User } from "@spacebar/database";
 import { Request, Response, Router } from "express";
-import { UserMutualRelationsResponse } from "@spacebar/schemas";
+import { RelationshipType, UserMutualRelationsResponse } from "@spacebar/schemas";
 
 const router: Router = Router({ mergeParams: true });
+
+const friendIds = async (user_id: string) =>
+    new Set((await Relationship.find({ where: { from_id: user_id, type: RelationshipType.FRIEND }, select: { id: true, to_id: true } })).map((row) => row.to_id));
+
+export async function mutualFriendIds(viewer: string, target: string) {
+    const [mine, theirs] = await Promise.all([friendIds(viewer), friendIds(target)]);
+    const ids = new Set([...mine].filter((id) => theirs.has(id)));
+    ids.delete(viewer);
+    ids.delete(target);
+    return [...ids];
+}
 
 router.get(
     "/",
@@ -18,9 +28,8 @@ router.get(
         },
     }),
     async (req: Request, res: Response) => {
-        const target = await User.findOneOrFail({ where: { id: req.params.user_id as string }, select: { id: true, federated_instance: true } });
-        const relayed = target.federated_instance ? await remoteMutualFriends(req.user_id, target.id) : [];
-        const ids = await mutualFriendIds(req.user_id, target.id, relayed);
+        const target = await User.findOneOrFail({ where: { id: req.params.user_id as string }, select: { id: true } });
+        const ids = await mutualFriendIds(req.user_id, target.id);
         const mutual_relations: UserMutualRelationsResponse = [];
         for (const id of ids) {
             const user = await User.getPublicUser(id);

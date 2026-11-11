@@ -1,26 +1,64 @@
 export const INSTANCE_ICON_PATH =
-    "M2.5 9.5C2.5 7.5 3 4.5 4.2 3.2C4.8 2.6 5.6 2.7 6.1 3.2L8.6 5.8C10.8 5.3 13.2 5.3 15.4 5.8L17.9 3.2C18.4 2.7 19.2 2.6 19.8 3.2C21 4.5 21.5 7.5 21.5 9.5L21.5 13.5C21.5 18.2 17.5 20.8 12 20.8C6.5 20.8 2.5 18.2 2.5 13.5ZM6.5 13a1.9 2.5 0 1 0 3.8 0a1.9 2.5 0 1 0 -3.8 0ZM13.7 13a1.9 2.5 0 1 0 3.8 0a1.9 2.5 0 1 0 -3.8 0Z";
-export const INSTANCE_WHISKERS_PATH =
-    "M3.779 14.08L0.879 13.08A0.55 0.55 0 0 0 0.521 14.12L3.421 15.12A0.55 0.55 0 0 0 3.779 14.08ZM3.444 16.073L0.744 16.873A0.55 0.55 0 0 0 1.056 17.927L3.756 17.127A0.55 0.55 0 0 0 3.444 16.073ZM20.579 15.12L23.479 14.12A0.55 0.55 0 0 0 23.121 13.08L20.221 14.08A0.55 0.55 0 0 0 20.579 15.12ZM20.244 17.127L22.944 17.927A0.55 0.55 0 0 0 23.256 16.873L20.556 16.073A0.55 0.55 0 0 0 20.244 17.127Z";
+    "M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z";
+export const INSTANCE_ICON_WIDTH = 127.14;
+export const INSTANCE_ICON_HEIGHT = 96.36;
 
-export const BRAND_COLOR = "#7B5CFF";
+export const BRAND_COLOR = "#3BA3E8";
+
+const round = (n: number) => Math.round(n * 1000) / 1000;
+
+export const glyphMarkup = (x: number, y: number, size: number, fill: string) => {
+    const scale = size / INSTANCE_ICON_WIDTH;
+    const top = y + (size - INSTANCE_ICON_HEIGHT * scale) / 2;
+    return `<path fill="${fill}" transform="translate(${round(x)} ${round(top)}) scale(${round(scale)})" d="${INSTANCE_ICON_PATH}"/>`;
+};
+
+const GLYPH_INSET = 0.1992;
+
+export const iconBodyMarkup = (size: number, background = BRAND_COLOR) =>
+    `<circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="${background}"/>${glyphMarkup(size * GLYPH_INSET, size * GLYPH_INSET, size * (1 - 2 * GLYPH_INSET), "#fff")}`;
+
+export const iconSvg = (size: number) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${iconBodyMarkup(size)}</svg>`;
 
 export const APP_THEME_COLOR = "#121214";
 
 export const escapeXml = (text: string) => text.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export const iconTileMarkup = (iconUrl: string | null) =>
-    iconUrl
-        ? `<img class="brand-icon" src="${escapeXml(iconUrl)}" alt="" />`
-        : `<svg class="brand-icon" viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="15" fill="${BRAND_COLOR}"/><g transform="translate(6 6) scale(1.5)" fill="#fff"><path fill-rule="evenodd" d="${INSTANCE_ICON_PATH}"/><path d="${INSTANCE_WHISKERS_PATH}"/></g></svg>`;
+    iconUrl ? `<img class="brand-icon" src="${escapeXml(iconUrl)}" alt="" />` : `<svg class="brand-icon" viewBox="0 0 48 48" aria-hidden="true">${iconBodyMarkup(48)}</svg>`;
 
-export const brandPageMarkup = (html: string, name: string, iconUrl: string | null) =>
-    html.replaceAll("__INSTANCE_NAME__", escapeXml(name)).replaceAll("__INSTANCE_ICON__", iconTileMarkup(iconUrl));
+export const logoMarkup = (name: string, iconUrl: string | null, logoUrl: string | null) =>
+    logoUrl
+        ? `<img class="brand-logo" src="${escapeXml(logoUrl)}" alt="${escapeXml(name)}" />`
+        : `<span class="brand-lockup">${iconTileMarkup(iconUrl)}<span class="brand-name">${escapeXml(name)}</span></span>`;
+
+const WORDMARK_FONT_SIZE = 100;
+
+const wordmarkAdvance = (char: string) => {
+    if (/[iljtfI1.,'!:;|]/.test(char)) return 44;
+    if (/[mwMW]/.test(char)) return 117;
+    if (/[A-Z]/.test(char)) return 85;
+    if (/[a-z]/.test(char)) return 76;
+    if (/[0-9]/.test(char)) return 70;
+    if (char === " ") return 26;
+    return 84;
+};
+
+export const footerWordmarkMarkup = (name: string, logoUrl: string | null = null) => {
+    if (logoUrl) return `<img class="footer-word-logo" src="${escapeXml(logoUrl)}" alt="" />`;
+    const width = Math.max(1, Math.round([...name].reduce((total, char) => total + wordmarkAdvance(char), 0)));
+    return `<svg class="footer-word-text" viewBox="0 0 ${width} 96" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><text x="0" y="74" textLength="${width}" lengthAdjust="spacing" font-size="${WORDMARK_FONT_SIZE}" fill="currentColor">${escapeXml(name)}</text></svg>`;
+};
+
+export const brandPageMarkup = (html: string, name: string, iconUrl: string | null, logoUrl: string | null = null) =>
+    html
+        .replaceAll("__INSTANCE_WORDMARK__", footerWordmarkMarkup(name, logoUrl))
+        .replaceAll("__INSTANCE_LOGO__", logoMarkup(name, iconUrl, logoUrl))
+        .replaceAll("__INSTANCE_NAME__", escapeXml(name))
+        .replaceAll("__INSTANCE_ICON__", iconTileMarkup(iconUrl));
 
 const iconMarkup = (x: number, y: number, size: number, iconUri: string | null) =>
-    iconUri
-        ? `<image href="${escapeXml(iconUri)}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`
-        : `<g fill="#fff" transform="translate(${x} ${y}) scale(${size / 24})"><path fill-rule="evenodd" d="${INSTANCE_ICON_PATH}"/><path d="${INSTANCE_WHISKERS_PATH}"/></g>`;
+    iconUri ? `<image href="${escapeXml(iconUri)}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>` : glyphMarkup(x, y, size, "#fff");
 
 export const wordmarkMarkup = (name: string, box?: [number, number], iconUri: string | null = null) => {
     const width = Math.ceil(34 + [...name].length * 12.5);
@@ -35,7 +73,7 @@ export const placeholderAvatarSvg = (size: number, background: string, foregroun
     `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 256 256"><circle cx="128" cy="128" r="128" fill="${background}"/>${
         iconUri
             ? `<image href="${escapeXml(iconUri)}" x="62" y="62" width="132" height="132" preserveAspectRatio="xMidYMid meet" opacity="0.6"/>`
-            : `<g fill="${foreground}" transform="translate(62 62) scale(5.5)"><path fill-rule="evenodd" d="${INSTANCE_ICON_PATH}"/><path d="${INSTANCE_WHISKERS_PATH}"/></g>`
+            : glyphMarkup(62, 62, 132, foreground)
     }</svg>`;
 
 export const BRANDED_CLIENT_ASSETS: Record<string, { wordmark?: boolean; svg: (name: string, iconUri: string | null) => string }> = {

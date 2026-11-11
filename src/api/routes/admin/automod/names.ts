@@ -1,5 +1,5 @@
 import { Request, Response, Router } from "express";
-import { In, IsNull, MoreThan } from "typeorm";
+import { In, MoreThan } from "typeorm";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
 import { User } from "@spacebar/database";
@@ -27,7 +27,7 @@ router.get(
         let done = false;
         while (scanned < SCAN_LIMIT) {
             const users = await User.find({
-                where: { id: MoreThan(after), deleted: false, federated_instance: IsNull() },
+                where: { id: MoreThan(after), deleted: false },
                 select: { id: true, username: true, discriminator: true, global_name: true, avatar: true, disabled: true, bot: true, created_at: true },
                 order: { id: "ASC" },
                 take: BATCH,

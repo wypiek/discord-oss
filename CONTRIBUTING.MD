@@ -2,11 +2,11 @@
 
 **agent contributions are allowed during the alpha.** Use a frontier model such as Opus 5.5, say so in the pull request description, and test your change for bugs and vulnerabilities.
 
-Meowcord isn't ready for general use. Don't host a public instance unless it is labelled unstable and unofficial.
+Discord OSS isn't ready for general use. Don't host a public instance unless it is labelled unstable and unofficial.
 
 ## What we won't merge
 
-- SMS support, Quests, Orbs, ads, sponsored content, upsells, download-the-app prompts or mentions of Nitro and boosting. Every account has Premium, every server is boost level 3 with 33 boosts, nothing can be bought and every Shop item is free. The Equicord plugins in `client/plugins` remove the paid parts of the client.
+- SMS support, Quests, Orb balances or ways to earn Orbs (the Orbs Shop tab stays, with every item free), ads, sponsored content, upsells, download-the-app prompts or mentions of Nitro and boosting. Every account has Premium, every server is boost level 3 with 33 boosts, nothing can be bought and every Shop item is free. The Equicord plugins in `client/plugins` remove the paid parts of the client.
 - Captchas other than [Cap](https://capjs.js.org).
 - Anything that hides or turns off pride flags, or adds heterosexual or cisgender flags. `scripts/tests/pride-permanent.test.cjs` enforces this.
 - Changes to the README.
@@ -66,11 +66,11 @@ To use SQLite instead of PostgreSQL, see [setup.md](docs/self-hosting/setup.md#s
 
 ## Configuration
 
-`CONFIG_PATH` points the server at a JSON file. The server fills in every missing key with its default and writes the file back. Without `CONFIG_PATH`, the configuration lives in the database. The admin dashboard edits the same values. These keys are specific to Meowcord:
+`CONFIG_PATH` points the server at a JSON file. The server fills in every missing key with its default and writes the file back. Without `CONFIG_PATH`, the configuration lives in the database. The admin dashboard edits the same values. These keys are specific to Discord OSS:
 
 | Key | What it controls |
 | --- | --- |
-| `client.instanceName` | The name that replaces Discord in the client. `Meowcord` by default. |
+| `client.instanceName` | The name that replaces Discord in the client. `Discord OSS` by default. |
 | `client.icon`, `client.logo` | Square icon and wordmark, as a URL or a path relative to the repository root. The icon falls back to `general.image`, then `assets/icon.png`. |
 | `client.helpUrl` | Where help links go. Without it the help button is hidden. |
 | `client.experiments` | Client experiment names mapped to the variant to assign. |
@@ -150,9 +150,7 @@ Most smoke scripts need `TEST_ACCOUNT_PATH` pointing at the seeded account file,
 
 ## Listing an instance
 
-Public instances are in `instances.json`. Add an entry with `id`, the lowercase host with the port when it isn't 443, plus `name`, `url` and `source_url` or `null`. Run `bun scripts/instances-md.mjs` to regenerate `instances.md`, and open a pull request with both files. `scripts/tests/instances-list.test.cjs` fails when they differ. An instance that moved keeps its entry, changes `id` and `url`, and lists the old ids in `previous_ids`, see [change-url.md](docs/self-hosting/change-url.md). [verification.md](docs/self-hosting/verification.md) lists what we check before approving an instance.
-
-The registry is a Cloudflare Worker in `extra/registry` with its own `package.json`. Run `bun install` and `bun run test` in that folder after changing it.
+Public instances are in `instances.json`. Add an entry with `id`, the lowercase host with the port when it isn't 443, plus `name`, `url` and `source_url` or `null`. Run `bun scripts/instances-md.mjs` to regenerate `instances.md`, and open a pull request with both files. `scripts/tests/instances-list.test.cjs` fails when they differ. An instance that moved keeps its entry and changes `id` and `url`, see [change-url.md](docs/self-hosting/change-url.md). [verification.md](docs/self-hosting/verification.md) lists what we check before listing an instance.
 
 ## Releases
 

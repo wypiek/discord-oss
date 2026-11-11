@@ -20,7 +20,7 @@ function load({ storage, fetch, policy = {}, fetchPublicUrl }) {
             fetch,
             console: { ...console, warn: (message) => warnings.push(message) },
             require: (name) => {
-                if (name === "@spacebar/util") return { Config: { get: () => ({ externalRequests: policy }) }, DECORATION_ART_MAX_BYTES: 10485760, fetchPublicUrl };
+                if (name === "@spacebar/util") return { Config: { get: () => ({ externalRequests: policy }) }, fetchPublicUrl };
                 if (name === "../../util/config/types/ExternalRequestConfiguration") return { allowsCdnUpstream: () => true };
                 if (name === "./Storage") return { storage };
                 return require(name);
@@ -94,16 +94,16 @@ test("art from another host goes through the outbound proxy fetch with no redire
     const { fetchUpstreamAsset } = load({
         storage,
         fetch: () => {
-            throw new Error("Steam art must not use the direct fetch");
+            throw new Error("art from another host must not use the direct fetch");
         },
         fetchPublicUrl: async (...args) => {
             proxied.push(args);
             return new Response(png, { status: 200 });
         },
     });
-    const url = "https://shared.fastly.steamstatic.com/community_assets/images/items/795040/7b3b929ff2aac4b127cb2d47ff5d55846b5f6012.png";
-    assert.ok(await fetchUpstreamAsset("steam-frames/a_1f7d6a24684dc9e8d004d4c70baa2ec6/animated", url));
-    assert.ok(await fetchUpstreamAsset("steam-frames/a_1f7d6a24684dc9e8d004d4c70baa2ec6/animated", url));
+    const url = "https://images.example.com/art/7b3b929ff2aac4b127cb2d47ff5d55846b5f6012.png";
+    assert.ok(await fetchUpstreamAsset("external-art/7b3b929ff2aac4b127cb2d47ff5d55846b5f6012", url));
+    assert.ok(await fetchUpstreamAsset("external-art/7b3b929ff2aac4b127cb2d47ff5d55846b5f6012", url));
     assert.equal(proxied.length, 1);
     assert.equal(proxied[0][0], url);
     assert.equal(proxied[0][2], 0);

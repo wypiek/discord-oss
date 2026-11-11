@@ -23,7 +23,8 @@ test("navigation policy selects the route table instead of the forwarding search
     assert.equal(nitro.find.test(table), true);
     assert.equal(quests.find.test(table), true);
     const updated = table.replace(nitro.match, "$1null").replace(quests.match, "$1null");
-    for (const route of ["NITRO_HOME", "SHOP_ORBS_TAB", "QUEST_ORBS", "QUEST_HOME"]) assert.ok(updated.includes(`[routes.ids.${route}]:null`));
+    for (const route of ["NITRO_HOME", "QUEST_ORBS", "QUEST_HOME"]) assert.ok(updated.includes(`[routes.ids.${route}]:null`));
+    assert.ok(updated.includes('[routes.ids.SHOP_ORBS_TAB]:[intl.intl.string(intl.t.Orbs),intl.intl.string(intl.t["other/key"])]'));
     assert.ok(updated.includes("[routes.ids.SHOP]:[intl.intl.string(intl.t.FreeShop)]"));
     assert.ok(updated.includes("[routes.ids.APPS_HOME]:[intl.intl.string(intl.t.Apps)]"));
 });

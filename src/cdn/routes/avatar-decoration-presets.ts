@@ -1,7 +1,6 @@
 import { Router, Response, Request } from "express";
 import { fileTypeFromBuffer } from "file-type";
 import { AvatarDecoration } from "@spacebar/database";
-import { steamFrameArtUrl, steamFrameByAsset } from "@spacebar/util";
 import { storage, setCacheControl, setCacheControlNotFound, fetchUpstreamAsset, safeMediaType } from "../util";
 
 const router = Router({ mergeParams: true });
@@ -11,14 +10,6 @@ router.get("/:avatar_decoration_data_asset", setCacheControl, async (req: Reques
     const path = `avatar-decoration-presets/${avatar_decoration_data_asset}`;
 
     const file = await storage.get(path);
-    const steam = file ? undefined : steamFrameByAsset(avatar_decoration_data_asset);
-    if (steam) {
-        const slot = req.query.passthrough === "false" ? "static" : "animated";
-        const art = await fetchUpstreamAsset(`steam-frames/${steam.asset}/${slot}`, steamFrameArtUrl(steam, slot));
-        if (!art) return setCacheControlNotFound(req, res);
-        res.set("Content-Type", safeMediaType((await fileTypeFromBuffer(art))?.mime));
-        return res.send(art);
-    }
     if (!file) {
         if (await tryReturnFromCollectiblesShop(req, res, avatar_decoration_data_asset)) return;
         const [asset] = avatar_decoration_data_asset.split(".");

@@ -1,14 +1,13 @@
 import { createHash } from "node:crypto";
 import { In, Like, MoreThan } from "typeorm";
-import { CloudAttachment, FederationBlock, Guild, Member, Message, RateLimit, User } from "@spacebar/database";
-import { ApiError, Config, DiscordApiErrors, effectiveRightsSync, emitEvent, loadStaffRoles, MessageDeleteBulkEvent, Permissions, Rights, Snowflake } from "@spacebar/util";
+import { CloudAttachment, Guild, Member, Message, RateLimit, User } from "@spacebar/database";
+import { ApiError, Config, DiscordApiErrors, effectiveRightsSync, emitEvent, loadStaffRoles, MessageDeleteBulkEvent, Permissions, Rights } from "@spacebar/util";
 import { AutomodSpamAction } from "@spacebar/util/config/types/AutomodConfiguration";
 import { ContactKind, escalateSpamAction, SpamDetector, SpamHit, SpamMessageRef, strongerSpamAction } from "@spacebar/util/util/SpamDetector";
 import { UserFlags } from "@spacebar/schemas";
 import { recordAutomodAction, revokeUserSessions } from "./instanceAutomod";
 import { recordIncident } from "./raidIncidents";
 import { describeScam, ownHosts, scamMatchFor } from "./scamGuard";
-import { reportToHomeInstance } from "./automodReports";
 import { emitMemberUpdate, recordMentionSpam, restoreRaidState } from "./safety";
 import { createdAtOf, exemptionFrom, PolicyAccount, rulePolicy } from "./automodPolicy";
 import { policyKeyOf } from "@spacebar/util/util/AutomodPolicy";
@@ -39,7 +38,6 @@ const describeHit = (hit: SpamHit) =>
 export const ENCRYPTED_PLACEHOLDER = "🔒 Encrypted message";
 
 export interface SpamAccount {
-    federated_instance?: string | null;
     created_at?: Date | string | null;
     verified?: boolean | null;
     rights?: string | null;
@@ -70,27 +68,6 @@ export async function deleteSpamMessages(refs: SpamMessageRef[], retry = true): 
     return found.length;
 }
 
-export async function blockFederatedUser(user_id: string, reason: string, actor_id?: string | null) {
-    const { canonicalOf } = await import("./federationIds.js");
-    const { invalidateDirectory } = await import("./federation.js");
-    const { invalidateTrust } = await import("./federationNetwork.js");
-    const target = (await canonicalOf(user_id)).toLowerCase();
-    if (!(await FederationBlock.exists({ where: { kind: "user", target } })))
-        await FederationBlock.create({ id: Snowflake.generate(), kind: "user", target, reason, created_at: new Date(), created_by: actor_id ?? null }).save();
-    invalidateDirectory();
-    invalidateTrust();
-    return target;
-}
-
-export async function unblockFederatedUser(user_id: string) {
-    const { canonicalOf } = await import("./federationIds.js");
-    const { invalidateDirectory } = await import("./federation.js");
-    const { invalidateTrust } = await import("./federationNetwork.js");
-    await FederationBlock.delete({ kind: "user", target: (await canonicalOf(user_id)).toLowerCase() });
-    invalidateDirectory();
-    invalidateTrust();
-}
-
 async function timeoutInGuilds(user_id: string, guild_ids: string[], minutes: number) {
     const until = new Date(Date.now() + Math.max(1, minutes) * 60 * 1000);
     const guilds = guild_ids.length ? await Guild.find({ where: { id: In(guild_ids) }, select: { id: true, owner_id: true } }) : [];
@@ -113,10 +90,10 @@ async function muteOnInstance(user_id: string, minutes: number) {
 }
 
 export async function applySpamAction(
-    user: Pick<User, "id" | "federated_instance">,
+    user: Pick<User, "id">,
     action: AutomodSpamAction,
     opts: { guild_ids: string[]; reason: string; actor_id?: string | null },
-): Promise<{ taken: AutomodSpamAction | "federation_block"; until: Date | null }> {
+): Promise<{ taken: AutomodSpamAction; until: Date | null }> {
     const config = Config.get().automod.spam;
     if (action === "log" || action === "delete") return { taken: action, until: null };
     if (action === "timeout") {
@@ -126,14 +103,9 @@ export async function applySpamAction(
     }
     const until = action === "suspend" ? new Date(Date.now() + Math.max(1, config.suspendHours) * 60 * 60 * 1000) : null;
     if (action === "suspend") await User.update({ id: user.id }, { suspended_until: until });
-    else if (action === "hold") {
-        if (!user.federated_instance) await User.update({ id: user.id }, { join_status: "pending" });
-    } else await User.update({ id: user.id }, staffDisableColumns());
+    else if (action === "hold") await User.update({ id: user.id }, { join_status: "pending" });
+    else await User.update({ id: user.id }, staffDisableColumns());
     await revokeUserSessions(user.id, action === "suspend" ? "Suspended by automod" : action === "hold" ? "Held for review by automod" : "Disabled by automod");
-    if (user.federated_instance) {
-        await blockFederatedUser(user.id, opts.reason, opts.actor_id);
-        return { taken: "federation_block", until };
-    }
     return { taken: action, until };
 }
 
@@ -200,7 +172,7 @@ async function withPolicies(hits: SpamHit[], check: SpamCheck): Promise<SpamHit[
     if (!hits.length) return hits;
     const others = [...new Set(hits.flatMap((hit) => hit.users))].filter((id) => id !== check.user_id);
     const accounts: PolicyAccount[] = others.length
-        ? await User.find({ where: { id: In(others) }, select: { id: true, bot: true, verified: true, rights: true, federated_instance: true, created_at: true } })
+        ? await User.find({ where: { id: In(others) }, select: { id: true, bot: true, verified: true, rights: true, created_at: true } })
         : [];
     const subjects = new Map<string, PolicyAccount>(accounts.map((account) => [account.id, account]));
     subjects.set(check.user_id, { ...check.account, id: check.user_id, bot: !!check.bot });
@@ -243,7 +215,6 @@ export interface ContactCheck {
     rights?: Rights;
     bot?: boolean;
     system?: boolean;
-    federated?: boolean;
     account?: SpamAccount | null;
 }
 
@@ -263,7 +234,6 @@ export async function checkContactSpam(check: ContactCheck) {
     if (
         check.kind === "dm" &&
         dms.enabled &&
-        !check.federated &&
         dms.newAccountHours > 0 &&
         dms.newAccountDmsPerHour > 0 &&
         now - createdAt < dms.newAccountHours * 60 * 60 * 1000 &&
@@ -322,7 +292,7 @@ async function enforceSpamHits(hits: SpamHit[], check: SpamCheck) {
     const snap = await loadStaffRoles();
     const accounts = await User.find({
         where: { id: In(ids) },
-        select: { id: true, username: true, federated_instance: true, rights: true, system: true, flags: true },
+        select: { id: true, username: true, rights: true, system: true, flags: true },
     });
     const targets = new Map(
         accounts
@@ -405,13 +375,6 @@ async function enforceSpamHits(hits: SpamHit[], check: SpamCheck) {
                 deleted_messages: deletedBy.get(id) ?? 0,
                 incident_id: incident?.id ?? null,
             }).catch((error) => console.error("[Spam] couldn't log spam", error));
-        }
-        for (const id of users) {
-            const user = targets.get(id);
-            if (!user?.federated_instance) continue;
-            reportToHomeInstance(user, { rule: hit.rule, action: outcome.get(id)?.taken ?? hit.action, excerpt: check.content ?? "", detail: describeHit(hit) }).catch((error) =>
-                console.error("[Automod] couldn't report to the home instance", error?.message ?? error),
-            );
         }
         if (check.channel.guild_id && (hit.rule === "everyone_spam" || hit.rule === "mention_spam"))
             for (const id of users) await recordMentionSpam(check.channel.guild_id, id).catch((error) => console.error("[Spam] mention raid check failed", error));

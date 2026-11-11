@@ -19,7 +19,6 @@ test("ban routes need the server right and check staff hierarchy before writing"
     }
     const writes = fs.readFileSync(routes[1], "utf8");
     assert.match(writes, /await assertCanActOnUser\(req, req\.params\.user_id as string\)/);
-    assert.match(writes, /assertMirrorGuildEditable\(guild\)/);
 });
 
 const handler = (router, method) => router.stack.find((layer) => layer.route?.stack.some((entry) => entry.method === method)).route.stack.at(-1).handle;

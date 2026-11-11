@@ -36,7 +36,6 @@ if [ ! -f "$state/jwt.key" ]; then
     openssl ecparam -name secp521r1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -out "$state/jwt.key"
     openssl ec -in "$state/jwt.key" -pubout -out "$state/jwt.key.pub" 2>/dev/null
 fi
-[ -f "$state/federation.key" ] || openssl genpkey -algorithm ed25519 -out "$state/federation.key"
 [ -f "$state/secrets" ] || printf 'REQUEST_SIGNATURE=%s\nCDN_SIGNATURE_KEY=%s\nEVENT_SECRET=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" >"$state/secrets"
 . "$state/secrets"
 [ -f "$state/e2ee-recovery.key" ] || openssl rand -hex 32 >"$state/e2ee-recovery.key"
@@ -49,7 +48,6 @@ config=$(cat <<JSON | tr -d '\n '
   "cdn": { "endpointPublic": "$origin/", "endpointPrivate": "$origin/" },
   "gateway": { "endpointPublic": "ws://localhost:$port/" },
   "security": { "requestSignature": "$REQUEST_SIGNATURE", "cdnSignatureKey": "$CDN_SIGNATURE_KEY", "captcha": { "blockAutomatedBrowsers": false } },
-  "federation": { "announce": false },
   "limits": { "rate": { "routes": { "auth": { "login": { "count": 1000, "window": 60 }, "register": { "count": 1000, "window": 60 } } } } }
 }
 JSON
@@ -67,7 +65,6 @@ for worker in api gateway router; do
             echo "JWT_PUBLIC_KEY=\"$(pem "$state/jwt.key.pub")\""
         fi
         if [ "$worker" = api ]; then
-            echo "FEDERATION_KEY=\"$(pem "$state/federation.key")\""
             echo "E2EE_RECOVERY_MASTER_KEY=$(cat "$state/e2ee-recovery.key")"
         fi
     } >"workers/$worker/.dev.vars"

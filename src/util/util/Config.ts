@@ -48,15 +48,14 @@ async function loadConfig() {
 
     const identityBlockedTerms = config.user?.identityBlockedTerms;
     const automodWordLists = config.automod?.wordLists;
-    const federationPeers = config.federation?.peers;
     const storedLists = AUTOMOD_STRING_LISTS.map((path) => [path, readPath(config, path)] as const);
     config = OrmUtils.mergeDeep({}, { ...new ConfigValue() }, config);
     if (Array.isArray(identityBlockedTerms)) config.user.identityBlockedTerms = [...identityBlockedTerms];
     if (Array.isArray(automodWordLists)) config.automod.wordLists = automodWordLists.map((list) => ({ ...list, terms: [...(list.terms ?? [])] }));
     for (const [path, stored] of storedLists) if (Array.isArray(stored)) writePath(config, path, [...stored]);
-    if (Array.isArray(federationPeers)) config.federation.peers = [...federationPeers];
     replaceStaleDefaults(config);
     delete (config.security?.captcha as { service?: unknown } | undefined)?.service;
+    dropRemovedKeys(config);
 
     // TODO: factor this out someday
     if (process.env.CDN_SIGNATURE_PATH) config.security.cdnSignatureKey = await Config.readSecret("CDN_SIGNATURE_PATH");
@@ -148,6 +147,8 @@ const StaleDefaults: [string, JsonValue, JsonValue][] = [
     ["general.instanceDescription", "This is a Spacebar instance made in the pre-release days", null],
     ["client.instanceName", "Fosscord", DEFAULT_INSTANCE_NAME],
     ["general.instanceName", "Fosscord", DEFAULT_INSTANCE_NAME],
+    ["client.instanceName", "Meowcord", DEFAULT_INSTANCE_NAME],
+    ["general.instanceName", "Meowcord", DEFAULT_INSTANCE_NAME],
 ];
 
 function replaceStaleDefaults(config: ConfigValue) {
@@ -158,6 +159,17 @@ function replaceStaleDefaults(config: ConfigValue) {
         if (parent && JSON.stringify(parent[last]) === JSON.stringify(previous)) parent[last] = next;
     }
     config.defaultsRevision = StaleDefaults.length;
+}
+
+const REMOVED_KEYS = ["federation", "automod.federation", "externalRequests.steamAssetFallback"];
+
+function dropRemovedKeys(config: ConfigValue) {
+    for (const path of REMOVED_KEYS) {
+        const keys = path.split(".");
+        const last = keys.pop()!;
+        const parent = keys.length ? readPath(config, keys.join(".")) : config;
+        if (parent && typeof parent === "object") delete (parent as Record<string, unknown>)[last];
+    }
 }
 
 const AUTOMOD_STRING_LISTS = [

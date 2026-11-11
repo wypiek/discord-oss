@@ -9,7 +9,7 @@
   });
 
   // client/e2ee/src/attachmentUrl.ts
-  var attachmentCiphertextUrl = (value, channelId, filename, origin, hostChannel) => {
+  var attachmentCiphertextUrl = (value, channelId, filename, origin) => {
     let url;
     try {
       url = new URL(value, origin);
@@ -24,14 +24,11 @@
       return value;
     if (!/^\d+$/.test(channelId))
       return null;
-    const path = /^(?:\/federation-media\/([^/]+))?\/attachments\/(\d+)\/(\d+)\/([^/]+)$/.exec(url.pathname);
-    if (!path)
-      return null;
-    const host = hostChannel && /^@(\d{1,20})@([a-z0-9.:-]+)$/.exec(hostChannel);
-    if (path[1] ? !host || path[1].toLowerCase() !== host[2] || path[2] !== host[1] : path[2] !== channelId)
+    const path = /^\/attachments\/(\d+)\/(\d+)\/([^/]+)$/.exec(url.pathname);
+    if (!path || path[1] !== channelId)
       return null;
     try {
-      const decoded = decodeURIComponent(path[4]);
+      const decoded = decodeURIComponent(path[3]);
       if (/[/\\\0]/.test(decoded) || decoded !== filename)
         return null;
     } catch {
@@ -256,7 +253,7 @@ ${final ? 1 : 0}`);
     video.onerror = () => done(null);
     video.src = src;
   });
-  var createAttachments = (canonicalOf) => {
+  var createAttachments = () => {
     const registry = new Map;
     const uploads = new Map;
     const names = new Map;
@@ -404,7 +401,7 @@ ${final ? 1 : 0}`);
           const meta = metas.find((m) => m.name === attachment.filename);
           if (!meta || typeof attachment.url !== "string")
             return attachment;
-          const ciphertextUrl = attachmentCiphertextUrl(attachment.url, message.channel_id, meta.name, location.origin, canonicalOf?.(message.channel_id));
+          const ciphertextUrl = attachmentCiphertextUrl(attachment.url, message.channel_id, meta.name, location.origin);
           if (!ciphertextUrl)
             return attachment;
           const path = new URL(`${FILE_PREFIX}${message.channel_id}/${attachment.id}/${encodeURIComponent(meta.filename)}`, location.origin).pathname;
@@ -2041,20 +2038,20 @@ ${publicKey}`;
   function hexCharCodesToInt(a, b) {
     return (a & 15) + (a >> 6 | a >> 3 & 8) << 4 | (b & 15) + (b >> 6 | b >> 3 & 8);
   }
-  function writeHexToUInt8(buf, str2) {
-    const size = str2.length >> 1;
+  function writeHexToUInt8(buf, str) {
+    const size = str.length >> 1;
     for (let i = 0;i < size; i++) {
       const index = i << 1;
-      buf[i] = hexCharCodesToInt(str2.charCodeAt(index), str2.charCodeAt(index + 1));
+      buf[i] = hexCharCodesToInt(str.charCodeAt(index), str.charCodeAt(index + 1));
     }
   }
-  function hexStringEqualsUInt8(str2, buf) {
-    if (str2.length !== buf.length * 2) {
+  function hexStringEqualsUInt8(str, buf) {
+    if (str.length !== buf.length * 2) {
       return false;
     }
     for (let i = 0;i < buf.length; i++) {
       const strIndex = i << 1;
-      if (buf[i] !== hexCharCodesToInt(str2.charCodeAt(strIndex), str2.charCodeAt(strIndex + 1))) {
+      if (buf[i] !== hexCharCodesToInt(str.charCodeAt(strIndex), str.charCodeAt(strIndex + 1))) {
         return false;
       }
     }
@@ -2450,14 +2447,14 @@ ${publicKey}`;
   }
   function argon2Internal(options) {
     return __awaiter(this, undefined, undefined, function* () {
-      var _a2;
+      var _a;
       const { parallelism, iterations, hashLength } = options;
       const password = getUInt8Buffer(options.password);
       const salt = getUInt8Buffer(options.salt);
       const version = 19;
       const hashType = getHashType(options.hashType);
       const { memorySize } = options;
-      const secret = getUInt8Buffer((_a2 = options.secret) !== null && _a2 !== undefined ? _a2 : "");
+      const secret = getUInt8Buffer((_a = options.secret) !== null && _a !== undefined ? _a : "");
       const [argon2Interface, blake512] = yield Promise.all([
         WASMInterface(wasmJson$k, 1024),
         createBLAKE2b(512)
@@ -2511,7 +2508,7 @@ ${publicKey}`;
     });
   }
   var validateOptions$3 = (options) => {
-    var _a2;
+    var _a;
     if (!options || typeof options !== "object") {
       throw new Error("Invalid options parameter. It requires an object.");
     }
@@ -2529,7 +2526,7 @@ ${publicKey}`;
     if (options.salt.length < 8) {
       throw new Error("Salt should be at least 8 bytes long");
     }
-    options.secret = getUInt8Buffer((_a2 = options.secret) !== null && _a2 !== undefined ? _a2 : "");
+    options.secret = getUInt8Buffer((_a = options.secret) !== null && _a !== undefined ? _a : "");
     if (!Number.isInteger(options.iterations) || options.iterations < 1) {
       throw new Error("Iterations should be a positive number");
     }
@@ -3427,6 +3424,13 @@ ${userId}`)));
       "Nie udało się odszyfrować tej wiadomości",
       "无法解密此消息"
     ],
+    "This message wasn't encrypted for you": [
+      "Diese Nachricht wurde nicht für dich verschlüsselt",
+      "Ce message n'a pas été chiffré pour vous",
+      "このメッセージはあなた宛てに暗号化されていません",
+      "Ta wiadomość nie została zaszyfrowana dla Ciebie",
+      "此消息未为你加密"
+    ],
     "Sent before encryption was reset": [
       "Vor dem Zurücksetzen der Verschlüsselung gesendet",
       "Envoyé avant la réinitialisation du chiffrement",
@@ -3691,13 +3695,6 @@ ${userId}`)));
     }
   };
   var binding = (mid, nonce) => mid ? `m:${mid}` : `n:${nonce ?? ""}`;
-  var canonicalInstance = (canonical) => canonical.slice(canonical.indexOf("@", 1) + 1);
-  var canonicalSnowflake = (canonical) => canonical.slice(1, canonical.indexOf("@", 1));
-  var MAX_BINDING_VARIANTS = 8;
-  var MOVES_TTL = 10 * 60 * 1000;
-  var isCanonical = (value) => typeof value === "string" && /^@\d{1,20}@[a-z0-9.:-]+$/.test(value);
-  var LOCAL_REFERENCE = /<(@!?|@&|#)(\d{15,20})>|<(a?):(\w{1,32}):(\d{15,20})>/g;
-  var CANONICAL_REFERENCE = /<(@!?|@&|#)(@\d{1,20}@[a-z0-9.:-]+)>|<(a?):(\w{1,32}):(@\d{1,20}@[a-z0-9.:-]+)>/g;
   var messageAad = (channelId, senderId, senderDevice, bind) => `fosscord-e2ee/v1/msg
 ${channelId}
 ${senderId}
@@ -3797,11 +3794,6 @@ ${sig}`;
     directory = new BoundedMap(2000);
     members = new BoundedMap(500);
     profiles = new BoundedMap(1000);
-    canonical = new BoundedMap(5000);
-    resolvedCanonical = new BoundedMap(5000);
-    localOf = new BoundedMap(5000);
-    federation = true;
-    moves = null;
     plaintext = new BoundedMap(PLAINTEXT_CACHE_SIZE);
     contentKeys = new BoundedMap(PLAINTEXT_CACHE_SIZE);
     listeners = new Set;
@@ -3914,9 +3906,9 @@ ${sig}`;
       await this.refresh();
     }
     serialized(task) {
-      const run2 = this.queue.then(task);
-      this.queue = run2.then(() => {}, () => {});
-      return run2;
+      const run = this.queue.then(task);
+      this.queue = run.then(() => {}, () => {});
+      return run;
     }
     exclusive(task) {
       return navigator.locks ? navigator.locks.request(`fosscord-e2ee-keys:${this.userId}`, task) : task();
@@ -4205,10 +4197,10 @@ ${digest}`;
         this.secret = null;
         this.backupKeyPair = null;
       } else if (!this.backup && !state.channels.length && this.identity?.publicKey !== state.identity_key && this.passwordValue()) {
-        const password2 = this.passwordValue();
+        const password = this.passwordValue();
         identityJwk = await generateExportable("Ed25519");
         state = await this.api.request("post", "/users/@me/e2ee/reset", {
-          password: password2,
+          password,
           public_key: identityJwk.x
         });
         await this.wipeLocal(false);
@@ -4555,7 +4547,7 @@ ${digest}`;
             firstSeen: Date.now()
           };
           await this.saveContacts();
-        } else if (contact.identityKey !== identityKey && previous?.public_key === contact.identityKey && await verify(previous.public_key, rotationMessage(await this.signedUserId(userId), previous.public_key, identityKey), previous.signature)) {
+        } else if (contact.identityKey !== identityKey && previous?.public_key === contact.identityKey && await verify(previous.public_key, rotationMessage(userId, previous.public_key, identityKey), previous.signature)) {
           contact.previousKeys = [...new Set([...contact.previousKeys ?? [], contact.identityKey])].slice(-16);
           contact.identityKey = identityKey;
           contact.pendingKey = null;
@@ -4581,7 +4573,6 @@ ${digest}`;
       }
       const devices = [];
       let backupKey = null;
-      const signedId = await this.signedUserId(userId);
       if (identityKey) {
         const known = this.knownKeys(userId, identityKey);
         for (const device of keys.devices) {
@@ -4589,7 +4580,7 @@ ${digest}`;
             continue;
           if (await deviceIdFor(device.signing_key) !== device.device_id)
             continue;
-          const message = deviceMessage(signedId, device.device_id, device.signing_key);
+          const message = deviceMessage(userId, device.device_id, device.signing_key);
           const signers = device.status === "revoked" ? known : [identityKey];
           let signed = false;
           for (const key of signers)
@@ -4610,7 +4601,7 @@ ${digest}`;
           });
         }
         const backup = keys.backup_key;
-        if (backup && await verify(identityKey, backupKeyMessage(signedId, backup.public_key), backup.signature))
+        if (backup && await verify(identityKey, backupKeyMessage(userId, backup.public_key), backup.signature))
           backupKey = backup.public_key;
       }
       const identityCreatedAt = keys.identity_created_at ? Date.parse(keys.identity_created_at) : null;
@@ -4654,162 +4645,8 @@ ${digest}`;
       this.emit();
       this.pushTrust([userId]).catch((error) => console.error("[e2ee] couldn't sync the verification", error));
     }
-    knownCanonical(id) {
-      return this.resolvedCanonical.get(id);
-    }
-    async canonicalIds(ids) {
-      if (!this.federation)
-        return null;
-      const missing = [...new Set(ids)].filter((id) => !this.canonical.has(id));
-      for (let i = 0;i < missing.length; i += 100) {
-        const chunk = missing.slice(i, i + 100);
-        const batch = this.api.request("get", `/federation/objects?ids=${chunk.join(",")}`);
-        for (const id of chunk) {
-          const entry = batch.then((res) => {
-            if (!isCanonical(res?.[id]))
-              return null;
-            this.resolvedCanonical.set(id, res[id]);
-            return res[id];
-          }, (error) => {
-            this.canonical.delete(id);
-            if (error?.status === 404) {
-              this.federation = false;
-              return null;
-            }
-            throw error;
-          });
-          this.canonical.set(id, entry);
-        }
-      }
-      const values = await Promise.all(ids.map((id) => this.canonical.get(id) ?? Promise.resolve(null)));
-      if (!this.federation || values.some((value) => !value))
-        return null;
-      return new Map(ids.map((id, i) => [id, values[i]]));
-    }
-    async localIds(canonicals) {
-      const wanted = [...new Set(canonicals.filter(isCanonical))];
-      const missing = this.federation ? wanted.filter((id) => !this.localOf.has(id)) : [];
-      for (let i = 0;i < missing.length; i += 100) {
-        const chunk = missing.slice(i, i + 100);
-        const batch = this.api.request("get", `/federation/objects?canonical=${chunk.map(encodeURIComponent).join(",")}`);
-        for (const id of chunk)
-          this.localOf.set(id, batch.then((res) => {
-            const local = res?.[id];
-            if (typeof local !== "string" || !/^\d{1,20}$/.test(local))
-              return null;
-            this.resolvedCanonical.set(local, id);
-            this.canonical.set(local, Promise.resolve(id));
-            return local;
-          }, () => {
-            this.localOf.delete(id);
-            return null;
-          }));
-      }
-      const values = await Promise.all(wanted.map((id) => this.localOf.get(id) ?? Promise.resolve(null)));
-      return new Map(wanted.flatMap((id, i) => values[i] ? [[id, values[i]]] : []));
-    }
-    async canonicalPayload(payload) {
-      const ids = [...payload.content.matchAll(LOCAL_REFERENCE)].map((match) => match[2] ?? match[5]);
-      const stickers = payload.stickers?.map((sticker) => sticker.id) ?? [];
-      if (!ids.length && !stickers.length)
-        return payload;
-      const map = await this.canonicalIds([...ids, ...stickers]);
-      if (!map)
-        return payload;
-      return {
-        ...payload,
-        content: payload.content.replace(LOCAL_REFERENCE, (match, prefix, id, animated, name, emoji) => prefix ? `<${prefix}${map.get(id) ?? id}>` : `<${animated}:${name}:${map.get(emoji) ?? emoji}>`),
-        ...payload.stickers && { stickers: payload.stickers.map((sticker) => ({ ...sticker, id: map.get(sticker.id) ?? sticker.id })) }
-      };
-    }
-    async localPayload(raw) {
-      if (!raw || typeof raw !== "object")
-        return raw;
-      const value = raw;
-      const content = typeof value.content === "string" ? value.content : "";
-      const stickers = Array.isArray(value.stickers) ? value.stickers : [];
-      const wanted = [...content.matchAll(CANONICAL_REFERENCE)].map((match) => match[2] ?? match[5]);
-      for (const sticker of stickers)
-        if (isCanonical(sticker?.id))
-          wanted.push(sticker.id);
-      if (!wanted.length)
-        return raw;
-      const map = await this.localIds(wanted);
-      return {
-        ...value,
-        content: content.replace(CANONICAL_REFERENCE, (match, prefix, id, animated, name, emoji) => {
-          const local = map.get(prefix ? id : emoji);
-          if (local)
-            return prefix ? `<${prefix}${local}>` : `<${animated}:${name}:${local}>`;
-          return prefix ? `${prefix === "#" ? "#" : "@"}${canonicalSnowflake(id)}@${canonicalInstance(id)}` : `:${name}:`;
-        }),
-        ...stickers.length && { stickers: stickers.map((sticker) => isCanonical(sticker?.id) ? { ...sticker, id: map.get(sticker.id) ?? "" } : sticker) }
-      };
-    }
-    async signedUserId(userId) {
-      if (userId === this.userId || !this.userId)
-        return userId;
-      const ids = await this.canonicalIds([this.userId, userId]).catch(() => null);
-      if (!ids)
-        return userId;
-      const theirs = ids.get(userId);
-      return canonicalInstance(theirs) === canonicalInstance(ids.get(this.userId)) ? userId : canonicalSnowflake(theirs);
-    }
-    async bindingFor(channelId, senderId, members, mid, version) {
-      const local = { v: 1, channel: channelId, sender: senderId, mid, user: (id) => id };
-      if (version === 1)
-        return local;
-      const ids = await this.canonicalIds([channelId, senderId, ...members, ...mid ? [mid] : []]);
-      if (!ids) {
-        if (version === 2)
-          throw new E2eeError("BAD_ENVELOPE", t("This message came from another instance and can't be checked here"));
-        return local;
-      }
-      const own = canonicalInstance(ids.get(this.userId) ?? ids.get(senderId));
-      const federated = version === 2 || [...ids.values()].some((id) => canonicalInstance(id) !== own);
-      if (!federated)
-        return local;
-      return {
-        v: 2,
-        channel: ids.get(channelId),
-        sender: ids.get(senderId),
-        mid: mid ? ids.get(mid) : undefined,
-        user: (id) => ids.get(id) ?? id
-      };
-    }
-    previousInstances() {
-      if (this.moves && Date.now() - this.moves.at < MOVES_TTL)
-        return this.moves.aliases;
-      const aliases = this.api.request("get", "/federation/moves").then((body) => {
-        const map = new Map;
-        const add = (to, from) => map.set(to, [...map.get(to) ?? [], from]);
-        if (body?.instance)
-          for (const from of body.previous ?? [])
-            add(body.instance, from);
-        for (const [from, to] of Object.entries(body?.moved ?? {}))
-          add(to, from);
-        return map;
-      }).catch(() => new Map);
-      this.moves = { at: Date.now(), aliases };
-      return aliases;
-    }
-    async bindingVariants(ids) {
-      if (ids.v !== 2)
-        return [ids];
-      const aliases = await this.previousInstances();
-      const instances = [...new Set([ids.channel, ids.sender, ids.user(this.userId), ...ids.mid ? [ids.mid] : []].filter(isCanonical).map(canonicalInstance))].filter((instance) => aliases.has(instance));
-      if (!instances.length)
-        return [ids];
-      let swaps = [new Map];
-      for (const instance of instances)
-        swaps = swaps.flatMap((swap) => [swap, ...aliases.get(instance).map((from) => new Map([...swap, [instance, from]]))]).slice(0, MAX_BINDING_VARIANTS);
-      return swaps.map((swap) => {
-        const rename = (canonical) => {
-          const from = isCanonical(canonical) && swap.get(canonicalInstance(canonical));
-          return from ? `@${canonicalSnowflake(canonical)}@${from}` : canonical;
-        };
-        return { v: 2, channel: rename(ids.channel), sender: rename(ids.sender), mid: ids.mid && rename(ids.mid), user: (id) => rename(ids.user(id)) };
-      });
+    bindingFor(channelId, senderId, mid) {
+      return { v: 1, channel: channelId, sender: senderId, mid, user: (id) => id };
     }
     async encrypt(channelId, payload, opts) {
       if (!this.device || !this.userId)
@@ -4831,7 +4668,7 @@ ${digest}`;
           throw new E2eeError("NO_DEVICES", "This browser has no encryption keys yet", entry.userId);
         active.forEach((device) => targets.push({ userId: entry.userId, device }));
       }
-      if (!targets.some((t2) => t2.device.deviceId === this.device.deviceId)) {
+      if (!targets.some((t) => t.device.deviceId === this.device.deviceId)) {
         const current = this.currentPrekey();
         targets.push({
           userId: this.userId,
@@ -4846,12 +4683,12 @@ ${digest}`;
           }
         });
       }
-      const ids = await this.bindingFor(channelId, this.userId, members, opts.mid);
+      const ids = this.bindingFor(channelId, this.userId, opts.mid);
       const bind = binding(ids.mid, opts.nonce);
       const aad = messageAad(ids.channel, ids.sender, this.device.deviceId, bind);
       const contentKey = randomBytes(32);
       const iv = randomBytes(12);
-      const ct = await aesEncrypt(contentKey, iv, utf8(JSON.stringify(ids.v === 2 ? await this.canonicalPayload(payload) : payload)), aad);
+      const ct = await aesEncrypt(contentKey, iv, utf8(JSON.stringify(payload)), aad);
       const keys = await Promise.all(targets.map(async ({ userId, device }) => ({
         user_id: ids.user(userId),
         device_id: device.deviceId,
@@ -4884,7 +4721,7 @@ backup:${ids.user(e.userId)}`)
     }
     cached(message) {
       const env = message.encrypted;
-      return env ? this.plaintext.get(`${message.id}:${env.sig}`) ?? this.plaintext.get(`${env.mid && env.v === 1 ? env.mid : env.mid ? message.id : ""}:${env.sig}`) : undefined;
+      return env ? this.plaintext.get(`${message.id}:${env.sig}`) ?? this.plaintext.get(`${env.mid ?? ""}:${env.sig}`) : undefined;
     }
     async contentKey(message) {
       const env = message.encrypted;
@@ -4898,7 +4735,7 @@ backup:${ids.user(e.userId)}`)
     }
     async decrypt(message, remember = true) {
       const env = message.encrypted;
-      if (!env || env.v !== 1 && env.v !== 2 || env.alg !== ALGORITHM || !Array.isArray(env.keys))
+      if (env?.v !== 1 || env.alg !== ALGORITHM || !Array.isArray(env.keys))
         throw new E2eeError("BAD_ENVELOPE", "Unsupported envelope");
       const hit = this.cached(message);
       if (remember && hit !== undefined) {
@@ -4910,7 +4747,7 @@ backup:${ids.user(e.userId)}`)
       const senderId = message.author?.id;
       if (!senderId)
         throw new E2eeError("BAD_ENVELOPE", "Missing author");
-      if (env.v === 1 && env.mid && env.mid !== message.id)
+      if (env.mid && env.mid !== message.id)
         throw new E2eeError("BAD_ENVELOPE", "Envelope belongs to another message");
       const nonce = message.nonce == null ? undefined : String(message.nonce);
       if (!env.mid && !nonce)
@@ -4925,25 +4762,15 @@ backup:${ids.user(e.userId)}`)
       if (!sender) {
         if (entry.identityCreatedAt && sentAt < entry.identityCreatedAt)
           throw new E2eeError("RESET", t("Sent before encryption was reset"));
-        throw new E2eeError("BAD_SIGNATURE", t("The sender's device couldn't be verified"));
+        throw new E2eeError("UNKNOWN_SENDER", t("The sender's device couldn't be verified"));
       }
       if (sender.status === "revoked" && (!sender.revokedAt || sentAt >= sender.revokedAt))
         throw new E2eeError("BAD_SIGNATURE", t("Sent from a device that was removed"));
-      const variants = await this.bindingVariants(await this.bindingFor(message.channel_id, senderId, [this.userId], env.mid ? message.id : undefined, env.v));
-      const matching = env.v === 2 && env.mid ? variants.filter((variant) => variant.mid === env.mid) : variants;
-      if (!matching.length)
-        throw new E2eeError("BAD_ENVELOPE", "Envelope belongs to another message");
+      const ids = this.bindingFor(message.channel_id, senderId, env.mid ? message.id : undefined);
       const { sig, ...unsigned } = env;
-      let ids = null;
-      for (const variant of matching) {
-        if (!await verify(sender.signingKey, signedPayload(variant.channel, variant.sender, binding(variant.mid, nonce), unsigned), sig))
-          continue;
-        ids = variant;
-        break;
-      }
-      if (!ids)
-        throw new E2eeError("BAD_SIGNATURE", t("Signature check failed"));
       const bind = binding(ids.mid, nonce);
+      if (!await verify(sender.signingKey, signedPayload(ids.channel, ids.sender, bind, unsigned), sig))
+        throw new E2eeError("BAD_SIGNATURE", t("Signature check failed"));
       const aad = messageAad(ids.channel, ids.sender, env.sender_device, bind);
       const mine = env.keys.find((k) => k.device_id === this.device.deviceId);
       const prekey = mine && this.prekeys.find((p) => p.id === mine.prekey_id);
@@ -4967,10 +4794,12 @@ backup:${ownId}`).catch(() => null);
           throw new E2eeError("LOCKED", t("This browser isn't unlocked yet"));
         if (this.identityCreatedAt && sentAt < this.identityCreatedAt)
           throw new E2eeError("RESET", t("Sent before encryption was reset"));
+        if (!env.keys.some((k) => k.user_id === ownId) && !backupEntry)
+          throw new E2eeError("NOT_RECIPIENT", t("This message wasn't encrypted for you"));
         throw new E2eeError("NO_KEY", t("Sent before this browser was set up"));
       }
       const opened = JSON.parse(fromUtf8(await aesDecrypt(contentKey, fromB64u(env.iv), fromB64u(env.ct), aad)));
-      const payload = parsePayload(env.v === 2 ? await this.localPayload(opened) : opened);
+      const payload = parsePayload(opened);
       this.contentKeys.set(`${message.id}:${sig}`, toB64u(contentKey));
       if (mine && prekey && backupKey) {
         const covered = !!backupEntry && !!await hpkeOpen(backupKey.keyPair, backupEntry.enc, backupEntry.wrapped, BACKUP_INFO, `${aad}
@@ -5089,7 +4918,7 @@ backup:${ownId}`).catch(() => null);
         }
         return out;
       };
-      const [own, other] = await Promise.all([part(this.userId, mine), part(await this.signedUserId(userId), theirs)]);
+      const [own, other] = await Promise.all([part(this.userId, mine), part(userId, theirs)]);
       return own < other ? own + other : other + own;
     }
   }
@@ -5100,16 +4929,22 @@ backup:${ownId}`).catch(() => null);
   var LOCKED_CONTENT = "Unlock this browser to read this message";
   var RESET_CONTENT = "Sent before encryption was reset";
   var FAILED_CONTENT = "This message couldn't be decrypted";
+  var EXCLUDED_CONTENT = "This message wasn't encrypted for you";
   var decryptingContent = () => t(DECRYPTING_CONTENT);
-  var contentFor = (state, fallback, trustsServer = false) => state === "missing" ? t(MISSING_CONTENT) : state === "locked" ? t(trustsServer ? "Preparing private chat…" : LOCKED_CONTENT) : state === "reset" ? t(RESET_CONTENT) : state === "failed" ? t(FAILED_CONTENT) : fallback;
+  var contentFor = (state, fallback, trustsServer = false) => state === "missing" ? t(MISSING_CONTENT) : state === "excluded" ? t(EXCLUDED_CONTENT) : state === "locked" ? t(trustsServer ? "Preparing private chat…" : LOCKED_CONTENT) : state === "reset" ? t(RESET_CONTENT) : state === "failed" ? t(FAILED_CONTENT) : fallback;
   var SEARCH_URL = /^\/channels\/(\d+)\/messages\/search(\/tabs)?$/;
   var SEARCH_PAGES = 10;
   var READABLE_CHANNELS = 50;
   var READABLE_PER_CHANNEL = SEARCH_PAGES * 100 + 1000;
   var AUTH_URL = /^\/auth\/(login|register)$/;
   var REPORT_URL = /^\/reporting\/(message|first_dm)$/;
+  var USER_REPORT_URL = "/reporting/user";
   var MESSAGE_URL = /^\/channels\/(\d+)\/messages(?:\/(\d+))?$/;
   var CREATE_ATTACHMENTS_URL = /^\/channels\/(\d+)\/attachments$/;
+  var MISMATCH_RETRIES = 2;
+  var DECRYPT_RETRY_MS = 2000;
+  var DECRYPT_RETRIES = 6;
+  var REPORT_READY_MS = 15000;
   var isEncryptedMessage = (value) => {
     const message = value;
     return !!message && typeof message === "object" && !!message.encrypted && typeof message.id === "string" && typeof message.channel_id === "string";
@@ -5219,6 +5054,7 @@ backup:${ownId}`).catch(() => null);
         show(message, sync);
         states.set(message.id, { state: "decrypted" });
         retry.delete(message.id);
+        failed.delete(message.id);
         return soundmoji(message).then(() => {
           remember(message);
           previews(message);
@@ -5246,16 +5082,20 @@ backup:${ownId}`).catch(() => null);
             const payload = await engine.decrypt(message);
             states.set(message.id, { state: "decrypted" });
             retry.delete(message.id);
+            failed.delete(message.id);
+            attempts.delete(message.id);
             show(message, payload);
             await soundmoji(message);
             remember(message);
             previews(message);
           } catch (error) {
             const code = error instanceof E2eeError ? error.code : null;
-            const state = code === "LOCKED" ? "locked" : code === "NO_KEY" ? "missing" : code === "RESET" ? "reset" : "failed";
+            const state = code === "LOCKED" ? "locked" : code === "NO_KEY" ? "missing" : code === "NOT_RECIPIENT" ? "excluded" : code === "RESET" ? "reset" : "failed";
             states.set(message.id, { state, reason: errorText(error) });
             if (state === "locked" || state === "missing")
               retry.set(message.id, original);
+            if (!code || code === "UNKNOWN_SENDER" || code === "NOT_READY")
+              retryLater(original);
             message.content = contentFor(state, undefined, engine.trustsServer);
           }
         })().finally(() => inflight.delete(key));
@@ -5277,21 +5117,53 @@ backup:${ownId}`).catch(() => null);
       if (states.get(copy.id)?.state === "decrypted")
         ctx.updateRecord(copy);
     };
+    const decryptAgain = (copy) => {
+      const before = states.get(copy.id)?.state;
+      decryptOne(copy).then(() => {
+        const after = states.get(copy.id)?.state;
+        if (after === before && after !== "pending")
+          return;
+        redispatch(copy);
+        ctx.onState();
+      });
+    };
     const retryAll = () => {
       if (!ctx.isReady())
         return;
       const queued = [...retry.values()];
       retry.clear();
-      for (const copy of queued) {
-        const before = states.get(copy.id)?.state;
-        decryptOne(copy).then(() => {
-          const after = states.get(copy.id)?.state;
-          if (after === before && after !== "pending")
-            return;
-          redispatch(copy);
-          ctx.onState();
-        });
+      queued.forEach(decryptAgain);
+    };
+    const failed = new BoundedMap(READABLE_PER_CHANNEL);
+    let failedTimer = null;
+    const retryFailed = (senderId) => {
+      if (!ctx.isReady())
+        return;
+      for (const [id, entry] of [...failed]) {
+        if (senderId && entry.message.author?.id !== senderId)
+          continue;
+        failed.delete(id);
+        attempts.set(id, entry.attempts);
+        decryptAgain(entry.message);
       }
+    };
+    const scheduleFailed = () => {
+      if (failedTimer || !failed.size)
+        return;
+      const next = Math.min(...[...failed.values()].map((entry) => entry.attempts));
+      if (next > DECRYPT_RETRIES)
+        return;
+      failedTimer = setTimeout(() => {
+        failedTimer = null;
+        retryFailed();
+      }, DECRYPT_RETRY_MS * 2 ** (next - 1));
+    };
+    const attempts = new BoundedMap(READABLE_PER_CHANNEL);
+    const retryLater = (message) => {
+      const count = (attempts.get(message.id) ?? 0) + 1;
+      attempts.delete(message.id);
+      failed.set(message.id, { message, attempts: count });
+      scheduleFailed();
     };
     const decryptAll = async (value) => {
       const messages = collect(value, []);
@@ -5419,18 +5291,27 @@ backup:${ownId}`).catch(() => null);
             return result;
           }
           const reported = opts.body ?? {};
-          if (method === "post" && REPORT_URL.test(path) && typeof reported.channel_id === "string" && typeof reported.message_id === "string" && engine.isEncrypted(reported.channel_id)) {
+          const reportedChannel = method !== "post" ? null : REPORT_URL.test(path) && typeof reported.channel_id === "string" && typeof reported.message_id === "string" ? reported.channel_id : path === USER_REPORT_URL && typeof reported.user_id === "string" ? ctx.conversationWith?.(reported.user_id) ?? null : null;
+          if (reportedChannel && engine.isEncrypted(reportedChannel)) {
             const report = (async () => {
-              const res = await originals.get({ url: `/channels/${reported.channel_id}/messages`, query: { around: reported.message_id, limit: 50 }, rejectWithError: false }).catch(() => null);
+              if (!ctx.failClosed())
+                await Promise.race([ctx.ready, new Promise((resolve) => setTimeout(resolve, REPORT_READY_MS))]);
+              const messageId = typeof reported.message_id === "string" ? reported.message_id : null;
+              const res = await originals.get({ url: `/channels/${reportedChannel}/messages`, query: { ...messageId && { around: messageId }, limit: 50 }, rejectWithError: false }).catch(() => null);
               const nearby = res?.ok ? res.body : [];
-              const message = nearby.find((m) => m.id === reported.message_id);
+              const message = messageId ? nearby.find((m) => m.id === messageId) : undefined;
               const key = message && await engine.contentKey(message);
-              const context = Object.fromEntries((await Promise.all(nearby.filter((m) => m.id !== reported.message_id && m.encrypted).map(async (m) => [m.id, await engine.contentKey(m).catch(() => {
+              const context = Object.fromEntries((await Promise.all(nearby.filter((m) => m.id !== messageId && m.encrypted).map(async (m) => [m.id, await engine.contentKey(m).catch(() => {
                 return;
               })]))).filter(([, contextKey]) => contextKey));
               return original({
                 ...opts,
-                body: { ...opts.body, ...key && { e2ee_content_key: key }, ...Object.keys(context).length && { e2ee_context_keys: context } }
+                body: {
+                  ...opts.body,
+                  ...!messageId && { channel_id: reportedChannel },
+                  ...key && { e2ee_content_key: key },
+                  ...Object.keys(context).length && { e2ee_context_keys: context }
+                }
               }, callback);
             })();
             report.catch(() => {});
@@ -5498,15 +5379,17 @@ backup:${ownId}`).catch(() => null);
             })();
           }
           const pending = (async () => {
-            let prepared;
-            try {
-              prepared = await encryptBody(method, opts);
-            } catch (error) {
-              const match = MESSAGE_URL.exec(url.split("?")[0]);
-              ctx.onError(error, match?.[1] ?? "");
-              callback?.({ ok: false, hasErr: true, err: error, status: 0, body: null });
-              throw error;
-            }
+            const channelId = MESSAGE_URL.exec(path)?.[1] ?? "";
+            const encrypted = async () => {
+              try {
+                return await encryptBody(method, opts);
+              } catch (error) {
+                ctx.onError(error, channelId);
+                callback?.({ ok: false, hasErr: true, err: error, status: 0, body: null });
+                throw error;
+              }
+            };
+            let prepared = await encrypted();
             for (let attempt = 0;; attempt++) {
               let response;
               try {
@@ -5518,15 +5401,15 @@ backup:${ownId}`).catch(() => null);
                 return result;
               } catch (error) {
                 const failure = error;
-                if (attempt === 0 && failure?.status === 409 && failure.body?.message === "E2EE_DEVICE_MISMATCH" && prepared !== opts) {
-                  const match = MESSAGE_URL.exec(url.split("?")[0]);
-                  engine.invalidateChannel(match[1]);
+                if (attempt < MISMATCH_RETRIES && failure?.status === 409 && failure.body?.message === "E2EE_DEVICE_MISMATCH" && prepared !== opts) {
+                  engine.invalidateChannel(channelId);
                   engine.invalidateAll();
-                  prepared = await encryptBody(method, opts);
+                  prepared = await encrypted();
                   continue;
                 }
-                if (response)
-                  callback?.(response);
+                if (prepared !== opts && failure?.body?.message?.startsWith("E2EE_"))
+                  ctx.onError(error, channelId);
+                callback?.(response ?? { ok: false, hasErr: true, err: error, status: failure?.status ?? 0, body: failure?.body ?? null });
                 throw error;
               }
             }
@@ -5602,7 +5485,7 @@ backup:${ownId}`).catch(() => null);
         return false;
       });
     };
-    return { wrapHttp, wrapGateway, watchDispatcher, decryptAll, retryAll };
+    return { wrapHttp, wrapGateway, watchDispatcher, decryptAll, retryAll, retryFailed };
   };
 
   // client/e2ee/src/link.ts
@@ -6141,7 +6024,7 @@ ${approver}`;
 .fe2ee-safety{display:flex;gap:16px;align-items:center}
 .fe2ee-digits{flex:1;display:grid;grid-template-columns:repeat(4,auto);justify-content:start;gap:4px 16px;font-size:17px;line-height:24px;font-variant-numeric:tabular-nums;letter-spacing:.04em;color:var(--text-strong,#f2f3f5)}
 .fe2ee-member-actions{display:flex;gap:8px;flex-wrap:wrap}
-[data-fe2ee-state="pending"],[data-fe2ee-state="locked"],[data-fe2ee-state="missing"],[data-fe2ee-state="reset"],[data-fe2ee-state="failed"]{color:var(--text-muted,#949ba4);font-style:italic}
+[data-fe2ee-state="pending"],[data-fe2ee-state="locked"],[data-fe2ee-state="missing"],[data-fe2ee-state="excluded"],[data-fe2ee-state="reset"],[data-fe2ee-state="failed"]{color:var(--text-muted,#949ba4);font-style:italic}
 [id^="message-content-"] > [class*="timestamp_"]:has(> .fe2ee-lock){white-space:nowrap}
 .fe2ee-codes{display:flex;flex-direction:column;gap:4px}
 .fe2ee-codes[hidden]{display:none}
@@ -6298,13 +6181,13 @@ ${approver}`;
       el.addEventListener("blur", hideTooltip);
       el.addEventListener("click", hideTooltip);
     };
-    const button = (label, variant, run2) => {
+    const button = (label, variant, run) => {
       const el = document.createElement("button");
       el.type = "button";
       el.className = "fe2ee-button";
       el.dataset.variant = variant;
       el.textContent = label;
-      el.addEventListener("click", run2);
+      el.addEventListener("click", run);
       return el;
     };
     addEventListener("keydown", (event) => {
@@ -6407,7 +6290,7 @@ ${approver}`;
       el.innerHTML = `<h3>${escape(title)}</h3>${text ? `<p>${escape(text)}</p>` : ""}`;
       return el;
     };
-    const describe2 = (el, text) => {
+    const describe = (el, text) => {
       const p = document.createElement("p");
       p.textContent = text;
       el.append(p);
@@ -6470,12 +6353,12 @@ ${approver}`;
         try {
           await enableChannel(channelId);
           close();
-        } catch (failure2) {
-          const body2 = failure2?.body;
-          if (body2?.message === "E2EE_RECIPIENT_NO_DEVICES")
-            return void await notReady(Array.isArray(body2.user_ids) ? body2.user_ids.map(String) : []);
+        } catch (failure) {
+          const body = failure?.body;
+          if (body?.message === "E2EE_RECIPIENT_NO_DEVICES")
+            return void await notReady(Array.isArray(body.user_ids) ? body.user_ids.map(String) : []);
           error.textContent = t("Couldn't turn on encryption. {error}", {
-            error: errorText(failure2)
+            error: errorText(failure)
           });
           error.hidden = false;
           confirm.disabled = false;
@@ -6531,9 +6414,9 @@ ${approver}`;
       });
     };
     const showReset = (onDone) => dialog(t("Reset encryption?"), (body, actions, { close }) => {
-      describe2(body, engine.linked ? t("This replaces your encryption keys. Only do this if you think someone else got hold of them.") : engine.backup?.mode === "recovery" ? t("Only do this if you lost your recovery code and no other signed-in browser can approve this one.") : t("Only do this if your password doesn't unlock your keys and no other signed-in browser can approve this one."));
-      describe2(body, t("You get new keys and can keep chatting, but none of your browsers can read the messages sent before the reset anymore. The people you talk to keep what they received."));
-      describe2(body, t("Your other browsers have to be approved again, and the people you talk to are told that your safety number changed."));
+      describe(body, engine.linked ? t("This replaces your encryption keys. Only do this if you think someone else got hold of them.") : engine.backup?.mode === "recovery" ? t("Only do this if you lost your recovery code and no other signed-in browser can approve this one.") : t("Only do this if your password doesn't unlock your keys and no other signed-in browser can approve this one."));
+      describe(body, t("You get new keys and can keep chatting, but none of your browsers can read the messages sent before the reset anymore. The people you talk to keep what they received."));
+      describe(body, t("Your other browsers have to be approved again, and the people you talk to are told that your safety number changed."));
       const { wrap, input, setError } = field(t("Account password"), "password", "current-password");
       body.append(wrap);
       const confirm = button(t("Reset encryption"), "danger", async () => {
@@ -6589,7 +6472,7 @@ ${approver}`;
       dialog(t("Enter your password"), (body, actions, { el, close, setDismissable }) => {
         setDismissable(false);
         el.dataset.requiredPassword = "true";
-        describe2(body, t("Enter your account password to finish setting up this browser."));
+        describe(body, t("Enter your account password to finish setting up this browser."));
         const { wrap, input, setError } = field(t("Account password"), "password", "current-password");
         input.required = true;
         body.append(wrap);
@@ -6666,7 +6549,7 @@ ${approver}`;
         link.request().catch(() => {});
       dialog(t("Unlock encrypted messages"), (body, actions, { el, close }) => {
         const backup = engine.backup;
-        const intro = describe2(body, t("This browser can't read your encrypted messages yet. Bring your keys over with one of these."));
+        const intro = describe(body, t("This browser can't read your encrypted messages yet. Bring your keys over with one of these."));
         if (!backup || backup.mode === "password" && !backup.wrapped_secret) {
           const own = section(t("Enter your password"), t("If your keys aren't backed up with your password yet, open the app on a browser you used before. It asks for your password once, and then it works here too."));
           own.append(unlockForm("password"));
@@ -6685,7 +6568,7 @@ ${approver}`;
         approval.append(status, codes, again);
         body.append(approval);
         const lost = section(backup?.mode === "recovery" ? t("Lost your code?") : t("Can't unlock this browser?"));
-        describe2(lost, t("If you can't use any of these, reset encryption to keep chatting. Messages sent before the reset can't be read anymore."));
+        describe(lost, t("If you can't use any of these, reset encryption to keep chatting. Messages sent before the reset can't be read anymore."));
         lost.append(button(t("Reset encryption"), "link", () => showReset(done)));
         body.append(lost);
         const render = () => {
@@ -6704,8 +6587,8 @@ ${approver}`;
             name: approvers[0]?.name ?? t("Your other browser")
           }) : state?.state === "denied" ? t("This login was denied on your other browser, so this browser was signed out.") : state?.state === "failed" ? state.error ? t("The approval didn't unlock this browser. {error}", { error: state.error }) : t("The approval didn't unlock this browser. Ask again to retry.") : state?.state === "waiting" ? t("Open the app on a browser where you're already signed in. It asks you to approve this one.") : t("Ask a browser where you're already signed in to approve this one.");
           const denied = state?.state === "denied";
-          for (const el2 of [intro, ...body.querySelectorAll(":scope > .fe2ee-section")])
-            el2.hidden = denied && el2 !== approval;
+          for (const el of [intro, ...body.querySelectorAll(":scope > .fe2ee-section")])
+            el.hidden = denied && el !== approval;
           notNow.textContent = denied ? t("Close") : t("Not now");
           if (engine.linked) {
             done();
@@ -6751,22 +6634,22 @@ ${approver}`;
         };
         approvals.set(prompt.requestId, finish);
         el.addEventListener("close", () => approvals.delete(prompt.requestId));
-        const run2 = async (action) => {
+        const run = async (action) => {
           approve.disabled = deny.disabled = true;
           error.hidden = true;
           try {
             await action();
             finish();
-          } catch (failure2) {
+          } catch (failure) {
             error.textContent = t("Couldn't answer that login. {error}", {
-              error: errorText(failure2)
+              error: errorText(failure)
             });
             error.hidden = false;
             approve.disabled = deny.disabled = false;
           }
         };
-        const approve = button(t("Approve login"), "primary", () => run2(prompt.approve));
-        const deny = button(t("Deny"), "secondary", () => run2(prompt.deny));
+        const approve = button(t("Approve login"), "primary", () => run(prompt.approve));
+        const deny = button(t("Deny"), "secondary", () => run(prompt.deny));
         actions.append(deny, approve);
         return el;
       });
@@ -6795,7 +6678,7 @@ ${approver}`;
       return wrap;
     };
     const showBackupPassword = () => dialog(t("Back up your encryption keys"), (body, actions, { close }) => {
-      describe2(body, t("Your encryption keys only exist in this browser right now. Enter your account password to lock a backup of them with it, so any browser you sign in to can read your encrypted messages."));
+      describe(body, t("Your encryption keys only exist in this browser right now. Enter your account password to lock a backup of them with it, so any browser you sign in to can read your encrypted messages."));
       body.append(backupPasswordForm(() => {
         close();
         const channelId = currentChannel();
@@ -6805,7 +6688,7 @@ ${approver}`;
       actions.append(button(t("Not now"), "secondary", close));
     });
     const showRecoveryCode = () => dialog(t("Use a recovery code"), (body, actions, { close, setDismissable }) => {
-      const intro = describe2(body, t("We'll make a code that locks your key backup instead of your password. You'll need it to set up a new browser when no other device is around to approve it. We only show it once."));
+      const intro = describe(body, t("We'll make a code that locks your key backup instead of your password. You'll need it to set up a new browser when no other device is around to approve it. We only show it once."));
       const code = generateRecoveryCode();
       const create = button(t("Make recovery code"), "primary", () => {
         setDismissable(false);
@@ -6837,9 +6720,9 @@ ${approver}`;
           try {
             await engine.setBackupMode("recovery", code);
             close();
-          } catch (failure2) {
+          } catch (failure) {
             error.textContent = t("Couldn't switch to the recovery code. {error}", {
-              error: errorText(failure2)
+              error: errorText(failure)
             });
             error.hidden = false;
             saved.disabled = false;
@@ -6859,7 +6742,7 @@ ${approver}`;
       return { current, text: [state, session?.location, added].filter(Boolean).join(" · ") };
     };
     const confirmRemove = (device, onDone) => dialog(t("Remove this device?"), (body, actions, { close }) => {
-      describe2(body, t("{name} is signed out and can't read new encrypted messages. To read them there again, it needs your recovery code, your password, or approval from another device.", { name: deviceTitle(device) ?? t("This browser") }));
+      describe(body, t("{name} is signed out and can't read new encrypted messages. To read them there again, it needs your recovery code, your password, or approval from another device.", { name: deviceTitle(device) ?? t("This browser") }));
       const error = document.createElement("p");
       error.className = "fe2ee-error";
       error.setAttribute("role", "alert");
@@ -6871,8 +6754,8 @@ ${approver}`;
           await engine.removeDevice(device.device_id);
           close();
           onDone();
-        } catch (failure2) {
-          error.textContent = t("Couldn't remove it. {error}", { error: errorText(failure2) });
+        } catch (failure) {
+          error.textContent = t("Couldn't remove it. {error}", { error: errorText(failure) });
           error.hidden = false;
           confirm.disabled = false;
         }
@@ -6884,7 +6767,7 @@ ${approver}`;
       const backupSection = section(t("Key backup"));
       const devices = section(t("Your devices"), t("Unlocked browsers can read your encrypted messages, and browsers waiting for approval can once you approve them. Remove the ones you don't recognize or don't use anymore."));
       const resetSection = section(t("Reset encryption"));
-      const resetText = describe2(resetSection, "");
+      const resetText = describe(resetSection, "");
       const list = document.createElement("div");
       list.className = "fe2ee-devices";
       const inviteError = document.createElement("p");
@@ -6914,12 +6797,12 @@ ${approver}`;
       });
       strictLabel.append(strict, document.createTextNode(t("Review safety number changes and new browser approvals")));
       advanced.append(strictLabel);
-      describe2(advanced, t("By default, this browser trusts this instance's signed-in sessions and key directory. The instance also stores an encrypted recovery copy of your backup secret, so your account password can recover this browser. Safety checks apply in this browser and do not erase a recovery copy already stored by another browser."));
+      describe(advanced, t("By default, this browser trusts this instance's signed-in sessions and key directory. The instance also stores an encrypted recovery copy of your backup secret, so your account password can recover this browser. Safety checks apply in this browser and do not erase a recovery copy already stored by another browser."));
       root.append(browser, backupSection, devices, resetSection, advanced);
       const clear = (el) => el.querySelectorAll(":scope > :not(h3)").forEach((child) => child.remove());
       const renderBrowser = () => {
         clear(browser);
-        describe2(browser, engine.linked ? t("Unlocked. This browser can read and send encrypted messages.") : t("Locked. This browser can't read encrypted messages yet."));
+        describe(browser, engine.linked ? t("Unlocked. This browser can read and send encrypted messages.") : t("Locked. This browser can't read encrypted messages yet."));
         if (!engine.linked)
           browser.append(button(t("Unlock this browser"), "primary", () => {
             close?.();
@@ -6936,18 +6819,18 @@ ${approver}`;
         clear(backupSection);
         backupSection.dataset.mode = backup?.mode ?? "none";
         if (engine.backupNeedsPassword) {
-          describe2(backupSection, t("Your keys aren't backed up yet, so new browsers can't read your encrypted messages. Enter your account password to back them up."));
+          describe(backupSection, t("Your keys aren't backed up yet, so new browsers can't read your encrypted messages. Enter your account password to back them up."));
           backupSection.append(backupPasswordForm(() => renderBackup(true)));
           return;
         }
         if (!backup)
-          return void describe2(backupSection, t("Your keys aren't backed up yet. Open the app on a browser that can read your messages to back them up."));
+          return void describe(backupSection, t("Your keys aren't backed up yet. Open the app on a browser that can read your messages to back them up."));
         if (backup.mode === "recovery")
-          describe2(backupSection, t("Your keys have a recovery-code backup. In trusted-server mode, your account password can also recover a browser through the instance; advanced safety mode uses your recovery code or another device."));
+          describe(backupSection, t("Your keys have a recovery-code backup. In trusted-server mode, your account password can also recover a browser through the instance; advanced safety mode uses your recovery code or another device."));
         else if (backup.wrapped_secret)
-          describe2(backupSection, t("Your keys are backed up and locked with your account password, so new browsers unlock as soon as you sign in. Someone with a copy of the server's database could try to guess a weak password offline."));
+          describe(backupSection, t("Your keys are backed up and locked with your account password, so new browsers unlock as soon as you sign in. Someone with a copy of the server's database could try to guess a weak password offline."));
         else
-          describe2(backupSection, t("Your keys are backed up, but they aren't locked with your password yet. Open the app on a browser that can read your messages to finish the backup."));
+          describe(backupSection, t("Your keys are backed up, but they aren't locked with your password yet. Open the app on a browser that can read your messages to finish the backup."));
         if (!engine.hasSecret)
           return;
         if (backup.mode === "password") {
@@ -7043,7 +6926,7 @@ ${approver}`;
       root.className = "fe2ee-page";
       container.replaceChildren(root);
       if (!engine.userId) {
-        describe2(root, failure ?? paused ?? t("Encryption is still starting up."));
+        describe(root, failure ?? paused ?? t("Encryption is still starting up."));
         return () => {};
       }
       const stop = buildSettings(root);
@@ -7170,7 +7053,7 @@ ${approver}`;
       if (!channelId)
         return existing?.remove();
       const toolbars = [...document.querySelectorAll('[class*="toolbar__"]')];
-      const toolbar = toolbars.find((t2) => t2.parentElement?.className.includes("upperContainer")) ?? toolbars[0];
+      const toolbar = toolbars.find((t) => t.parentElement?.className.includes("upperContainer")) ?? toolbars[0];
       if (!toolbar)
         return;
       const on = engine.isEncrypted(channelId);
@@ -7268,8 +7151,8 @@ ${approver}`;
       bar.setAttribute("role", notice.tone === "danger" ? "alert" : "status");
       bar.innerHTML = `${svg(notice.tone === "info" ? LOCK_PATH : OPEN_LOCK_PATH)}<p>${escape(notice.text)}</p>`;
       if (notice.action) {
-        const { run: run2 } = notice.action;
-        bar.append(button(notice.action.label, "secondary", run2));
+        const { run } = notice.action;
+        bar.append(button(notice.action.label, "secondary", run));
       }
     };
     const refresh = () => {
@@ -7460,9 +7343,16 @@ ${approver}`;
       return true;
     return channel ? channel.type === 1 || channel.type === 3 : location.pathname === `/channels/@me/${channelId}`;
   };
+  var conversationWith = (userId) => {
+    nativeChannels ??= findStore(loader.reqs, ["getChannel", "getDMFromUserId"]);
+    const open = /^\/channels\/@me\/(\d+)/.exec(location.pathname)?.[1];
+    if (open && nativeChannels?.getChannel(open)?.recipients?.includes(userId))
+      return open;
+    return nativeChannels?.getDMFromUserId?.(userId) ?? null;
+  };
   var trustsServer = () => window.GLOBAL_ENV?.E2EE_TRUST_SERVER !== false && browserStorage?.getItem("fosscord-e2ee-strict-safety") !== "true";
   var engine = new Engine(api, classifyChannel, trustsServer);
-  var attachments = createAttachments((id) => engine.knownCanonical(id));
+  var attachments = createAttachments();
   attachments.start();
   var stickerStore = null;
   var sticker = (id) => {
@@ -7614,7 +7504,8 @@ ${approver}`;
         console.error("[e2ee] couldn't refresh a decrypted message", error);
       }
     },
-    onError: (error, channelId) => ui.showError(error, channelId)
+    onError: (error, channelId) => ui.showError(error, channelId),
+    conversationWith
   });
   var selfTest = async () => {
     const agreement = await generateAgreementKey();
@@ -7725,6 +7616,7 @@ ${approver}`;
       count("E2EE_DEVICES_UPDATE");
       engine.invalidateUser(String(data.user_id));
       refreshSelf(String(data.user_id));
+      hooks.retryFailed(String(data.user_id));
       ui.refresh();
     },
     E2EE_IDENTITY_UPDATE: (data) => {
@@ -7734,6 +7626,7 @@ ${approver}`;
       refreshSelf(userId);
       if (initialized && !signedOut && userId !== engine.userId)
         engine.keysFor([userId]).catch((error) => console.error("[e2ee] couldn't check the new safety number", error));
+      hooks.retryFailed(userId);
       ui.refresh();
     },
     E2EE_TRUST_UPDATE: () => {
@@ -7778,6 +7671,7 @@ ${approver}`;
       targets.dispatcher.subscribe("CONNECTION_OPEN", (action) => {
         if (loggedOut)
           return location.reload();
+        engine.invalidateAll();
         const user = action.user;
         if (user?.id)
           start(user.id);
@@ -7786,6 +7680,8 @@ ${approver}`;
       });
       targets.dispatcher.subscribe("CHANNEL_RECIPIENT_ADD", (action) => engine.invalidateChannel(String(action.channelId)));
       targets.dispatcher.subscribe("CHANNEL_RECIPIENT_REMOVE", (action) => engine.invalidateChannel(String(action.channelId)));
+      targets.dispatcher.subscribe("CHANNEL_CREATE", (action) => engine.invalidateChannel(String(action.channel?.id)));
+      targets.dispatcher.subscribe("CHANNEL_DELETE", (action) => engine.invalidateChannel(String(action.channel?.id)));
     }
     if (targets.gateway && !installed.gateway && targets.gateway.getSocket().dispatcher.getDispatchHandler) {
       installed.gateway = true;

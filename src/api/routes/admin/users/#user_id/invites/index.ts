@@ -2,7 +2,6 @@ import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
 import { InstanceInvite, User } from "@spacebar/database";
 import { AdminUserInvitesUpdateSchema } from "@spacebar/schemas";
-import { assertShadowUserEditable } from "@spacebar/api/util/utility/federatedAdmin";
 import {
     adminInviteRows,
     assertCanActOnUser,
@@ -68,7 +67,7 @@ router.patch(
     }),
     async (req: Request, res: Response) => {
         const userId = String(req.params.user_id);
-        assertShadowUserEditable(await User.findOneOrFail({ where: { id: userId }, select: { id: true, federated_instance: true } }), ["instance invites"]);
+        await User.findOneOrFail({ where: { id: userId }, select: { id: true } });
         await assertCanActOnUser(req, userId);
         await setBonusInvites(userId, (req.body as AdminUserInvitesUpdateSchema).bonus_invites);
         res.json(await inviteOverview(userId));

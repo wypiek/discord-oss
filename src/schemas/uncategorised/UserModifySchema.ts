@@ -84,11 +84,6 @@ export interface UserModifySchema {
      */
     nameplate_sku_id?: string | null;
     /**
-     * @minimum 0
-     * @maximum 50
-     */
-    avatar_corner_radius?: number | null;
-    /**
      * @maxLength 64
      */
     primary_guild_id?: string | null;

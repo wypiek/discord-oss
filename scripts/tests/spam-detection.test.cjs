@@ -254,14 +254,6 @@ test("accounts older than the burst age don't count toward a burst", () => {
     for (let i = 0; i < 3; i++) assert.deepEqual(sender(detector, cfg, account(2))(text, { gap: 2000 }), []);
 });
 
-test("a shadow user from another instance is checked like a local account", () => {
-    const detector = new SpamDetector();
-    const shadow = account(0);
-    const send = sender(detector, config(), shadow);
-    send("@everyone raid incoming");
-    assert.deepEqual(rules(send("@everyone raid incoming")), ["everyone_spam"]);
-});
-
 test("disabled rules never trip and memory is swept", () => {
     const cfg = config();
     for (const key of ["everyone", "mentions", "flood", "duplicates", "links", "burst"]) cfg[key].enabled = false;
@@ -337,22 +329,16 @@ function spamGuardFixture(users, spamConfig = new AutomodSpamConfiguration(), { 
     const calls = {
         userUpdates: [],
         memberUpdates: [],
-        blocks: [],
         deleted: [],
         events: [],
         logs: [],
         incidents: [],
         mentionRaid: [],
         revoked: [],
-        reports: [],
         rateHits: new Map(),
     };
     const messages = new Map();
     const database = {
-        FederationBlock: {
-            exists: async () => false,
-            create: (row) => ({ save: async () => calls.blocks.push(row) }),
-        },
         Guild: { find: async ({ where }) => where.id.in.map((id) => ({ id, owner_id: "999" })) },
         Member: {
             update: async (where, values) => {
@@ -425,15 +411,11 @@ function spamGuardFixture(users, spamConfig = new AutomodSpamConfiguration(), { 
         "./staffDisable": { staffDisableColumns: () => ({ disabled: true, flags: () => "flags | 2199023255552" }) },
         "./automodPolicy": policyModule(policies, staff),
         "@spacebar/util/util/AutomodPolicy": require("../../src/util/util/AutomodPolicy.ts"),
-        "./automodReports": { reportToHomeInstance: async (user, entry) => calls.reports.push([user.id, entry.rule]) },
         "./safety": {
             emitMemberUpdate: async () => undefined,
             recordMentionSpam: async (guild_id, user_id) => calls.mentionRaid.push([guild_id, user_id]),
             restoreRaidState: async () => undefined,
         },
-        "./federationIds.js": { canonicalOf: async (id) => `@${id}@remote.example` },
-        "./federation.js": { invalidateDirectory: () => undefined },
-        "./federationNetwork.js": { invalidateTrust: () => undefined },
     });
     return { guard, calls, messages };
 }
@@ -491,21 +473,6 @@ test("a server owner can't be timed out in their server and is not muted on the 
     assert.equal(result.taken, "delete");
     assert.equal(calls.memberUpdates.length, 0);
     assert.ok(!calls.rateHits.has("spam-mute:999"));
-});
-
-test("a shadow user that trips a suspension is blocked from federating like the admin page does", async () => {
-    const shadow = { id: snowflake(Date.now() - 1000), username: "raider@remote.example", federated_instance: "remote.example", rights: "0" };
-    const spam = new AutomodSpamConfiguration();
-    spam.everyone.action = "suspend";
-    const { guard, calls } = spamGuardFixture([shadow], spam);
-    await guard.checkSpam({ user_id: shadow.id, channel: { id: "c1", guild_id: "g1" }, content: "@everyone", message_id: snowflake(Date.now()) });
-    await rejects(guard.checkSpam({ user_id: shadow.id, channel: { id: "c1", guild_id: "g1" }, content: "@here", message_id: snowflake(Date.now()) }));
-    assert.equal(calls.blocks.length, 1);
-    assert.equal(calls.blocks[0].kind, "user");
-    assert.equal(calls.blocks[0].target, `@${shadow.id}@remote.example`);
-    assert.equal(calls.logs[0].action, "federation_block");
-    assert.ok(calls.userUpdates[0].suspended_until > new Date());
-    assert.deepEqual(calls.revoked, [shadow.id]);
 });
 
 test("repeat offenders escalate after the strike limit", async () => {
@@ -819,24 +786,6 @@ test("false positive: a moderator posting one announcement in several channels i
     for (let i = 0; i < 4; i++) assert.deepEqual(send(text, { channel_id: `93${i}`, gap: 5000 }), []);
 });
 
-test("false positive: accounts from other instances are as old as their remote account, not their shadow", async () => {
-    const shadow = { id: snowflake(Date.now() - 1000), username: "veteran@remote.example", rights: "0", federated_instance: "remote.example" };
-    const { guard, calls } = spamGuardFixture([shadow]);
-    const remote = { federated_instance: "remote.example", created_at: new Date(Date.now() - 900 * DAY) };
-    for (let i = 0; i < 6; i++)
-        await guard.checkSpam({
-            user_id: shadow.id,
-            account: remote,
-            channel: { id: "c1", guild_id: "g1" },
-            content: `look https://site${i}.example/page`,
-            message_id: snowflake(Date.now()),
-        });
-    assert.equal(calls.logs.length, 0);
-    assert.equal(guard.accountCreatedAt(shadow.id, remote), remote.created_at.getTime());
-    assert.equal(guard.accountCreatedAt(shadow.id, { federated_instance: "remote.example", created_at: "not a date" }), Number((BigInt(shadow.id) >> 22n) + EPOCH));
-    assert.equal(guard.accountCreatedAt(shadow.id, null), Number((BigInt(shadow.id) >> 22n) + EPOCH));
-});
-
 test("false positive: the encrypted placeholder never counts as text even when the encrypted flag is missing", async () => {
     const users = Array.from({ length: 6 }, (_, i) => ({ id: snowflake(Date.now() - 1000 - i), username: `new${i}`, rights: "0" }));
     const { guard, calls } = spamGuardFixture(users);
@@ -847,29 +796,10 @@ test("false positive: the encrypted placeholder never counts as text even when t
     assert.ok(e2ee.includes(`E2EE_FALLBACK_CONTENT = "${guard.ENCRYPTED_PLACEHOLDER}"`));
 });
 
-test("false positive: remote accounts joining are counted by their real age in join raids", async () => {
-    const remote = Array.from({ length: 10 }, () => ({ id: snowflake(Date.now() - 1000), federated_instance: "remote.example", created_at: new Date(Date.now() - 500 * DAY) }));
-    const { safety, stored } = safetyFixture(new SafetyConfiguration(), {}, { users: remote });
-    for (const [i, user] of remote.entries()) await safety.recordGuildJoin("g1", user.id, `remote${i}`);
-    assert.equal(stored.incidents_data, null);
-});
-
 test("false positive: a server moderator messaging many members is not a DM raid", async () => {
     const safetyConfig = new SafetyConfiguration();
     safetyConfig.dmRaidThreshold = 3;
     const { safety, stored } = safetyFixture(safetyConfig, {}, { moderators: ["mod"] });
     for (let i = 0; i < 6; i++) await safety.recordGuildMemberDm(["g1"], "mod", `member${i}`);
     assert.equal(stored.incidents_data, null);
-});
-
-test("the message and contact routes pass the account so remote accounts keep their real age", () => {
-    for (const route of [
-        "channels/#channel_id/messages/index.ts",
-        "channels/#channel_id/messages/#message_id/index.ts",
-        "channels/#channel_id/threads.ts",
-        "users/@me/channels.ts",
-        "users/@me/relationships.ts",
-    ])
-        assert.match(fs.readFileSync(path.join(__dirname, "../../src/api/routes", route), "utf8"), /account: req\.user/, route);
-    assert.match(fs.readFileSync(path.join(__dirname, "../../src/util/util/Token.ts"), "utf8"), /"created_at",/);
 });

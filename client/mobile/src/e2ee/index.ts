@@ -23,6 +23,7 @@ export interface MobileE2eeOptions {
 
 interface ChannelStore {
     getChannel(id: string): { type?: number; e2ee_enabled?: boolean; e2ee_enabled_at?: string | null } | undefined;
+    getDMFromUserId?(userId: string): string | null | undefined;
 }
 
 const HOOK_TIMEOUT_MS = 60000;
@@ -221,6 +222,7 @@ export const createMobileE2ee = (options: MobileE2eeOptions) => {
         onState: () => {},
         updateRecord: () => {},
         onError: (error, channelId) => log(`message in ${channelId} wasn't sent: ${errorText(error)}`),
+        conversationWith: (userId) => channelStore?.getDMFromUserId?.(userId) ?? null,
     });
 
     ready.then((ok) => {
@@ -336,10 +338,12 @@ export const createMobileE2ee = (options: MobileE2eeOptions) => {
         E2EE_DEVICES_UPDATE: (data: Record<string, unknown>) => {
             engine.invalidateUser(String(data.user_id));
             if (String(data.user_id) === engine.userId && initialized) engine.refresh().catch((error) => log(`refresh failed: ${errorText(error)}`));
+            hooks.retryFailed(String(data.user_id));
         },
         E2EE_IDENTITY_UPDATE: (data: Record<string, unknown>) => {
             const userId = String(data.user_id);
             engine.invalidateUser(userId);
+            hooks.retryFailed(userId);
             if (!initialized) return;
             if (userId === engine.userId) engine.refresh().catch((error) => log(`refresh failed: ${errorText(error)}`));
             else engine.keysFor([userId]).catch((error) => log(`couldn't check the new identity: ${errorText(error)}`));
@@ -400,12 +404,15 @@ export const createMobileE2ee = (options: MobileE2eeOptions) => {
             hooks.watchDispatcher(dispatcher);
             dispatcher.subscribe("LOGOUT", signOut);
             dispatcher.subscribe("CONNECTION_OPEN", (action: FluxAction) => {
+                engine.invalidateAll();
                 const user = action.user as { id?: string } | undefined;
                 if (user?.id) start(user.id);
                 else startFromToken();
             });
             dispatcher.subscribe("CHANNEL_RECIPIENT_ADD", (action: FluxAction) => engine.invalidateChannel(String(action.channelId)));
             dispatcher.subscribe("CHANNEL_RECIPIENT_REMOVE", (action: FluxAction) => engine.invalidateChannel(String(action.channelId)));
+            dispatcher.subscribe("CHANNEL_CREATE", (action: FluxAction) => engine.invalidateChannel(String((action.channel as { id?: string } | undefined)?.id)));
+            dispatcher.subscribe("CHANNEL_DELETE", (action: FluxAction) => engine.invalidateChannel(String((action.channel as { id?: string } | undefined)?.id)));
             log("hooked the dispatcher");
         }
         if (!ticking) tick();

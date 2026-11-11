@@ -30,6 +30,10 @@ try {
 }
 assert.equal(actualDatabase, expectedDatabase, "Encryption tests must run against the explicitly selected isolated database");
 const recoveryOnly = process.env.E2EE_PASSWORD_RECOVERY_ONLY === "1";
+const onlyPhases = (process.env.E2EE_ONLY ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
 const FALLBACK = "🔒 Encrypted message";
 const profiles = mkdtempSync(join(tmpdir(), "fosscord-e2ee-"));
 const started = Date.now();
@@ -236,6 +240,52 @@ const waitDecrypted = (s, text) =>
         text,
         { timeout: 12000 },
     );
+const settles = async (what, operation) => {
+    try {
+        return await operation;
+    } catch (error) {
+        if (/timeout|timed out/i.test(String(error))) assert.fail(`${what}: ${String(error).split("\n")[0]}`);
+        throw error;
+    }
+};
+const navigate = async (s, channelId) => {
+    const path = `/channels/@me/${channelId}`;
+    await s.page.waitForFunction((id) => !!window.Vencord.Webpack.findStore("ChannelStore").getChannel(id), channelId, { timeout: 10000 });
+    for (let attempt = 1; ; attempt++) {
+        await s.page.evaluate((target) => window.Vencord.Webpack.Common.NavigationRouter.transitionTo(target), path);
+        const opened = await s.page
+            .waitForFunction((target) => location.pathname === target && [...document.querySelectorAll('[role="textbox"]')].some((box) => box.offsetParent !== null), path, {
+                timeout: 5000,
+            })
+            .then(
+                () => true,
+                () => false,
+            );
+        if (opened) return;
+        if (attempt === 4) {
+            await shot(s, `navigate-${s.user.name}`);
+            throw new Error(`Timeout opening ${path}`);
+        }
+    }
+};
+const sendIn = async (s, channelId, text) => {
+    for (let attempt = 1; ; attempt++) {
+        await navigate(s, channelId);
+        const clicked = await s.page
+            .locator('[role="textbox"]')
+            .first()
+            .click({ timeout: 5000 })
+            .then(
+                () => true,
+                () => false,
+            );
+        if (clicked && new URL(s.page.url()).pathname === `/channels/@me/${channelId}`) break;
+        if (attempt === 3) throw new Error(`Timeout typing in ${channelId}`);
+    }
+    await s.page.keyboard.type(text);
+    await s.page.keyboard.press("Enter");
+};
+const messageStates = (s) => s.page.evaluate(() => window.__fosscordE2ee?.status?.()?.states ?? {});
 const png = (width, height) => {
     const chunk = (type, data) => {
         const head = Buffer.alloc(8);
@@ -367,6 +417,7 @@ const phase = async (name, fn) => {
         ].includes(name)
     )
         return;
+    if (onlyPhases.length && !onlyPhases.some((part) => name.includes(part))) return;
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
             log(`${name}${attempt > 1 ? ` (attempt ${attempt})` : ""}`);
@@ -386,6 +437,10 @@ let profiled = 0;
 let recoveryCode = "";
 let restoredFixtureAccess = false;
 const fresh = (name) => `${name}-${++profiled}`;
+const accounts = (...names) => {
+    const run = randomBytes(2).toString("hex");
+    return Promise.all(names.map((name) => account(`${name}${run}`)));
+};
 let profileB = "";
 const first = `hello from tester ${suffix}`;
 const second = `reply from friend ${suffix}`;
@@ -740,6 +795,234 @@ try {
             throw error;
         } finally {
             await close(a, b);
+        }
+    });
+
+    await phase("a group DM keeps working while members leave, rejoin and change during a send", async () => {
+        const [g1, g2, g3] = await accounts("g1", "g2", "g3");
+        const group = (await call("POST", "/users/@me/channels", g1.token, { recipients: [g2.id, g3.id] })).body;
+        assert.equal(group?.type, 3, "g1 created a group DM");
+        const messagesUrl = `**/api/v9/channels/${group.id}/messages`;
+        const [a, b, c] = await launchAll([g1, { login: true, channel: group.id }], [g2, { login: true, channel: group.id }], [g3, { login: true, channel: group.id }]);
+        let d = null;
+        try {
+            await Promise.all([a, b, c].map(waitReady));
+            for (const s of [a, b, c]) await navigate(s, group.id);
+            const hello = `group hello ${suffix}`;
+            await sendIn(a, group.id, hello);
+            await Promise.all([waitDecrypted(b, hello), waitDecrypted(c, hello)]);
+
+            assert.equal((await call("DELETE", `/channels/${group.id}`, g2.token)).status, 200, "g2 left the group");
+            assert.equal((await call("DELETE", `/channels/${group.id}`, g3.token)).status, 200, "g3 left the group");
+            assert.equal((await call("PUT", `/channels/${group.id}/recipients/${g2.id}`, g1.token)).status, 204, "g1 added g2 back");
+            await navigate(b, group.id);
+            const rejoined = `back in the group ${suffix}`;
+            await sendIn(b, group.id, rejoined);
+            await settles("a member whose tab stayed open while they left and rejoined can send", waitDecrypted(a, rejoined));
+            log("a member who left and rejoined with the same tab sends to the current members");
+
+            assert.equal((await call("PUT", `/channels/${group.id}/recipients/${g3.id}`, g1.token)).status, 204, "g1 added g3 back");
+            await navigate(c, group.id);
+            const together = `everyone is back ${suffix}`;
+            await sendIn(a, group.id, together);
+            await settles("a member who was added back reads new messages", waitDecrypted(c, together));
+            await waitDecrypted(b, together);
+
+            let left = false;
+            await a.page.route(messagesUrl, async (route) => {
+                if (route.request().method() === "POST" && !left) {
+                    left = true;
+                    assert.equal((await call("DELETE", `/channels/${group.id}`, g3.token)).status, 200, "g3 left while a message was on its way");
+                }
+                await route.continue();
+            });
+            const duringLeave = `sent while g3 was leaving ${suffix}`;
+            await sendIn(a, group.id, duringLeave);
+            await settles("a message sent while a member left reaches the others", waitDecrypted(b, duringLeave));
+            await a.page.unroute(messagesUrl);
+            const afterLeave = (await call("GET", `/channels/${group.id}/messages?limit=5`, g1.token)).body.find((m) => m.encrypted && m.author.id === g1.id);
+            assert.ok(!afterLeave.encrypted.keys.some((key) => key.user_id === g3.id), "the delivered envelope leaves out the member who left");
+            assert.ok(!(afterLeave.encrypted.backup ?? []).some((key) => key.user_id === g3.id), "the delivered envelope has no backup key for the member who left");
+            log("a member leaving during a send doesn't make the send fail");
+
+            let joined = false;
+            await a.page.route(messagesUrl, async (route) => {
+                if (route.request().method() === "POST" && !joined) {
+                    joined = true;
+                    assert.equal((await call("PUT", `/channels/${group.id}/recipients/${g3.id}`, g1.token)).status, 204, "g3 was added while a message was on its way");
+                }
+                await route.continue();
+            });
+            const duringJoin = `sent while g3 was joining ${suffix}`;
+            await sendIn(a, group.id, duringJoin);
+            await settles("a message sent while a member joined reaches the others", waitDecrypted(b, duringJoin));
+            await a.page.unroute(messagesUrl);
+            await navigate(c, group.id);
+            await settles("a member added during a send reads that message", waitDecrypted(c, duringJoin));
+            log("a member added during a send reads it");
+
+            let mismatched = false;
+            let interrupted = false;
+            await a.page.route(messagesUrl, async (route) => {
+                if (route.request().method() !== "POST" || mismatched) return route.continue();
+                mismatched = true;
+                await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ code: 90001, message: "E2EE_DEVICE_MISMATCH" }) });
+            });
+            await a.page.route("**/api/v9/e2ee/keys/query", async (route) => {
+                if (!mismatched || interrupted) return route.continue();
+                interrupted = true;
+                await route.abort("connectionreset");
+            });
+            const interruptedText = `the retry loses its connection ${suffix}`;
+            await sendIn(a, group.id, interruptedText);
+            await settles(
+                "the sender is told a message wasn't sent when its retry can't be encrypted",
+                a.page.locator(".fe2ee-notice[data-tone='danger']").waitFor({ timeout: 10000 }),
+            );
+            const afterFailure = `the queue keeps going ${suffix}`;
+            await sendIn(a, group.id, afterFailure);
+            await settles("a message after a failed retry still goes out", waitDecrypted(b, afterFailure));
+            await a.page.unroute(messagesUrl);
+            await a.page.unroute("**/api/v9/e2ee/keys/query");
+            assert.ok(
+                !(await call("GET", `/channels/${group.id}/messages?limit=10`, g1.token)).body.some(
+                    (m) => m.content.includes(suffix) || JSON.stringify(m.encrypted ?? null).includes(suffix),
+                ),
+                "no failed attempt left plaintext on the server",
+            );
+            log("a send whose retry fails is reported and doesn't block the messages after it");
+
+            let lookupsFail = true;
+            await b.page.route("**/api/v9/e2ee/keys/query", (route) => (lookupsFail ? route.abort("connectionreset") : route.continue()));
+            d = await launch(g1, { login: true, profile: fresh("g1-second"), channel: group.id });
+            await waitReady(d);
+            await navigate(d, group.id);
+            const fromSecond = `from g1's second browser ${suffix}`;
+            await sendIn(d, group.id, fromSecond);
+            await settles(
+                "the reader marks the message as unreadable while key lookups fail",
+                b.page.waitForFunction(() => Object.values(window.__fosscordE2ee?.status?.()?.states ?? {}).some((entry) => entry.state === "failed"), null, { timeout: 15000 }),
+            );
+            lookupsFail = false;
+            await settles("a message that couldn't be decrypted during a lookup failure decrypts once lookups work", waitDecrypted(b, fromSecond));
+            await b.page.unroute("**/api/v9/e2ee/keys/query");
+            log("a decrypt that failed on a key lookup error is retried");
+            assert.deepEqual(
+                Object.values(await messageStates(b)).filter((entry) => entry.state === "failed"),
+                [],
+                "no message stays unreadable for g2",
+            );
+        } catch (error) {
+            await diagnose(...[a, b, c, d].filter(Boolean));
+            throw error;
+        } finally {
+            await close(...[a, b, c, d].filter(Boolean));
+        }
+    });
+
+    await phase("a report from the message menu in a group DM gives staff the verified text and its context", async () => {
+        const [r1, r2, r3, staff] = await accounts("r1", "r2", "r3", "staff");
+        execFileSync("bun", ["scripts/ops/operator.mjs", "grant", staff.id], { env: { ...process.env, DATABASE: database }, stdio: "pipe" });
+        const group = (await call("POST", "/users/@me/channels", r1.token, { recipients: [r2.id, r3.id] })).body;
+        assert.equal(group?.type, 3, "r1 created a group DM");
+        const [a, b, c] = await launchAll([r1, { login: true, channel: group.id }], [r2, { login: true, channel: group.id }], [r3, { login: true, channel: group.id }]);
+        let admin = null;
+        try {
+            await Promise.all([a, b, c].map(waitReady));
+            for (const s of [a, b, c]) await navigate(s, group.id);
+            const before = `context before the report ${suffix}`;
+            const fromThird = `context from the third member ${suffix}`;
+            const reportedText = `the reported message ${suffix}`;
+            const edit = `the reported message, edited ${suffix}`;
+            const after = `context after the report ${suffix}`;
+            await sendIn(a, group.id, before);
+            await waitDecrypted(b, before);
+            await sendIn(c, group.id, fromThird);
+            await waitDecrypted(b, fromThird);
+            await sendIn(a, group.id, reportedText);
+            await waitDecrypted(b, reportedText);
+            await a.page.locator('[role="textbox"]').first().click();
+            await a.page.keyboard.press("ArrowUp");
+            await a.page.keyboard.press("ControlOrMeta+a");
+            await a.page.keyboard.type(edit);
+            await a.page.keyboard.press("Enter");
+            await waitDecrypted(b, edit);
+            await sendIn(c, group.id, after);
+            await waitDecrypted(b, after);
+            const history = (await call("GET", `/channels/${group.id}/messages?limit=20`, r2.token)).body;
+            const target = history.find((m) => m.encrypted?.mid && m.author.id === r1.id);
+            assert.ok(target, "the edited message is in the history");
+
+            const submitted = b.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/reporting/message"), {
+                timeout: 30000,
+            });
+            await b.page.locator(`#chat-messages-${group.id}-${target.id}`).click({ button: "right" });
+            await b.page.locator("#message-report").click();
+            await b.page.getByText("Harassment or threats", { exact: true }).click();
+            await b.page.getByRole("button", { name: /^(Submit|Submit Report|Send Report|Send)$/i }).click();
+            const response = await settles("the report menu submitted the report", submitted);
+            const request = response.request().postDataJSON();
+            assert.equal(response.status(), 200, `the server accepted the report: ${await response.text()}`);
+            assert.ok(request.e2ee_content_key, "the reporter's client attached the content key of the reported message");
+            const answer = await response.json();
+            const snapshot = JSON.parse(sql(`select snapshot::text from reports where id = '${answer.report_id}'`));
+            assert.equal(snapshot.encrypted?.verified, true, `the server verified the reported message: ${JSON.stringify(snapshot.encrypted)}`);
+            assert.equal(snapshot.content, edit, "the report holds the current text of the edited message");
+            const contextText = (snapshot.context ?? []).filter((m) => m.encrypted).map((m) => [m.content, m.encrypted.verified]);
+            assert.deepEqual(
+                contextText,
+                [
+                    [before, true],
+                    [fromThird, true],
+                    [after, true],
+                ],
+                "every encrypted message around it is verified, from every member",
+            );
+
+            admin = await launch(staff, { channel: group.id });
+            await admin.page.goto(`${origin}/admin#/reports`);
+            await admin.page.locator(`tr[data-id="${answer.report_id}"]`).click({ timeout: 20000 });
+            const drawer = admin.page.locator("#drawer-body");
+            await settles("staff open the report", drawer.getByText("Reported message").first().waitFor({ timeout: 10000 }));
+            const shown = await drawer.innerText();
+            assert.ok(shown.includes("Verified encrypted text"), "the dashboard marks the text as verified");
+            for (const text of [edit, before, fromThird, after]) assert.ok(shown.includes(text), `staff see "${text}" in the report`);
+            log("staff read the verified text of a group DM report and the conversation around it");
+
+            const menu = (await call("GET", "/reporting/menu/user", r2.token)).body;
+            const userAnswer = await b.page.evaluate(
+                (body) =>
+                    window.Vencord.Webpack.Common.RestAPI.post({ url: "/reporting/user", body }).then(
+                        (res) => res.body,
+                        (error) => ({ error: String(error?.body ? JSON.stringify(error.body) : error) }),
+                    ),
+                { version: menu.version, variant: menu.variant, language: "en", breadcrumbs: [menu.root_node_id, 1011], elements: {}, name: "user", user_id: r1.id },
+            );
+            assert.ok(userAnswer?.report_id, `the user report was accepted: ${JSON.stringify(userAnswer)}`);
+            const userSnapshot = JSON.parse(sql(`select snapshot::text from reports where id = '${userAnswer.report_id}'`));
+            const shared = (userSnapshot.context ?? []).filter((m) => m.encrypted).map((m) => [m.content, m.encrypted.verified]);
+            assert.deepEqual(
+                shared,
+                [
+                    [before, true],
+                    [fromThird, true],
+                    [edit, true],
+                    [after, true],
+                ],
+                "a user report from the conversation carries the verified messages around it",
+            );
+            await admin.page.keyboard.press("Escape");
+            await admin.page.reload();
+            await admin.page.locator(`tr[data-id="${userAnswer.report_id}"]`).click({ timeout: 20000 });
+            await settles("staff open the user report", drawer.getByText("Their conversation with the reporter").first().waitFor({ timeout: 10000 }));
+            const userShown = await drawer.innerText();
+            for (const text of [edit, before, fromThird, after]) assert.ok(userShown.includes(text), `staff see "${text}" in the user report`);
+            log("staff read the verified conversation of a user report from a group DM");
+        } catch (error) {
+            await diagnose(...[a, b, c, admin].filter(Boolean));
+            throw error;
+        } finally {
+            await close(...[a, b, c, admin].filter(Boolean));
         }
     });
 

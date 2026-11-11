@@ -46,7 +46,6 @@ async function connect(stored = { guild_id: "guild", channel_id: "lobby" }) {
         "@spacebar/gateway": { CLOSECODES: { Authentication_failed: 4004 } },
         "@spacebar/schemas": { ChannelType: { GUILD_STAGE_VOICE: 13 }, validateSchema: (_, data) => data },
         "@spacebar/util": {
-            FederatedVoice: {},
             getPermission: async () => ({ has: () => true }),
             listenEvent: async (_, listener) => {
                 listeners.push(listener);
@@ -71,7 +70,6 @@ async function connect(stored = { guild_id: "guild", channel_id: "lobby" }) {
                 },
             },
         },
-        "../util/DaveIdentity": { daveIdOf: async () => "1" },
     });
     const socket = {
         readyState: 1,

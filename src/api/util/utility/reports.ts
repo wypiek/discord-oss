@@ -1,12 +1,25 @@
 import { HTTPError } from "lambert-server/HTTPError";
 import { In, IsNull, LessThan, MoreThan } from "typeorm";
 import { createDecipheriv } from "node:crypto";
-import { Application, Channel, Guild, GuildScheduledEvent, Member, Message, Recipient, Report, ReportSnapshot, StageInstance, User, UserViolation } from "@spacebar/database";
+import {
+    Application,
+    Channel,
+    FormerRecipient,
+    Guild,
+    GuildScheduledEvent,
+    Member,
+    Message,
+    Recipient,
+    Report,
+    ReportSnapshot,
+    StageInstance,
+    User,
+    UserViolation,
+} from "@spacebar/database";
 import { ChannelType, CreateReportSchema, ReportMenuType } from "@spacebar/schemas";
 import { DiscordApiErrors, getPermission, getUrlSignature, NewUrlSignatureData } from "@spacebar/util";
 import { snapshotWidget } from "../handlers/ApplicationWidgets";
 import { e2eeDevicesOf, verifyEd25519 } from "./e2ee";
-import { canonicalOf, localReferences } from "./federationIds";
 import { automodVerifiedReport } from "./instanceAutomod";
 
 import { getReportingMenu } from "./reportMenus";
@@ -49,15 +62,11 @@ const openEnvelope = async (message: Message, encodedKey: unknown): Promise<Open
     if (key?.length !== 32) return { verified: false, reason: "The reporter's client didn't share the key for this message." };
     const { author_id, channel_id } = message;
     if (!author_id || !channel_id) return { verified: false, reason: "The message has no author." };
-    const device = (await e2eeDevicesOf([author_id], { channel_id })).find((candidate) => candidate.id === envelope.sender_device && candidate.user_id === author_id);
+    const device = (await e2eeDevicesOf([author_id])).find((candidate) => candidate.id === envelope.sender_device && candidate.user_id === author_id);
     if (!device) return { verified: false, reason: "The device that sent this message no longer exists." };
     if (device.revoked_at && message.timestamp && message.timestamp >= device.revoked_at) return { verified: false, reason: "This message was sent from a removed device." };
-    const ids = await (async () => {
-        if (envelope.v !== 2) return { channel: channel_id, author: author_id, mid: message.id };
-        const [channel, author, mid] = await Promise.all([canonicalOf(channel_id), canonicalOf(author_id), canonicalOf(message.id)]);
-        return { channel, author, mid };
-    })().catch(() => null);
-    if (!ids) return { verified: false, reason: "This message came from a conversation across instances, and this instance can't name it." };
+    if (envelope.v !== 1) return { verified: false, reason: "This message uses an envelope version this instance doesn't read." };
+    const ids = { channel: channel_id, author: author_id, mid: message.id };
     if (envelope.mid && envelope.mid !== ids.mid) return { verified: false, reason: "The envelope belongs to another message." };
     const bind = envelope.mid ? `m:${envelope.mid}` : `n:${message.nonce ?? ""}`;
     const signed = [
@@ -85,7 +94,7 @@ const openEnvelope = async (message: Message, encodedKey: unknown): Promise<Open
         const text = typeof payload?.content === "string" ? payload.content : "";
         return {
             verified: true,
-            content: (envelope.v === 2 ? await localReferences(text) : text).slice(0, 4000),
+            content: text.slice(0, 4000),
             files: Array.isArray(payload?.attachments)
                 ? payload.attachments.flatMap((file: { filename?: unknown }) => (typeof file?.filename === "string" ? [file.filename.slice(0, 200)] : [])).slice(0, 10)
                 : [],
@@ -104,6 +113,42 @@ const isMember = (userId: string, guildId: string) => Member.exists({ where: { i
 
 export const REPORT_CONTEXT_BEFORE = 15;
 export const REPORT_CONTEXT_AFTER = 10;
+export const REPORT_CONVERSATION = 25;
+
+const sharedKeys = (body: CreateReportSchema) => (body.e2ee_context_keys && typeof body.e2ee_context_keys === "object" ? body.e2ee_context_keys : {});
+
+const contextEntry = async (entry: Message, keys: Record<string, string>, after: boolean) => {
+    const opened = entry.encrypted ? await openEnvelope(entry, keys[entry.id]) : null;
+    return {
+        id: entry.id,
+        type: entry.type,
+        author: entry.author ? pickAuthor(entry.author) : undefined,
+        content: (opened ? (opened.content ?? "") : (entry.content ?? "")).slice(0, 2000),
+        sent_at: entry.timestamp?.toISOString(),
+        files: opened ? (opened.files?.length ?? 0) : (entry.attachments?.length ?? 0),
+        embeds: entry.embeds?.length ?? 0,
+        ...(opened && { encrypted: { verified: opened.verified } }),
+        after,
+    };
+};
+
+const privateConversation = async (channelId: string, reporterId: string, reportedId: string, keys: Record<string, string>) => {
+    const channel = await Channel.findOne({ where: { id: channelId }, select: { id: true, type: true } });
+    if (!channel || (channel.type !== ChannelType.DM && channel.type !== ChannelType.GROUP_DM)) return null;
+    const [reporter, reported, former] = await Promise.all([
+        Recipient.exists({ where: { channel_id: channelId, user_id: reporterId } }),
+        Recipient.exists({ where: { channel_id: channelId, user_id: reportedId } }),
+        FormerRecipient.exists({ where: { channel_id: channelId, user_id: reportedId } }),
+    ]);
+    if (!reporter || (!reported && !former)) return null;
+    const recent = await Message.find({
+        where: { channel_id: channelId },
+        order: { id: "DESC" },
+        take: REPORT_CONVERSATION,
+        relations: { author: true, attachments: true },
+    });
+    return Promise.all(recent.reverse().map((entry) => contextEntry(entry, keys, false)));
+};
 
 export async function createReport(type: string, body: CreateReportSchema, reporterId: string, menu: Menu) {
     const recent = await Report.count({
@@ -165,7 +210,7 @@ export async function createReport(type: string, body: CreateReportSchema, repor
             snapshot.attachments = [];
             snapshot.encrypted = { verified: opened.verified, ...(opened.reason && { reason: opened.reason }), ...(opened.files?.length && { files: opened.files }) };
         }
-        const contextKeys = body.e2ee_context_keys && typeof body.e2ee_context_keys === "object" ? body.e2ee_context_keys : {};
+        const contextKeys = sharedKeys(body);
         const [before, after] = await Promise.all([
             Message.find({
                 where: { channel_id: claimed.channel_id, id: LessThan(message.id) },
@@ -181,22 +226,7 @@ export async function createReport(type: string, body: CreateReportSchema, repor
             }),
         ]);
         const later = new Set(after.map((entry) => entry.id));
-        snapshot.context = await Promise.all(
-            [...before.reverse(), ...after].map(async (entry) => {
-                const opened = entry.encrypted ? await openEnvelope(entry, contextKeys[entry.id]) : null;
-                return {
-                    id: entry.id,
-                    type: entry.type,
-                    author: entry.author ? pickAuthor(entry.author) : undefined,
-                    content: (opened ? (opened.content ?? "") : (entry.content ?? "")).slice(0, 2000),
-                    sent_at: entry.timestamp?.toISOString(),
-                    files: opened ? (opened.files?.length ?? 0) : (entry.attachments?.length ?? 0),
-                    embeds: entry.embeds?.length ?? 0,
-                    ...(opened && { encrypted: { verified: opened.verified } }),
-                    after: later.has(entry.id),
-                };
-            }),
-        );
+        snapshot.context = await Promise.all([...before.reverse(), ...after].map((entry) => contextEntry(entry, contextKeys, later.has(entry.id))));
     } else if (type === ReportMenuType.GUILD || type === ReportMenuType.GUILD_DISCOVERY || type === ReportMenuType.GUILD_DIRECTORY_ENTRY) {
         const guild = claimed.guild_id ? await Guild.findOne({ where: { id: claimed.guild_id }, select: { id: true, name: true, owner_id: true } }) : null;
         if (!guild) throw DiscordApiErrors.UNKNOWN_GUILD;
@@ -260,6 +290,13 @@ export async function createReport(type: string, body: CreateReportSchema, repor
             }
         } else if (claimed.guild_id && (await isMember(reporterId, claimed.guild_id)) && (await isMember(user.id, claimed.guild_id))) {
             report.guild_id = claimed.guild_id;
+        }
+        if (type === ReportMenuType.USER && claimed.channel_id) {
+            const context = await privateConversation(claimed.channel_id, reporterId, user.id, sharedKeys(body));
+            if (context) {
+                report.channel_id = claimed.channel_id;
+                snapshot = { ...snapshot, context };
+            }
         }
     }
     if (report.reported_user_id === reporterId) throw new HTTPError("You can't report yourself.", 400);

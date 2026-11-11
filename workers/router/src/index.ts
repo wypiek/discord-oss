@@ -11,7 +11,6 @@ const API_ROOTS = new Set([
     "_spacebar",
     "__development",
     "error-reporting-proxy",
-    "federation",
     "imageproxy",
     "external",
     "klipy",
@@ -19,12 +18,16 @@ const API_ROOTS = new Set([
     "tos",
     "privacy",
     "guidelines",
+    "blog",
+    "support",
     "widget",
     "rtc",
     "remote-auth",
 ]);
 
 const API_STATIC = /^\/static\/email\//;
+
+const API_PATHS = new Set(["/status/history.atom"]);
 
 const BUNDLED_FILES = [
     {
@@ -49,7 +52,7 @@ const bundledFile = async (request: Request, env: RouterEnv, pathname: string) =
     return undefined;
 };
 
-export const CDN_FALLBACK_ROOTS = new Set(["clan-badges", "embed", "federation-media", "federation-upload", "detectables", "changelogs", "bad-domains", "media"]);
+export const CDN_FALLBACK_ROOTS = new Set(["clan-badges", "embed", "detectables", "changelogs", "bad-domains", "media"]);
 
 const unavailable = (service: string) =>
     new Response(JSON.stringify({ message: `The ${service} service is not bound to this worker`, code: 0 }), {
@@ -71,7 +74,7 @@ export const route = (pathname: string, upgrade: boolean) => {
     if (upgrade) return "gateway";
     const root = pathname.split("/")[1];
     if (root === "_meowcord") return "hidden";
-    if (pathname === "/" || API_ROOTS.has(root) || API_STATIC.test(pathname)) return "api";
+    if (pathname === "/" || API_ROOTS.has(root) || API_PATHS.has(pathname) || API_STATIC.test(pathname)) return "api";
     return "edge";
 };
 

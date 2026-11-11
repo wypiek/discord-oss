@@ -32,8 +32,8 @@ const RULE_REASONS: Record<string, string> = {
 
 const ACTIONS_FOR: Record<AutomodAppealRestriction, string[]> = {
     held: ["hold"],
-    suspended: ["suspend", "federation_block"],
-    disabled: ["disable", "federation_block"],
+    suspended: ["suspend"],
+    disabled: ["disable"],
 };
 
 export interface AppealSubject {

@@ -38,7 +38,7 @@ router.put(
         const { role_ids } = req.body as AdminUserStaffRolesSchema;
         const user = await User.findOneOrFail({
             where: { id: req.params.user_id as string },
-            select: { id: true, rights: true, bot: true, deleted: true, federated_instance: true },
+            select: { id: true, rights: true, bot: true, deleted: true },
         });
         const snap = await loadStaffRoles(true);
         const actor = staffActor(req);
@@ -49,7 +49,7 @@ router.put(
         const added = wanted.filter((id) => !current.includes(id));
         const removed = current.filter((id) => !wanted.includes(id));
         if (!added.length && !removed.length) return res.json({ roles: describe(String(user.id), snap) });
-        if (added.length && (user.bot || user.deleted || user.federated_instance)) throw new HTTPError("Only active local human accounts can hold staff roles", 400);
+        if (added.length && (user.bot || user.deleted)) throw new HTTPError("Only active human accounts can hold staff roles", 400);
         if (String(user.id) === req.user_id && !req.rights.has("OPERATOR")) throw new HTTPError("You can't change your own staff roles", 403);
         if (!canActOn(actor, user, snap)) throw new HTTPError("You can't change the roles of staff at or above your own role", 403);
         for (const id of [...added, ...removed]) assertBelowActor(actor, snap.roles.get(id)!.position, snap);
