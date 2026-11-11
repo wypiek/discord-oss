@@ -206,8 +206,8 @@ pub struct App {
 }
 
 impl App {
-    pub fn start(ui: &AppWindow, runtime: Handle) -> Self {
-        let store_path = dirs::config_dir().unwrap_or_else(std::env::temp_dir).join("oss-chat").join("instances.json");
+    pub fn start(ui: &AppWindow, runtime: Handle, data_dir: PathBuf) -> Self {
+        let store_path = data_dir.join("instances.json");
         let store = Store::load(&store_path);
         let app = App {
             ui: ui.as_weak(),
@@ -286,7 +286,7 @@ impl App {
         ui.on_create_account(move || {
             app.now(|_, _, state| {
                 if let Some(login) = &state.login {
-                    let _ = open::that_detached(login.instance.page("/register"));
+                    let _ = webbrowser::open(&login.instance.page("/register"));
                 }
             })
         });
@@ -306,7 +306,7 @@ impl App {
         ui.on_load_older(move || app.now(|app, ui, state| app.load_older(ui, state)));
         ui.on_open_url(|url| {
             if url.starts_with("https://") || url.starts_with("http://") {
-                let _ = open::that_detached(url.as_str());
+                let _ = webbrowser::open(url.as_str());
             }
         });
         let app = self.clone();
@@ -314,7 +314,7 @@ impl App {
             app.now(|_, _, state| {
                 if let Some(session) = &state.session {
                     let channel = session.selected_channel.clone().unwrap_or_default();
-                    let _ = open::that_detached(session.instance.page(&format!("/channels/{}/{channel}", session.selected_guild)));
+                    let _ = webbrowser::open(&session.instance.page(&format!("/channels/{}/{channel}", session.selected_guild)));
                 }
             })
         });

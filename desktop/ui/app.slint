@@ -524,6 +524,8 @@ component MessageView inherits Rectangle {
     in property <bool> loading;
     in property <bool> has-channel;
     in-out property <bool> stick-to-bottom: true;
+    in property <bool> show-back;
+    callback back();
     callback send(string);
     callback load-older();
     callback open-url(string);
@@ -539,13 +541,23 @@ component MessageView inherits Rectangle {
         Rectangle {
             height: 48px;
             HorizontalLayout {
-                padding-left: 16px;
+                padding-left: root.show-back ? 8px : 16px;
                 padding-right: 16px;
                 spacing: 10px;
+                if root.show-back: VerticalLayout {
+                    alignment: center;
+                    Button {
+                        text: "Back";
+                        clicked => {
+                            root.back();
+                        }
+                    }
+                }
                 Text {
                     text: root.title;
                     font-weight: 700;
                     vertical-alignment: center;
+                    overflow: elide;
                 }
                 if root.topic != "": Muted {
                     text: root.topic;
@@ -765,136 +777,163 @@ export component AppWindow inherits Window {
         messages-view.scroll-to-bottom();
     }
 
+    property <bool> compact: area.width < 700px;
+    in-out property <bool> showing-messages: false;
+    property <length> keyboard-top: root.virtual-keyboard-size.height > 0 ? root.virtual-keyboard-position.y : root.height;
+
     title: root.window-title;
     icon: @image-url("../icons/128x128@2x.png");
     preferred-width: 1200px;
     preferred-height: 760px;
-    min-width: 860px;
-    min-height: 520px;
-    background: Theme.content;
+    min-width: 320px;
+    min-height: 480px;
+    background: Theme.sidebar;
 
-    if root.screen == 0: PickerScreen {
-        instances: root.instances;
-        error: root.picker-error;
-        looking-up: root.looking-up;
-        has-preview: root.has-preview;
-        preview-name: root.preview-name;
-        preview-host: root.preview-host;
-        preview-description: root.preview-description;
-        preview-signups: root.preview-signups;
-        look-up(address) => {
-            root.look-up(address);
-        }
-        add-previewed => {
-            root.add-previewed();
-        }
-        cancel-preview => {
-            root.cancel-preview();
-        }
-        open-instance(id) => {
-            root.open-instance(id);
-        }
-        remove-instance(id) => {
-            root.remove-instance(id);
-        }
-    }
+    area := Rectangle {
+        x: root.safe-area-insets.left;
+        y: root.safe-area-insets.top;
+        width: root.width - root.safe-area-insets.left - root.safe-area-insets.right;
+        height: min(root.height - root.safe-area-insets.bottom, root.keyboard-top) - root.safe-area-insets.top;
 
-    if root.screen == 1: LoginScreen {
-        instance-name: root.login-instance;
-        error: root.login-error;
-        busy: root.login-busy;
-        needs-code: root.needs-code;
-        signups-open: root.signups-open;
-        log-in(login, password) => {
-            root.log-in(login, password);
-        }
-        submit-code(code) => {
-            root.submit-code(code);
-        }
-        create-account => {
-            root.create-account();
-        }
-        back => {
-            root.back-to-instances();
-        }
-    }
-
-    if root.screen == 3: Rectangle {
-        background: Theme.sidebar;
-        VerticalLayout {
-            alignment: center;
-            spacing: 16px;
-            Text {
-                text: root.connecting-text;
-                horizontal-alignment: center;
-                font-size: 16px;
+        if root.screen == 0: PickerScreen {
+            instances: root.instances;
+            error: root.picker-error;
+            looking-up: root.looking-up;
+            has-preview: root.has-preview;
+            preview-name: root.preview-name;
+            preview-host: root.preview-host;
+            preview-description: root.preview-description;
+            preview-signups: root.preview-signups;
+            look-up(address) => {
+                root.look-up(address);
             }
-            HorizontalLayout {
+            add-previewed => {
+                root.add-previewed();
+            }
+            cancel-preview => {
+                root.cancel-preview();
+            }
+            open-instance(id) => {
+                root.open-instance(id);
+            }
+            remove-instance(id) => {
+                root.remove-instance(id);
+            }
+        }
+
+        if root.screen == 1: LoginScreen {
+            instance-name: root.login-instance;
+            error: root.login-error;
+            busy: root.login-busy;
+            needs-code: root.needs-code;
+            signups-open: root.signups-open;
+            log-in(login, password) => {
+                root.log-in(login, password);
+            }
+            submit-code(code) => {
+                root.submit-code(code);
+            }
+            create-account => {
+                root.create-account();
+            }
+            back => {
+                root.back-to-instances();
+            }
+        }
+
+        if root.screen == 3: Rectangle {
+            background: Theme.sidebar;
+            VerticalLayout {
                 alignment: center;
-                Button {
-                    text: "Back to instances";
-                    clicked => {
-                        root.switch-instance();
+                spacing: 16px;
+                padding: 24px;
+                Text {
+                    text: root.connecting-text;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                    font-size: 16px;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Button {
+                        text: "Back to instances";
+                        clicked => {
+                            root.switch-instance();
+                        }
                     }
                 }
             }
         }
-    }
 
-    HorizontalLayout {
-        visible: root.screen == 2;
-        GuildRail {
-            guilds: root.guilds;
-            select(id) => {
-                root.select-guild(id);
-            }
-        }
-        ChannelSidebar {
-            title: root.sidebar-title;
-            channels: root.channels;
-            user-name: root.user-name;
-            select(id) => {
-                root.select-channel(id);
-            }
-            log-out => {
-                root.log-out();
-            }
-            switch-instance => {
-                root.switch-instance();
-            }
-        }
-        VerticalLayout {
-            if root.status-text != "": Rectangle {
-                height: 28px;
-                background: #f0b232;
-                Text {
-                    text: root.status-text;
-                    color: #1f1f1f;
-                    font-size: 13px;
+        HorizontalLayout {
+            visible: root.screen == 2;
+            GuildRail {
+                visible: !root.compact || !root.showing-messages;
+                width: self.visible ? 72px : 0px;
+                guilds: root.guilds;
+                select(id) => {
+                    root.select-guild(id);
                 }
             }
-            messages-view := MessageView {
-                vertical-stretch: 1;
-                messages: root.messages;
-                title: root.channel-title;
-                topic: root.channel-topic;
-                has-channel: root.has-channel;
-                can-send: root.can-send;
-                composer-placeholder: root.composer-placeholder;
-                show-open-in-browser: root.show-open-in-browser;
-                can-load-older: root.can-load-older;
-                loading: root.loading-messages;
-                send(text) => {
-                    root.send-message(text);
+            ChannelSidebar {
+                visible: !root.compact || !root.showing-messages;
+                width: !self.visible ? 0px : (root.compact ? area.width - 72px : 240px);
+                title: root.sidebar-title;
+                channels: root.channels;
+                user-name: root.user-name;
+                select(id) => {
+                    root.select-channel(id);
+                    root.showing-messages = true;
                 }
-                load-older => {
-                    root.load-older();
+                log-out => {
+                    root.showing-messages = false;
+                    root.log-out();
                 }
-                open-url(url) => {
-                    root.open-url(url);
+                switch-instance => {
+                    root.showing-messages = false;
+                    root.switch-instance();
                 }
-                open-in-browser => {
-                    root.open-in-browser();
+            }
+            VerticalLayout {
+                visible: !root.compact || root.showing-messages;
+                horizontal-stretch: 1;
+                if root.status-text != "": Rectangle {
+                    height: 28px;
+                    background: #f0b232;
+                    Text {
+                        text: root.status-text;
+                        color: #1f1f1f;
+                        font-size: 13px;
+                        overflow: elide;
+                    }
+                }
+                messages-view := MessageView {
+                    vertical-stretch: 1;
+                    show-back: root.compact;
+                    messages: root.messages;
+                    title: root.channel-title;
+                    topic: root.compact ? "" : root.channel-topic;
+                    has-channel: root.has-channel;
+                    can-send: root.can-send;
+                    composer-placeholder: root.composer-placeholder;
+                    show-open-in-browser: root.show-open-in-browser;
+                    can-load-older: root.can-load-older;
+                    loading: root.loading-messages;
+                    back => {
+                        root.showing-messages = false;
+                    }
+                    send(text) => {
+                        root.send-message(text);
+                    }
+                    load-older => {
+                        root.load-older();
+                    }
+                    open-url(url) => {
+                        root.open-url(url);
+                    }
+                    open-in-browser => {
+                        root.open-in-browser();
+                    }
                 }
             }
         }

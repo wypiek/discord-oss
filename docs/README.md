@@ -33,7 +33,7 @@
 | [blog-and-help.md](features/blog-and-help.md) | The public blog and help centre, the Markdown they accept and how the dashboard edits them. |
 | [status.md](features/status.md) | The public status page, component groups, uptime history and the API response time chart. |
 | [phones.md](features/phones.md) | The client on phones, installing it to the home screen, and Discord's Android app. |
-| [desktop.md](features/desktop.md) | OSS Chat, the native desktop app, and building its installers. |
+| [desktop.md](features/desktop.md) | OSS Chat, the native desktop and Android app, and building its installers and APK. |
 
 ## Development
 
