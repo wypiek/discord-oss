@@ -76,6 +76,13 @@ export default definePlugin({
             },
         },
         {
+            find: '"https://discord.com/category/product"',
+            replacement: {
+                match: /"https:\/\/discord\.com\/category\/product"/,
+                replace: "`${location.origin}/blog`",
+            },
+        },
+        {
             find: "fetchChangelogConfig(){",
             replacement: {
                 match: /https:\/\/cdn\.discordapp\.com\/changelogs\//g,

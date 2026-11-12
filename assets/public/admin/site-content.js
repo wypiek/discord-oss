@@ -360,6 +360,124 @@ async function openBlogPost(summary, categories, refresh) {
 }
 
 
+const changelogBadge = (changelog) => {
+  if (!changelog.published) return html`<span class="badge">Draft</span>`;
+  if (changelog.scheduled) return html`<span class="badge info">Scheduled</span>`;
+  return html`<span class="badge ok">Published</span>`;
+};
+
+async function renderChangelogAdmin(view) {
+  const changelogs = await api("/admin/changelogs");
+  const live = changelogs.find((changelog) => changelog.published && !changelog.scheduled);
+  mount(
+    view,
+    html`
+      <div class="page-head">
+        <div>
+          <h1>What's New</h1>
+          <p class="muted">Changelogs shown in the app's What's New window. The newest published one opens by itself for people who haven't seen it, when "Show on startup" is on.</p>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="new-changelog" type="button">Write a changelog</button>
+        </div>
+      </div>
+      ${
+        changelogs.length
+          ? html`<div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Changelog</th>
+                    <th>State</th>
+                    <th class="hide-sm">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${changelogs.map(
+                    (changelog) =>
+                      html`<tr data-id="${changelog.id}">
+                        <td>
+                          <div class="ident">
+                            ${changelog.image_url ? html`<img class="site-thumb" src="${changelog.image_url}" alt="" />` : html`<span class="site-thumb"></span>`}
+                            <div>
+                              <strong>${changelog.title}</strong>${changelog.id === live?.id ? html` <span class="badge accent">Showing now</span>` : ""}
+                              <div class="muted">${changelog.youtube_video_id ? "YouTube video" : changelog.image ? "Image" : "No media"}${changelog.show_on_startup ? " · opens on startup" : ""}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>${changelogBadge(changelog)}</td>
+                        <td class="hide-sm">${changelog.date}</td>
+                      </tr>`,
+                  )}
+                </tbody>
+              </table>
+            </div>`
+          : emptyCard("No changelogs yet. Write one to tell people what changed.", "Write a changelog")
+      }
+    `,
+  );
+  const refresh = () => renderChangelogAdmin(view);
+  $("#new-changelog").addEventListener("click", () => openChangelog(null, refresh));
+  $("[data-empty-action]", view)?.addEventListener("click", () => openChangelog(null, refresh));
+  for (const row of $$("tbody tr", view)) onRowOpen(row, () => openChangelog(changelogs.find((c) => c.id === row.dataset.id), refresh));
+}
+
+function openChangelog(changelog, refresh) {
+  const images = { image: changelog?.image ? { id: changelog.image, url: changelog.image_url } : null };
+  const body = openDrawer(
+    changelog ? "Edit changelog" : "Write a changelog",
+    html`<form id="changelog-form" class="stack">
+      <label>Title<span class="hint">Only shown here in the dashboard. Put the heading people see at the top of the changelog.</span><input name="title" required maxlength="200" value="${changelog?.title ?? ""}" placeholder="November update" /></label>
+      <label>Date<span class="hint">Shown in the What's New window. A later date keeps it hidden until that day.</span><input name="date" type="date" required value="${changelog?.date ?? new Date().toISOString().slice(0, 10)}" /></label>
+      ${imagePicker("image", "Image", images.image, "Shown at the top of the window. Wide images work best, about 16 to 9.")}
+      <label>YouTube video<span class="hint">Instead of an image, a YouTube link or video id plays at the top of the window.</span><input name="youtube_video_id" maxlength="200" value="${changelog?.youtube_video_id ?? ""}" placeholder="https://www.youtube.com/watch?v=…" /></label>
+      ${markdownEditor("body", changelog?.body, "Changelog")}
+      <label class="toggle"><input type="checkbox" name="published" ${changelog?.published ? raw("checked") : ""} /><span>Published<span class="hint">Shown in the app from its date on.</span></span></label>
+      <label class="toggle"><input type="checkbox" name="show_on_startup" ${changelog?.show_on_startup ?? true ? raw("checked") : ""} /><span>Show on startup<span class="hint">When this is the newest published changelog, the window opens by itself once for everyone who hasn't seen it.</span></span></label>
+      <div class="form-actions">
+        ${changelog ? deleteButton("changelog-delete", "Delete changelog") : ""}
+        <button class="btn primary" type="submit">Save changelog</button>
+      </div>
+    </form>`,
+  );
+  if (!body) return;
+  const form = $("#changelog-form", body);
+  bindMarkdownEditor(form);
+  bindImagePicker(form, "image", images);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = {
+      title: form.title.value,
+      date: form.date.value,
+      body: form.body.value,
+      image: images.image?.id ?? null,
+      youtube_video_id: form.youtube_video_id.value || null,
+      published: form.published.checked,
+      show_on_startup: form.show_on_startup.checked,
+    };
+    const done = await act(
+      $("button[type=submit]", form),
+      () =>
+        changelog
+          ? api(`/admin/changelogs/${changelog.id}`, { method: "PATCH", body: payload })
+          : api("/admin/changelogs", { method: "POST", body: payload }),
+      payload.published ? "Changelog saved and published" : "Draft saved",
+    );
+    if (done) {
+      closeDrawer();
+      refresh();
+    }
+  });
+  $("#changelog-delete", body)?.addEventListener("click", async (event) => {
+    if (!(await confirmDialog({ title: `Delete "${changelog.title}"?`, message: "It disappears from What's New right away.", confirm: "Delete changelog" }))) return;
+    const done = await act(event.currentTarget, () => api(`/admin/changelogs/${changelog.id}`, { method: "DELETE" }), "Changelog deleted");
+    if (done !== undefined) {
+      closeDrawer();
+      refresh();
+    }
+  });
+}
+
 const helpfulLabel = (article) => {
   const total = article.helpful_yes + article.helpful_no;
   return total ? `${article.helpful_yes} of ${total} found it helpful` : "No votes yet";
@@ -637,4 +755,5 @@ async function openHelpArticle(summary, sectionId, tree, refresh) {
 }
 
 TABS.blog = renderBlogAdmin;
+TABS.changelogs = renderChangelogAdmin;
 TABS.help = renderHelpAdmin;

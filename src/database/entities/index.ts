@@ -87,6 +87,7 @@ export * from "./StaffRole";
 export * from "./DiscoveryTerm";
 export * from "./BlogCategory";
 export * from "./BlogPost";
+export * from "./Changelog";
 export * from "./HelpCategory";
 export * from "./HelpSection";
 export * from "./HelpArticle";

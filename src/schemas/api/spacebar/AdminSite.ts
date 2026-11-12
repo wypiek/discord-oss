@@ -96,6 +96,34 @@ export interface AdminBlogPostCreateSchema {
 
 export type AdminBlogPostUpdateSchema = Partial<AdminBlogPostCreateSchema>;
 
+export interface AdminChangelogCreateSchema {
+    /**
+     * @minLength 1
+     * @maxLength 200
+     */
+    title: string;
+    /**
+     * @maxLength 10
+     */
+    date?: string;
+    /**
+     * @maxLength 100000
+     */
+    body?: string;
+    /**
+     * @maxLength 80
+     */
+    image?: string | null;
+    /**
+     * @maxLength 200
+     */
+    youtube_video_id?: string | null;
+    published?: boolean;
+    show_on_startup?: boolean;
+}
+
+export type AdminChangelogUpdateSchema = Partial<AdminChangelogCreateSchema>;
+
 export interface AdminHelpCategoryCreateSchema {
     /**
      * @minLength 1
