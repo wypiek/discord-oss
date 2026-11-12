@@ -2,6 +2,7 @@ import "./e2ee/globals";
 import { createMobileE2ee } from "./e2ee";
 import { registerUnifiedPush } from "./push";
 import { createRewriter, type Endpoints, endpointsFromOrigin, rewriteValue } from "./rewrite";
+import { createInstanceSwitcher, originOf } from "./switcher";
 
 type AnyRecord = Record<PropertyKey, any>;
 type Factory = (...args: any[]) => unknown;
@@ -63,6 +64,7 @@ const start = () => {
             return null;
         }
     };
+    const switcher = createInstanceSwitcher({ currentOrigin: originOf(endpoints.api) ?? endpoints.api, nativeModule, log });
     const e2ee = createMobileE2ee({ api: endpoints.api, trustServer: endpoints.e2eeTrustServer !== false, debug, log, nativeModule });
     if (debug) {
         let last = "";
@@ -79,6 +81,7 @@ const start = () => {
             for (const header of arg) {
                 if (Array.isArray(header) && typeof header[0] === "string" && header[0].toLowerCase() === "authorization" && typeof header[1] === "string") {
                     onAuthorization(header[1]);
+                    switcher.noteAuthorization();
                     e2ee.onAuthorization(header[1]);
                 }
             }
@@ -167,6 +170,15 @@ const start = () => {
             log(`e2ee module scan failed: ${String(error)}`);
         }
         if (exports === null || (typeof exports !== "object" && typeof exports !== "function")) return exports;
+        try {
+            const replaced = switcher.inspect(exports);
+            if (replaced) {
+                mark("AppRegistry");
+                return override(exports, replaced);
+            }
+        } catch (error) {
+            log(`instance switcher scan failed: ${String(error)}`);
+        }
         if (nativeModulesProxy && exports === g.nativeModuleProxy) {
             mark("NativeModules");
             return nativeModulesProxy;

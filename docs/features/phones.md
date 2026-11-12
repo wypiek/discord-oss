@@ -23,4 +23,4 @@ The server serves `/manifest.webmanifest` with the name from `client.instanceNam
 
 ## Discord's Android app
 
-Discord's apps have Discord's hosts built in and no server picker. On Android, the Kettu mod loader can load the instance's bundle from `/mobile/meowcord.js`, which redirects the app to the instance. This is experimental and has no push notifications. [android-client.md](../development/android-client.md) has the setup steps and the current gaps.
+Discord's apps have Discord's hosts built in and no server picker. On Android, the Kettu mod loader can load the instance's bundle from `/mobile/meowcord.js`, which redirects the app to the instance. The bundle adds an instance switcher, shown at the bottom of the screen while signed out, that moves the app to another instance and restarts it. This is experimental and has no push notifications. [android-client.md](../development/android-client.md) has the setup steps and the current gaps.

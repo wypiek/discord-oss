@@ -31,6 +31,21 @@ A string argument is rewritten wherever one of the four hosts appears in it, not
 2. In Kettu's developer settings, turn on "Load from custom URL" and set it to `https://<instance>/mobile/meowcord.js`. With root, the same setting can be written before the first launch to `/data/data/cocobo1.pupu.app/files/pyoncord/loader.json` as `{"customLoadUrl":{"enabled":true,"url":"https://<instance>/mobile/meowcord.js"},"loadReactDevTools":false}`. Kettu downloads its default bundle from Codeberg until this is set.
 3. Restart the app. Kettu downloads the bundle again on every launch.
 
+### Switching instances
+
+The bundle adds an instance switcher to the app, in `client/mobile/src/switcher.ts`. While nobody is signed in, a bar at the bottom of the screen shows the current instance and a Change button. `globalThis.DiscordOSS.openInstanceSwitcher()` opens it from a debugger too.
+
+The switcher lists the instances used before, with the current one marked, and has a field to add one. A new address is checked through `/.well-known/discord-oss`, must use HTTPS because Discord's app refuses cleartext, and must serve `/mobile/meowcord.js`. Choosing an instance:
+
+1. writes `customLoadUrl` in the loader's config to `https://<instance>/mobile/meowcord.js`, keeping its other settings. Kettu keeps it in `pyoncord/loader.json` in the app's documents folder, Rain in `rain/loader.json` and Vendetta loaders in `vendetta_loader.json`,
+2. saves the list in `discord-oss/instances.json` with the chosen instance first,
+3. deletes Kettu's cached `pyoncord/bundle.js` so the old instance's bundle can't load from the cache,
+4. reloads the app through `BundleUpdaterManager.reload()`. When that isn't there, it asks to close and reopen the app.
+
+Each instance serves a bundle with its own endpoints, so the app connects to the new instance from the first request after the reload. A long press removes an instance from the list. Accounts belong to one instance, so switching means signing in again.
+
+The bar shows after a `LOGOUT`, or when no authorized request has been seen 8 seconds after launch. The switcher is drawn on top of Discord's root component, which the bundle wraps when `AppRegistry.registerComponent` runs. It needs React and React Native's `View`, `Text`, `TextInput`, `Pressable` and `ScrollView`, which the bundle picks up as Metro defines them. `scripts/tests/mobile-switcher.test.cjs` checks the address handling, the discovery check and what a switch writes.
+
 The instance needs HTTPS with a certificate Android trusts. Discord's network security config refuses cleartext, and KettuManager's debuggable option didn't make it allow cleartext. For the emulator run a throwaway CA was added to the emulator's system store and a Bun TLS proxy forwarded `https://10.0.2.2:3332` to the dev server.
 
 The first launch after patching crashed once in LSPatch's loader with "Original AppComponentFactory not found". The second launch worked.
