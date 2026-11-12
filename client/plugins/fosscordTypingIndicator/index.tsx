@@ -246,14 +246,17 @@ function Choices({ options, value, onChange }: { options: string[]; value: numbe
     );
 }
 
+const SafeEditor = ErrorBoundary.wrap(TypingIndicatorEditor, { noop: true });
+const SafeSidebarEntry = ErrorBoundary.wrap(SidebarEntry, { noop: true });
+
 export default definePlugin({
     name: "FosscordTypingIndicator",
     description: "Custom typing indicators: up to three emojis with an animation instead of the dots, and a preset or your own text, edited in Profiles settings.",
     authors: [FosscordAuthor],
     required: true,
     managedStyle,
-    renderEditor: ErrorBoundary.wrap(() => <TypingIndicatorEditor key="fosscord-typing-indicator" />, { noop: true }),
-    renderSidebarEntry: ErrorBoundary.wrap(() => <SidebarEntry key="fosscord-typing-sidebar" />, { noop: true }),
+    renderEditor: () => <SafeEditor key="fosscord-typing-indicator" />,
+    renderSidebarEntry: () => <SafeSidebarEntry key="fosscord-typing-sidebar" />,
     typingText(props: TypingProps, name: string, original: ReactNode) {
         const text = typingTextFor(styleOf(soleTypist(props)));
         if (!text) return original;
