@@ -54,6 +54,10 @@ The first launch after patching crashed once in LSPatch's loader with "Original 
 
 UnifiedPush needs a native broadcast receiver, so plain JavaScript can't register with a distributor. The bundle calls `globalThis.__meowcordUnifiedPush.register({ instance, vapidKey })` when a native module or Xposed hook provides it. It then posts the returned endpoint and keys to `POST /users/@me/devices` as a `webpush` device, using the authorization header it sees on the app's first REST request. Without that bridge it logs "no UnifiedPush distributor bridge, skipping push registration" and does nothing. Kettu has no such bridge, so push on Android still needs a native piece.
 
+### Native user search
+
+Settings, the quick switcher and mention search hand every known user to `UserSearchWorkerManager.onmessage` as an `UPDATE_USERS` JSON message, and Discord's Kotlin side decodes it strictly. A user without an `id` or `username`, or with `isBot` or `isFriend` that isn't `true` or `false`, throws "Exception in native call from JS" and opening Settings crashes. The bundle cleans that message before it reaches native code: users without an id are dropped, a missing username falls back to the global name and then the id, the two flags become real booleans and nickname values become strings or null. `scripts/tests/mobile-user-search.test.cjs` covers it.
+
 ## Encrypted DMs
 
 The bundle runs the same E2EE engine as the web client. `client/mobile/src/e2ee` builds `client/e2ee/src/engine.ts`, `hooks.ts`, `link.ts`, `crypto.ts`, `backup.ts` and the rest of the protocol code unchanged, so envelopes, backups, device links and safety numbers are byte for byte the ones the web client makes. `scripts/build-mobile.js` swaps three things at build time:
