@@ -1,5 +1,6 @@
 // TODO: dedicated schemas?
 import { User_DisplayNameEffect, User_DisplayNameFont } from "discord-protos";
+import { InstanceDisplayNameFont } from "../api/users/DisplayNameFonts";
 import { DisplayNameColorList } from "@spacebar/schemas";
 
 export interface UserModifySchema {
@@ -69,7 +70,7 @@ export interface UserModifySchema {
 
     display_name_colors?: DisplayNameColorList | null;
     display_name_effect_id?: User_DisplayNameEffect | null;
-    display_name_font_id?: User_DisplayNameFont | null;
+    display_name_font_id?: User_DisplayNameFont | InstanceDisplayNameFont | null;
     typing_indicator_style?: TypingIndicatorStyleInput | null;
 
     /**
