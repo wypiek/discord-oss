@@ -1,5 +1,7 @@
+import ErrorBoundary from "@components/ErrorBoundary";
+import { ModalCloseButton, ModalContent, ModalHeader, ModalRoot, ModalSize, openModal } from "@utils/modal";
 import definePlugin, { StartAt } from "@utils/types";
-import { Checkbox, FluxDispatcher, ReactDOM, RestAPI, Text, UserStore, useEffect, useState } from "@webpack/common";
+import { Checkbox, FluxDispatcher, ReactDOM, RestAPI, Text, UserStore, useEffect, useState, useStateFromStores } from "@webpack/common";
 
 import { FosscordAuthor } from "../fosscordCore/shared";
 import { SettingsSection, Field, Button } from "../fosscordCore/ui";
@@ -23,10 +25,11 @@ function applyOwnFlags(flags: string[]) {
     if (user) FluxDispatcher.dispatch({ type: "CURRENT_USER_UPDATE", user: { ...user, pride_badges: flags } });
 }
 
-function PridePicker() {
+function PridePicker({ embedded = false }: { embedded?: boolean }) {
     const [navigationHost, setNavigationHost] = useState<HTMLElement | null>(null);
     const [settingsMenu, setSettingsMenu] = useState(false);
     useEffect(() => {
+        if (embedded) return;
         let shell: HTMLElement | null = document.querySelector(".fosscord-pride");
         while (shell && !shell.querySelector(":scope > aside")) shell = shell.parentElement;
         const sidebar = shell?.querySelector<HTMLElement>(":scope > aside");
@@ -180,6 +183,35 @@ function PridePicker() {
     );
 }
 
+function openPrideModal() {
+    openModal((props) => (
+        <ModalRoot {...props} size={ModalSize.MEDIUM}>
+            <ModalHeader>
+                <Text variant="heading-lg/semibold" style={{ flexGrow: 1 }}>
+                    Pride flags
+                </Text>
+                <ModalCloseButton onClick={props.onClose} />
+            </ModalHeader>
+            <ModalContent className="fosscord-pride-modal">
+                <PridePicker embedded />
+            </ModalContent>
+        </ModalRoot>
+    ));
+}
+
+function PrideSidebarEntry() {
+    const userId = useStateFromStores([UserStore], () => UserStore.getCurrentUser()?.id);
+    const chosen = useStateFromStores([UserStore], () => flagsFrom(UserStore.getCurrentUser() as never).length);
+    return (
+        <div className="fosscord-pride-sidebar-entry">
+            <Text variant="text-sm/medium">Pride Flags</Text>
+            <button type="button" className="fosscord-pride-sidebar-tile" onClick={openPrideModal} aria-label="Choose pride flags">
+                {chosen ? <PrideFlags userId={userId} max={6} /> : <span>Choose flags</span>}
+            </button>
+        </div>
+    );
+}
+
 export default definePlugin({
     name: "FosscordPride",
     description: "Choose locally hosted pride flags in Profiles settings and on the signup form and show them with the pronouns on profiles.",
@@ -188,6 +220,7 @@ export default definePlugin({
     managedStyle,
     startAt: StartAt.DOMContentLoaded,
     renderPicker: () => <PridePicker />,
+    renderSidebarEntry: ErrorBoundary.wrap(() => <PrideSidebarEntry key="fosscord-pride-sidebar" />, { noop: true }),
     renderSignupPicker: () => <SignupPridePicker key="fosscord-pride-signup" />,
     takeSignupSelection,
     flagsFrom,
@@ -238,6 +271,13 @@ export default definePlugin({
             replacement: {
                 match: /(currentPronouns:\i\?\.pronouns\?\?""\},"pronouns"\),)/,
                 replace: "$1$self.renderPicker(),",
+            },
+        },
+        {
+            find: '"user-profile-editing-panel"',
+            replacement: {
+                match: /(?=\i&&\(0,\i\.jsxs\)\(\i\.Fragment,\{children:\[\(0,\i\.jsx\)\(\i,\{user:\i\}\),\(0,\i\.jsx\)\(\i,\{\}\)\]\}\))/,
+                replace: "null==arguments[0]?.selectedGuildId&&$self.renderSidebarEntry(),",
             },
         },
         {

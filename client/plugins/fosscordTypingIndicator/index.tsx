@@ -1,6 +1,7 @@
-import { findStoreLazy } from "@webpack";
+import ErrorBoundary from "@components/ErrorBoundary";
+import { ModalCloseButton, ModalContent, ModalHeader, ModalRoot, ModalSize, openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
-import { FluxDispatcher, RelationshipStore, RestAPI, Text, TextInput, UserStore, useState } from "@webpack/common";
+import { FluxDispatcher, IconUtils, RelationshipStore, RestAPI, Text, TextInput, TypingStore, UserStore, useState, useStateFromStores } from "@webpack/common";
 import type { ReactNode } from "react";
 
 import { FosscordAuthor } from "../fosscordCore/shared";
@@ -11,20 +12,13 @@ type StyleEmoji = { id?: string; name: string; animated?: boolean };
 type TypingStyle = { emojis: StyleEmoji[]; animation: number; typingSuggestion: number; customText?: string | null };
 type TypingProps = { channel?: { id: string }; typingUsers?: unknown[] };
 
-const TypingStore = findStoreLazy("TypingStore") as { getTypingUsers(channelId: string): Record<string, number> };
-
 export const SUGGESTIONS = ["is typing…", "is yapping…", "is venting…", "is oversharing…", "is barking…", "is babbling…", "is daydreaming…", "is meowing…"];
 export const ANIMATIONS = ["None", "Pulse", "Ring", "Wave"];
 const SURPRISE_EMOJIS = ["😈", "🤠", "🤪", "🐱", "🐶", "🔥", "✨", "💀", "🫠", "🥺", "😎", "🤖", "👻", "🌈", "🍕", "🎉", "💅", "🦄", "🐸", "🌸"];
 const CUSTOM = -1;
 const MAX_TEXT = 32;
 
-const cdnOrigin = () => {
-    const host = (window as unknown as { GLOBAL_ENV?: { CDN_HOST?: string } }).GLOBAL_ENV?.CDN_HOST;
-    return host ? `${location.protocol}//${host}` : location.origin;
-};
-
-const emojiUrl = (emoji: StyleEmoji) => `${cdnOrigin()}/emojis/${emoji.id}.${emoji.animated ? "gif" : "webp"}?size=48`;
+const emojiUrl = (emoji: StyleEmoji) => IconUtils.getEmojiURL({ id: emoji.id, animated: !!emoji.animated, size: 48 });
 
 const styleOf = (userId: string | undefined): TypingStyle | null => {
     if (!userId) return null;
@@ -36,7 +30,7 @@ const soleTypist = (props: TypingProps) => {
     const channelId = props?.channel?.id;
     if (!channelId) return undefined;
     const me = UserStore.getCurrentUser()?.id;
-    const ids = Object.keys(TypingStore.getTypingUsers(channelId) ?? {}).filter((id) => id !== me && !RelationshipStore.isBlocked(id));
+    const ids = Object.keys((TypingStore.getTypingUsers(channelId) ?? {}) as Record<string, number>).filter((id) => id !== me && !RelationshipStore.isBlocked(id));
     return ids.length === 1 ? ids[0] : undefined;
 };
 
@@ -160,7 +154,7 @@ function TypingIndicatorEditor() {
                     <TextInput
                         key={index}
                         value={slot}
-                        placeholder="😀"
+                        placeholder="Add emoji"
                         aria-label={`Emoji ${index + 1}`}
                         onChange={(value: string) => setSlots(slots.map((current, i) => (i === index ? value : current)))}
                     />
@@ -211,6 +205,35 @@ function TypingIndicatorEditor() {
     );
 }
 
+function openEditor() {
+    openModal((props) => (
+        <ModalRoot {...props} size={ModalSize.MEDIUM}>
+            <ModalHeader>
+                <Text variant="heading-lg/semibold" style={{ flexGrow: 1 }}>
+                    Typing indicator
+                </Text>
+                <ModalCloseButton onClick={props.onClose} />
+            </ModalHeader>
+            <ModalContent className="fosscord-typing-modal">
+                <TypingIndicatorEditor />
+            </ModalContent>
+        </ModalRoot>
+    ));
+}
+
+function SidebarEntry() {
+    const style = useStateFromStores([UserStore], () => styleOf(UserStore.getCurrentUser()?.id));
+    return (
+        <div className="fosscord-profile-sidebar-entry">
+            <Text variant="text-sm/medium">Typing Indicator</Text>
+            <button type="button" className="fosscord-profile-sidebar-tile" onClick={openEditor} aria-label="Edit typing indicator">
+                {style?.emojis?.length ? <Emojis style={style} size={18} /> : <Dots />}
+                <span className="fosscord-typing-sidebar-text">{typingTextFor(style) ?? SUGGESTIONS[0]}</span>
+            </button>
+        </div>
+    );
+}
+
 function Choices({ options, value, onChange }: { options: string[]; value: number; onChange: (index: number) => void }) {
     return (
         <div className="fosscord-typing-choices" role="radiogroup">
@@ -229,7 +252,8 @@ export default definePlugin({
     authors: [FosscordAuthor],
     required: true,
     managedStyle,
-    renderEditor: () => <TypingIndicatorEditor key="fosscord-typing-indicator" />,
+    renderEditor: ErrorBoundary.wrap(() => <TypingIndicatorEditor key="fosscord-typing-indicator" />, { noop: true }),
+    renderSidebarEntry: ErrorBoundary.wrap(() => <SidebarEntry key="fosscord-typing-sidebar" />, { noop: true }),
     typingText(props: TypingProps, name: string, original: ReactNode) {
         const text = typingTextFor(styleOf(soleTypist(props)));
         if (!text) return original;
@@ -282,6 +306,13 @@ export default definePlugin({
             replacement: {
                 match: /(currentPronouns:\i\?\.pronouns\?\?""\},"pronouns"\),)/,
                 replace: "$1$self.renderEditor(),",
+            },
+        },
+        {
+            find: '"user-profile-editing-panel"',
+            replacement: {
+                match: /(?=\i&&\(0,\i\.jsxs\)\(\i\.Fragment,\{children:\[\(0,\i\.jsx\)\(\i,\{user:\i\}\),\(0,\i\.jsx\)\(\i,\{\}\)\]\}\))/,
+                replace: "null==arguments[0]?.selectedGuildId&&$self.renderSidebarEntry(),",
             },
         },
     ],

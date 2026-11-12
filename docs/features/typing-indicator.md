@@ -1,6 +1,6 @@
 # Custom typing indicator
 
-People can replace the dots and "is typing…" that others see while they type. The editor is in User Settings, Profiles, under Typing indicator, and offers:
+People can replace the dots and "is typing…" that others see while they type. Edit Profiles, or clicking your own profile, opens the profile editor, whose sidebar has a Typing Indicator tile with a preview. Clicking it opens the editor, which offers:
 
 - up to three emojis instead of the dots, each a Unicode emoji or a custom emoji written as `<:name:id>`
 - an animation for the emojis: None, Pulse, Ring or Wave
