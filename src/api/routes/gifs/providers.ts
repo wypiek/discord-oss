@@ -5,7 +5,7 @@ import { GifProviderManager } from "@spacebar/integrations/gifs";
 const router = Router({ mergeParams: true });
 router.get("/", route({}), (_req, res) =>
     res.json({
-        defaultProvider: Config.get().integrations.gifs.defaultProvider,
+        defaultProvider: GifProviderManager.defaultProviderId() ?? Config.get().integrations.gifs.defaultProvider,
         providers: GifProviderManager.getProviders(),
     }),
 );

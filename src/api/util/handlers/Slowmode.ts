@@ -7,6 +7,7 @@ const SLOWMODE_RETENTION_SECONDS = 21600;
 
 export function requiresMessageSlowmode(channel: Channel, permission: Permissions) {
     if (!channel.guild_id || !channel.rate_limit_per_user) return false;
+    if (permission.has("ADMINISTRATOR", false)) return false;
     if (!Config.get().limits.channel.allowSlowmodeBypass) return true;
     return !permission.has("MANAGE_MESSAGES") && !permission.has("MANAGE_CHANNELS") && !permission.has("BYPASS_SLOWMODE");
 }

@@ -293,6 +293,7 @@ export class Channel extends BaseClass {
                     });
                     if (!exists || exists.type !== ChannelType.GUILD_CATEGORY) throw new HTTPError("Parent id channel doesn't exist", 400);
                     if (exists.guild_id !== channel.guild_id) throw new HTTPError("The category channel needs to be in the guild");
+                    if (channel.permission_overwrites === undefined) channel.permission_overwrites = (exists.permission_overwrites ?? []).map((overwrite) => ({ ...overwrite }));
                 }
                 break;
             case ChannelType.GUILD_CATEGORY:

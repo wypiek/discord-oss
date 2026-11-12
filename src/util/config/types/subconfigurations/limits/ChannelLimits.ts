@@ -1,5 +1,5 @@
 export class ChannelLimits {
-    allowSlowmodeBypass: boolean = false;
+    allowSlowmodeBypass: boolean = true;
     maxPins: number = 500;
     maxTopic: number = 1024;
     maxWebhooks: number = 100;

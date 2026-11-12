@@ -117,7 +117,11 @@ function overwriteRoute(permission, overwrites) {
         },
         "lambert-server/HTTPError": { HTTPError: class extends Error {} },
         "@spacebar/api/middlewares": { route: () => () => {} },
-        "@spacebar/api/util": { assertOverwriteChanges },
+        "@spacebar/api/util": {
+            assertOverwriteChanges,
+            copyOverwrites: (overwrites = []) => overwrites.map((overwrite) => ({ ...overwrite })),
+            syncCategoryChildren: async () => 0,
+        },
         "@spacebar/database": {
             AuditLog: { diff: () => [], log: async () => {} },
             Channel: { findOneOrFail: async () => channel, calculatePosition: async () => 0 },

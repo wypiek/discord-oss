@@ -42,6 +42,7 @@ export * from "./utility/detectableGames";
 export * from "./utility/staffBadge";
 export * from "./utility/partnerBadge";
 export * from "./utility/instanceDiscovery";
+export * from "./utility/categorySync";
 export * from "./utility/adminTargets";
 export * from "./utility/adminCursor";
 export * from "./utility/staffAudit";

@@ -38,9 +38,15 @@ export class GifProviderManager {
         throw new Error(`Unknown GIF provider, or it is not enabled: ${id}, known GIF providers: ${Array.from(this._providers.keys()).join(", ")}`);
     }
 
+    public static defaultProviderId(): string | undefined {
+        if (!Config.get().integrations.gifs.enabled) return undefined;
+        const configured = Config.get().integrations.gifs.defaultProvider;
+        return this._providers.has(configured) ? configured : this._providers.keys().next().value;
+    }
+
     public static findProvider(id?: string): IGifProvider | undefined {
         if (!Config.get().integrations.gifs.enabled) return undefined;
-        return this._providers.get(id || Config.get().integrations.gifs.defaultProvider);
+        return (id ? this._providers.get(id) : undefined) ?? this._providers.get(this.defaultProviderId() ?? "");
     }
 
     public static getProviders() {
