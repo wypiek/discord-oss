@@ -4,4 +4,4 @@ An invite can give roles to everyone who joins through it. The client's invite d
 
 - The creator needs Manage Roles, and every role must belong to the server, be below the creator's highest role unless they own the server, and not be `@everyone` or a managed role. Otherwise the request fails with Missing Permissions or Unknown Role. Up to 250 roles.
 - The roles are stored on the invite in `invites.role_ids` and returned as `roles` (id, name, position, color, colors, icon, unicode_emoji) on the invite, in invite lists and when resolving the code.
-- A new member who joins through the invite gets the roles that still exist and are not managed, in one `GUILD_MEMBER_UPDATE`. People who were already members get nothing.
+- Whoever accepts the invite gets the roles that still exist and are not managed, in one `GUILD_MEMBER_UPDATE`. That includes people who are already members: the client shows Accept on an invite whose roles you don't all have, and accepting it gives them without using up one of the invite's uses. Once you have them all the button changes back.
