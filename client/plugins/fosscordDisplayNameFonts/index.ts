@@ -33,10 +33,17 @@ export default definePlugin({
             all: true,
             replacement: [
                 {
-                    match: /(\[\i\.\i\.KALAM\]:\i\.\i)\};function (\i)\((\i)\)\{return\{name:(\(0,\i\.\i\)\(\3\))/,
-                    replace: '$1,100:"fosscordInconsolata"};function $2($3){return{name:$self.fontName($3)??$4',
+                    match: /(\[\i\.\i\.KALAM\]:\i\.\i)\}/,
+                    replace: '$1,100:"fosscordInconsolata"}',
                 },
             ],
+        },
+        {
+            find: '"--custom-dns-tile-columns"',
+            replacement: {
+                match: /(\i)=>\{let (\i)=(\(0,\i\.\i\)\(\1\)),([^;]{0,80}?)(\i)=(\i\.intl\.string\(\2\.name\))/,
+                replace: "$1=>{let $2=$3,$4$5=$self.fontName($1)??$6",
+            },
         },
     ],
 });

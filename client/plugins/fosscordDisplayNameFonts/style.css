@@ -14,3 +14,7 @@
         "wdth" 200,
         "wght" 700;
 }
+
+[style*="--custom-dns-tile-columns"] {
+    --custom-dns-tile-columns: 4 !important;
+}
