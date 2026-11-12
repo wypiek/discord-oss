@@ -1,0 +1,65 @@
+appId: org.discordoss.app
+productName: Discord OSS
+executableName: discord-oss
+copyright: Copyright © Discord OSS contributors
+artifactName: Discord-OSS-${version}-${os}-${arch}.${ext}
+directories:
+  output: release
+  buildResources: resources
+files:
+  - dist/**/*
+  - static/**/*
+  - resources/**/*
+  - package.json
+asar: true
+publish: null
+protocols:
+  - name: Discord OSS
+    schemes:
+      - discord-oss
+mac:
+  category: public.app-category.social-networking
+  icon: resources/icon.png
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  darkModeSupport: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Discord OSS uses the microphone for voice chat and calls.
+    NSCameraUsageDescription: Discord OSS uses the camera for video calls.
+    NSAudioCaptureUsageDescription: Discord OSS shares your computer's audio when you stream your screen.
+    NSScreenCaptureUsageDescription: Discord OSS shares your screen when you go live.
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+dmg:
+  title: Discord OSS
+win:
+  icon: resources/icon.png
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+nsis:
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Discord OSS
+  uninstallDisplayName: Discord OSS
+linux:
+  icon: resources/icon.png
+  category: Network;InstantMessaging;Chat
+  maintainer: Discord OSS contributors
+  synopsis: Discord OSS desktop app
+  desktop:
+    entry:
+      Name: Discord OSS
+      StartupWMClass: Discord OSS
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]

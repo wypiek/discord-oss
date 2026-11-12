@@ -1,0 +1,23 @@
+{
+    "name": "discord-oss-desktop",
+    "productName": "Discord OSS",
+    "version": "1.0.0",
+    "description": "Discord OSS for macOS, Windows and Linux",
+    "author": "Discord OSS contributors",
+    "license": "AGPL-3.0-only",
+    "private": true,
+    "main": "dist/main.js",
+    "scripts": {
+        "build": "tsc -p . && tsc -p src/pages",
+        "typecheck": "tsc -p . --noEmit && tsc -p src/pages --noEmit",
+        "start": "bun run build && electron .",
+        "dist": "bun run build && electron-builder"
+    },
+    "devDependencies": {
+        "@types/node": "^24.10.1",
+        "electron": "45.3.1",
+        "electron-builder": "26.18.0",
+        "typescript": "^5.9.3"
+    },
+    "trustedDependencies": ["electron"]
+}

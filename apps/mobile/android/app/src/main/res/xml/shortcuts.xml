@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="switch_instance"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_switch_short"
+        android:shortcutLongLabel="@string/shortcut_switch_long">
+        <intent
+            android:action="org.discordoss.app.SWITCH_INSTANCE"
+            android:targetPackage="org.discordoss.app"
+            android:targetClass="org.discordoss.app.MainActivity" />
+    </shortcut>
+</shortcuts>
