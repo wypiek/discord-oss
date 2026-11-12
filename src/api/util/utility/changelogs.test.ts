@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { changelogConfig, parseChangelogDate, parseYoutubeVideo, visibleChangelogs } from "./changelogs";
+import { changelogConfig, normalizeChangelogMarkdown, parseChangelogDate, parseYoutubeVideo, visibleChangelogs } from "./changelogs";
 
 const NOW = new Date("2026-11-12T12:00:00Z");
 const entry = (id: string, date: string, published = true, show_on_startup = true) => ({ id, date, published, show_on_startup });
@@ -40,4 +40,49 @@ test("YouTube links and ids become a video id", () => {
     assert.equal(parseYoutubeVideo(""), null);
     assert.equal(parseYoutubeVideo(undefined), undefined);
     assert.throws(() => parseYoutubeVideo("https://example.com/watch?v=dQw4w9WgXcQ"));
+});
+
+test("headings and lists get the blank lines the client's parser needs", () => {
+    const written = [
+        "# What's new",
+        "",
+        "## GIFs are back",
+        "The picker loads again.",
+        "## Forums",
+        "- Settings save",
+        "- Replies work",
+        "  across lines",
+        "Read more below.",
+        "1. first",
+        "2. second",
+    ].join("\n");
+    assert.equal(
+        normalizeChangelogMarkdown(written),
+        [
+            "# What's new",
+            "",
+            "## GIFs are back",
+            "",
+            "The picker loads again.",
+            "",
+            "## Forums",
+            "",
+            "- Settings save",
+            "- Replies work",
+            "  across lines",
+            "",
+            "Read more below.",
+            "",
+            "1. first",
+            "2. second",
+            "",
+            "",
+        ].join("\n"),
+    );
+});
+
+test("paragraphs, quotes and code blocks are left as they are", () => {
+    assert.equal(normalizeChangelogMarkdown("One line\nand the next.\n\n> a quote"), "One line\nand the next.\n\n> a quote\n\n");
+    assert.equal(normalizeChangelogMarkdown("Before\n```\n## not a heading\n- not a list\n```\nAfter"), "Before\n\n```\n## not a heading\n- not a list\n```\n\nAfter\n\n");
+    assert.equal(normalizeChangelogMarkdown("a\r\n\r\n\r\n\r\nb"), "a\n\nb\n\n");
 });

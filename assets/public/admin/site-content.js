@@ -31,7 +31,7 @@ const publishBadge = (item) => {
   return html`<span class="badge ok">Published</span>`;
 };
 
-const markdownEditor = (name, value, label) =>
+const markdownEditor = (name, value, label, hint) =>
   html`<div class="md-editor" data-md-editor>
     <div class="row md-toolbar">
       <span class="md-label" id="${name}-label">${label}</span>
@@ -41,7 +41,7 @@ const markdownEditor = (name, value, label) =>
     </div>
     <textarea name="${name}" rows="18" maxlength="100000" spellcheck="true" aria-labelledby="${name}-label" data-md-source>${value ?? ""}</textarea>
     <div class="md-preview" data-md-output hidden></div>
-    <span class="hint">Markdown: # headings, **bold**, *italics*, [links](https://…), lists, &gt; quotes and \`code\`. HTML isn't allowed. {instance} shows the instance name.</span>
+    <span class="hint">${hint ?? raw("Markdown: # headings, **bold**, *italics*, [links](https://…), lists, &gt; quotes and `code`. HTML isn't allowed. {instance} shows the instance name.")}</span>
   </div>`;
 
 const bindMarkdownEditor = (root) => {
@@ -431,7 +431,7 @@ function openChangelog(changelog, refresh) {
       <label>Date<span class="hint">Shown in the What's New window. A later date keeps it hidden until that day.</span><input name="date" type="date" required value="${changelog?.date ?? new Date().toISOString().slice(0, 10)}" /></label>
       ${imagePicker("image", "Image", images.image, "Shown at the top of the window. Wide images work best, about 16 to 9.")}
       <label>YouTube video<span class="hint">Instead of an image, a YouTube link or video id plays at the top of the window.</span><input name="youtube_video_id" maxlength="200" value="${changelog?.youtube_video_id ?? ""}" placeholder="https://www.youtube.com/watch?v=…" /></label>
-      ${markdownEditor("body", changelog?.body, "Changelog")}
+      ${markdownEditor("body", changelog?.body, "Changelog", "Markdown: # headings, **bold**, *italics*, [links](https://…), lists and > quotes. {instance} shows the instance name. Pictures inside the text don't show in the app, so use the Image field above.")}
       <label class="toggle"><input type="checkbox" name="published" ${changelog?.published ? raw("checked") : ""} /><span>Published<span class="hint">Shown in the app from its date on.</span></span></label>
       <label class="toggle"><input type="checkbox" name="show_on_startup" ${changelog?.show_on_startup ?? true ? raw("checked") : ""} /><span>Show on startup<span class="hint">When this is the newest published changelog, the window opens by itself once for everyone who hasn't seen it.</span></span></label>
       <div class="form-actions">
