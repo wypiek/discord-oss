@@ -1,71 +1,57 @@
-# Desktop and Android app
+# Desktop and Android apps
 
-`desktop/` is a native client for macOS, Windows, Linux and Android, written in Rust with a [Slint](https://slint.dev) interface. It doesn't embed a browser. It talks to an instance's REST API and gateway directly and draws its own interface, in Slint's Cupertino style on macOS and Fluent style on Windows and Linux, following the system's light or dark mode. Below 700 pixels wide, which covers phones, it shows one pane at a time: servers and channels, then the conversation with a Back button. On Android it keeps clear of the status bar, the navigation bar and the on-screen keyboard. Its product name is OSS Chat, set in `desktop/Cargo.toml` and `APP_NAME` in `desktop/src/app.rs`.
+Discord OSS has apps for macOS, Windows, Linux and Android. Both load the web client an instance already serves, the same Discord client with Equicord and the instance's branding, so the apps look and behave like the browser version, including voice, video and screen sharing. The desktop app is an [Electron](https://www.electronjs.org) shell in `apps/desktop`, like the official Discord desktop app. The Android app is a [Capacitor](https://capacitorjs.com) app in `apps/mobile`. Both are called Discord OSS and use the icon in `apps/icon/icon.svg`, a white Clyde on `#3BA3E8`. `apps/icon/icon.png` is the same icon at 1024 pixels.
 
-## What it does
+## Instance switcher
 
-- Adds instances by address. It reads [`/.well-known/discord-oss`](../development/instance-discovery.md), shows the instance's name, description and whether signups are open, and keeps a list of instances in `instances.json` in the system's config folder.
-- Logs in with an email or username and password, with an authenticator or backup code when the account has two-factor authentication. The token goes into the system keychain: Keychain on macOS, Credential Manager on Windows and the Secret Service on Linux. On Android it goes into `sessions.json` in the app's private storage, which other apps can't read. "Create an account" opens the instance's `/register` page in the browser, because signup needs a Cap captcha that only runs in a browser.
-- Shows servers, their channels in Discord's order with categories, and only the channels the account can see, from the roles and permission overwrites in the READY payload.
-- Reads and sends messages in text and announcement channels, loads older messages 50 at a time, and shows new, edited and deleted messages live from the gateway. Messages from the same author within 7 minutes are grouped. Mentions, channel links, role mentions, custom emoji and `<t:...>` timestamps are shown as text. Attachments open in the browser.
-- Reconnects to the gateway with a backoff of 1 to 30 seconds, and goes back to the login screen when the token stops working.
+Both apps start on the instance switcher when no instance is picked yet. It asks for an address, fetches [`/.well-known/discord-oss`](../development/instance-discovery.md), checks that `software.name` is `discord-oss`, and saves the instance with the name and icon from the response. An address without a scheme gets `https://`, or `http://` for `localhost`, `.local` names and private IP ranges. The switcher lists every saved instance with the most recent first, opens one with a click and removes one with the × button. After that the app opens the last instance straight away.
 
-## What it doesn't do yet
+- Desktop: the switcher is under File > Switch Instance and in the tray menu, which also lists the saved instances to switch with one click, and `Ctrl+Shift+O` (`Cmd+Shift+O` on macOS) opens it. Pages from an instance can call `window.DiscordOSS.openInstanceSwitcher()`. If an instance doesn't load, the switcher opens with the error.
+- Android: the Back button on the first page of an instance opens the switcher, and Back on the switcher returns to the instance. Back on the switcher at launch puts the app in the background. Long pressing the app icon shows a Switch instance shortcut. Pages can call `window.DiscordOSS.openInstanceSwitcher()`.
 
-- Encrypted DMs. DMs and group DMs are listed, but their messages show as encrypted and the composer is off, with an "Open in browser" button. Reading them needs the protocol in [e2ee-protocol.md](../development/e2ee-protocol.md) ported to Rust.
-- Voice and video, threads, forums, reactions, replies, editing and deleting, uploads, member lists, notifications, unread markers, markdown and embeds.
-- Logging in when the instance turns on `login.requireCaptcha`. The app says so and points to the website.
-- On Android, the system Back button. Use the Back button in the conversation header.
+## Desktop app
 
-## Build and run
+- Voice and video: the instance's pages get microphone, camera, notification, clipboard and fullscreen permissions. Pages from anywhere else get none. On macOS the app asks for microphone and camera access the first time a page needs them.
+- Screen sharing: Go Live opens a picker with Screens and Applications tabs, a thumbnail for each and a Share system audio box. System audio works on Windows, and on macOS 13 and later. On macOS 15 and later the app uses the system's own picker instead. On Linux under Wayland the PipeWire portal is used.
+- Notifications use the system's notifications, and clicking one brings the window to the front. The unread mention count shows on the dock icon on macOS, on the launcher on Linux and as a red overlay on the taskbar on Windows. The window flashes when a new mention arrives in the background.
+- Closing the window keeps the app running in the tray. The tray menu turns this off, and turns Start at Login on or off. Started at login, the app opens in the tray.
+- Links to other sites open in the default browser. `discord-oss://` links open in the app: `discord-oss://invite/abc` opens `/invite/abc` on the current instance, and `discord-oss://open?instance=https://chat.example.org&path=/channels/@me` opens a path on a saved instance. A link to an instance that isn't saved opens the switcher with the address filled in, so the user confirms it first.
+- Only one copy runs at a time. Window size, position and maximized state are restored on the next start.
+- Spellcheck underlines misspelled words, and right clicking one offers up to 5 suggestions and Add to Dictionary. Right clicking a link, an image or selected text offers the usual copy, open and save items.
+- The window keeps running JavaScript at full speed when hidden, so calls don't drop.
+- The renderer is sandboxed with context isolation. The preload script exposes `window.DiscordOSS` with `platform`, `focusWindow()` and `openInstanceSwitcher()` to instance pages, and the switcher calls to the app's own pages. The main process checks which page sent each message.
+- Settings, the saved instances and the window state are in `settings.json` in the app's user data folder: `~/Library/Application Support/Discord OSS` on macOS, `%APPDATA%\Discord OSS` on Windows and `~/.config/Discord OSS` on Linux.
 
-Install Rust 1.88 or later. On Linux, install `libfontconfig1-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libssl-dev pkg-config` first.
+Run it from source with `bun install --cwd apps/desktop` and `bun run --cwd apps/desktop start`. `bun run --cwd apps/desktop typecheck` checks the TypeScript. The pages in `apps/desktop/static` load their scripts from `apps/desktop/dist/pages`, which `bun run --cwd apps/desktop build` compiles from `apps/desktop/src/pages`.
 
-```sh
-cd desktop
-cargo run
-cargo test
-OSS_CHAT_TEST_INSTANCE=localhost:3001 OSS_CHAT_TEST_TOKEN=<token> cargo test live -- --ignored --nocapture
-```
+## Android app
 
-The last command checks discovery, a failed login, the gateway READY, the channel list and loading messages against a running instance, without opening a window.
+- Microphone and camera: the first call or video asks for the Android permissions, then the page gets them.
+- Calls keep going in the background. While a microphone track is live, the app runs a foreground service with an "In a voice call" notification and a wake lock, so Android doesn't stop the call. It stops when the call ends.
+- Notifications: Android's WebView has no Notification API, so the app adds one. When the app isn't focused, a message notification from the client becomes an Android notification that opens the app. The app asks for notification permission on Android 13 and later. Notifications only arrive while the app is running, because there are no push notifications yet.
+- Downloads go to the Downloads folder through Android's download manager with the login cookies. Uploads use the system file picker.
+- The splash screen shows the icon on `#3BA3E8`. The status and navigation bars use the dark background `#1A1A1E`, and the page keeps clear of the bars and the keyboard.
+- The WebView runs with hardware acceleration, renders offscreen content ahead of scrolling, plays sounds without a tap and keeps its renderer at high priority. Links to other sites open in the browser.
 
-## Installers
+Run `bun install --cwd apps/mobile` and `bun run --cwd apps/mobile sync` to compile the switcher and copy it into `apps/mobile/android`, then open `apps/mobile/android` in Android Studio or run `./gradlew assembleDebug` there. It needs JDK 21 and the Android SDK 36.
 
-[cargo-packager](https://github.com/crabnebula-dev/cargo-packager) builds them from the `[package.metadata.packager]` section of `desktop/Cargo.toml`. Each platform builds its own:
+## Building the installers and APK
 
-| Platform | Command in `desktop/` | Output in `target/packages` |
-| --- | --- | --- |
-| macOS | `cargo packager --release --formats app,dmg` | `.app` and `.dmg` |
-| Windows | `cargo packager --release --formats nsis,wix` | `.exe` and `.msi` |
-| Linux | `cargo packager --release --formats deb,appimage` | `.deb` and `.AppImage` |
+`.github/workflows/apps.yml` builds everything. On pull requests that touch `apps/` it only typechecks both apps. On a tag such as `apps-v1.0.0`, or when run by hand from the Actions tab, it builds:
 
-Run `cargo build --release` first and install the tool with `cargo install cargo-packager --locked`.
+| Platform | Files                                                     | Built on         |
+| -------- | --------------------------------------------------------- | ---------------- |
+| macOS    | `.dmg` and `.zip` for Apple silicon and Intel             | `macos-latest`   |
+| Windows  | `.exe` installer for x64 and Arm64                        | `windows-latest` |
+| Linux    | `.AppImage` and `.deb` for x64 and Arm64                  | `ubuntu-latest`  |
+| Android  | `.apk`                                                    | `ubuntu-latest`  |
 
-### Android
+The files are uploaded as workflow artifacts, and a tag also attaches them to a GitHub release named after the tag. The version comes from the tag, and `1.0.0` otherwise. The Windows job checks out only `apps/` with `core.protectNTFS` off, because some paths in the repository contain `:`, which Windows can't check out.
 
-[cargo-apk](https://github.com/rust-mobile/cargo-apk) builds one APK for 64-bit ARM phones and x86_64 emulators from the `[package.metadata.android]` section. It needs the Android SDK and NDK, Java 17 and the Rust targets:
+Signing is optional:
 
-```sh
-rustup target add aarch64-linux-android x86_64-linux-android
-cargo install cargo-apk --locked
-export ANDROID_HOME=~/Library/Android/sdk ANDROID_NDK_ROOT=~/Library/Android/sdk/ndk/<version>
-cargo apk run --lib
-cargo apk build --release --lib
-```
+- macOS: set `CSC_LINK` (a base64 `.p12`) and `CSC_KEY_PASSWORD`, and `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` to notarize. Without them the app is signed ad hoc, and macOS asks to confirm opening it the first time, with Open in System Settings > Privacy & Security.
+- Windows: `CSC_LINK` and `CSC_KEY_PASSWORD` sign the installer too. Without them SmartScreen warns on first run.
+- Android: set `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD` and optionally `ANDROID_KEY_ALIAS` (default `discord-oss`). Without them each build is signed with a new key, and Android won't install it over an earlier one.
 
-A release build needs `CARGO_APK_RELEASE_KEYSTORE` and `CARGO_APK_RELEASE_KEYSTORE_PASSWORD`. Android only installs an update over an earlier install when both were signed with the same key, so keep the keystore.
-
-### GitHub Actions
-
-`.github/workflows/desktop.yml` runs `cargo fmt --check`, Clippy and the tests on pull requests that touch `desktop/`, and the server's CI skips changes that only touch `desktop/`. A tag such as `desktop-v0.2.0`, or starting the workflow by hand, skips the tests and builds the macOS installers for Apple silicon and Intel, the Windows installers, the Linux packages and the Android APK. It uploads them as workflow artifacts and, for a tag, attaches them to a draft GitHub release.
-
-The APK job signs with the keystore in the `ANDROID_KEYSTORE_BASE64` secret and its password in `ANDROID_KEYSTORE_PASSWORD`. Without them it makes a one-off key, so that APK can't update an install from another build. To make a keystore:
-
-```sh
-keytool -genkeypair -keystore oss-chat.keystore -alias oss-chat -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=OSS Chat"
-base64 -i oss-chat.keystore | gh secret set ANDROID_KEYSTORE_BASE64
-gh secret set ANDROID_KEYSTORE_PASSWORD
-```
-
-The installers aren't signed. macOS refuses to open the app until the user right-clicks it and picks Open, or runs `xattr -dr com.apple.quarantine "/Applications/OSS Chat.app"`. Windows SmartScreen asks for "More info" and "Run anyway". Android asks to allow installs from the browser or file manager the APK was opened from. Signing needs an Apple Developer ID with notarization, set under `[package.metadata.packager.macos]`, and a Windows code-signing certificate.
+To build the desktop installers locally, run `bun run --cwd apps/desktop dist`. They land in `apps/desktop/release`.
