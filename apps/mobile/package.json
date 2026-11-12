@@ -1,0 +1,22 @@
+{
+    "name": "discord-oss-mobile",
+    "version": "1.0.0",
+    "description": "Discord OSS for Android",
+    "author": "Discord OSS contributors",
+    "license": "AGPL-3.0-only",
+    "private": true,
+    "scripts": {
+        "build": "tsc -p .",
+        "typecheck": "tsc -p . --noEmit",
+        "sync": "tsc -p . && cap sync android",
+        "apk": "tsc -p . && cap sync android && cd android && ./gradlew assembleRelease"
+    },
+    "dependencies": {
+        "@capacitor/android": "8.6.2",
+        "@capacitor/core": "8.6.2"
+    },
+    "devDependencies": {
+        "@capacitor/cli": "8.6.2",
+        "typescript": "^5.9.3"
+    }
+}

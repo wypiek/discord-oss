@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https: http:; connect-src https: http:" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <meta name="color-scheme" content="dark" />
+        <title>Discord OSS</title>
+        <link rel="stylesheet" href="app.css" />
+    </head>
+    <body>
+        <main class="card" id="card" hidden>
+            <img class="logo" src="icon.png" alt="" width="72" height="72" />
+            <h1>Choose an instance</h1>
+            <p class="subtitle">Discord OSS connects to any Discord OSS server. Pick one you've used or add a new one.</p>
+            <ul id="instances" class="instances" aria-label="Saved instances"></ul>
+            <form id="connect" class="connect" autocomplete="off">
+                <label for="address">Instance address</label>
+                <input id="address" name="address" type="url" inputmode="url" placeholder="chat.example.org" spellcheck="false" autocapitalize="off" required />
+                <button id="submit" type="submit">Connect</button>
+                <p id="error" class="error" role="alert" hidden></p>
+            </form>
+        </main>
+        <script src="switcher.js"></script>
+    </body>
+</html>

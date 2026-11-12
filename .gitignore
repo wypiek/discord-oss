@@ -63,3 +63,8 @@ docs/qa
 workers/**/.deploy/
 workers/**/worker-configuration.d.ts
 workers/.dev/
+
+# app builds
+apps/desktop/release/
+apps/mobile/www/switcher.js
+apps/mobile/android/app/build/

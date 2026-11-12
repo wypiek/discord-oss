@@ -37,7 +37,7 @@
 | [invite-roles.md](features/invite-roles.md) | Invites that give roles to the people who join through them. |
 | [status.md](features/status.md) | The public status page, component groups, uptime history and the API response time chart. |
 | [phones.md](features/phones.md) | The client on phones, installing it to the home screen, and Discord's Android app. |
-| [desktop.md](features/desktop.md) | OSS Chat, the native desktop and Android app, and building its installers and APK. |
+| [desktop.md](features/desktop.md) | The Discord OSS desktop and Android apps, their instance switcher, and building the installers and APK. |
 
 ## Development
 

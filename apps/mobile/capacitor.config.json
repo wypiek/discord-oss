@@ -1,0 +1,17 @@
+{
+    "appId": "org.discordoss.app",
+    "appName": "Discord OSS",
+    "webDir": "www",
+    "backgroundColor": "#1a1a1e",
+    "loggingBehavior": "none",
+    "server": {
+        "androidScheme": "https",
+        "hostname": "localhost"
+    },
+    "android": {
+        "backgroundColor": "#1a1a1e",
+        "allowMixedContent": false,
+        "captureInput": true,
+        "webContentsDebuggingEnabled": false
+    }
+}

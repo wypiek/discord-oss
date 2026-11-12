@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Discord OSS</string>
+    <string name="title_activity_main">Discord OSS</string>
+    <string name="package_name">org.discordoss.app</string>
+    <string name="custom_url_scheme">discord-oss</string>
+    <string name="downloading">Downloading %1$s</string>
+    <string name="load_failed">Couldn\'t load %1$s: %2$s</string>
+    <string name="channel_messages">Messages</string>
+    <string name="channel_calls">Voice calls</string>
+    <string name="call_title">In a voice call</string>
+    <string name="call_text">Tap to return to Discord OSS</string>
+    <string name="shortcut_switch_short">Switch instance</string>
+    <string name="shortcut_switch_long">Switch Discord OSS instance</string>
+</resources>

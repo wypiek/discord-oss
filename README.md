@@ -20,7 +20,7 @@ It is a fork of [Spacebar](https://github.com/spacebarchat/server), written in T
 - **Admin dashboard:** users, servers, reports, AutoMod and raid protection, staff roles with an audit log, badges, the Shop, the status page, announcements and every setting, at `/admin`.
 - **Developer portal:** OAuth2 applications, bots, slash commands and embedded activities, at `/developers`.
 - **Mobile:** the web client works in phone browsers and installs to the home screen, and a bundle for Discord's Android app through Kettu points it at your instance. See [phones.md](docs/features/phones.md).
-- **Desktop and Android app:** OSS Chat, a native Rust and Slint client for macOS, Windows, Linux and Android that keeps a list of instances and reads and sends messages in servers. Encrypted DMs and voice still need the web client. See [desktop.md](docs/features/desktop.md).
+- **Desktop and Android apps:** Discord OSS for macOS, Windows, Linux and Android. The desktop app is an Electron shell and the Android app a Capacitor app, both running the instance's web client with voice, video and screen sharing, and an instance switcher for saved instances. See [desktop.md](docs/features/desktop.md).
 
 [parity.md](docs/development/parity.md) lists every Discord feature and its state on Discord OSS.
 
@@ -87,7 +87,7 @@ Read [CONTRIBUTING.MD](CONTRIBUTING.MD) before opening a pull request, [client-p
 | Equicord plugins that adapt the client | `client/plugins` |
 | Encryption engine | `client/e2ee` |
 | Android bundle | `client/mobile` |
-| Native desktop and Android app | `desktop` |
+| Desktop and Android apps | `apps` |
 
 [docs/README.md](docs/README.md) indexes the rest of the documentation.
 

@@ -1,0 +1,17 @@
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "ES2020",
+        "moduleResolution": "bundler",
+        "moduleDetection": "legacy",
+        "lib": ["ES2020", "DOM", "DOM.Iterable"],
+        "types": [],
+        "rootDir": "src",
+        "outDir": "www",
+        "strict": true,
+        "skipLibCheck": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true
+    },
+    "include": ["src"]
+}
