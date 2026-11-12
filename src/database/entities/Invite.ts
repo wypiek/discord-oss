@@ -226,7 +226,10 @@ export class Invite extends BaseClassWithoutId {
             await Invite.delete({ code });
             throw DiscordApiErrors.UNKNOWN_INVITE;
         }
-        if (await Member.exists({ where: { id: user_id, guild_id: invite.guild_id } })) return { invite, new_member: false };
+        if (await Member.exists({ where: { id: user_id, guild_id: invite.guild_id } })) {
+            if (invite.role_ids?.length) await Member.addRoles(user_id, invite.guild_id, invite.role_ids);
+            return { invite, new_member: false };
+        }
 
         await Member.addToGuild(user_id, invite.guild_id, false, {
             source_invite_code: invite.code,
