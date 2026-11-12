@@ -39,6 +39,49 @@ export const parseYoutubeVideo = (value: string | null | undefined) => {
     throw new HTTPError("Paste a YouTube link or an 11-character video id", 400);
 };
 
+const HEADING = /^ {0,3}#{1,6}\s/;
+const LIST_ITEM = /^ {0,3}(?:[*+-]|\d{1,9}[.)])\s/;
+const FENCE = /^ {0,3}(?:```|~~~)/;
+const INDENTED = /^\s+\S/;
+
+const isBlank = (line: string | undefined) => line === undefined || line.trim() === "";
+
+export const normalizeChangelogMarkdown = (body: string) => {
+    const out: string[] = [];
+    let fenced = false;
+    let inList: boolean = false;
+    for (const line of body.replace(/\r\n?/g, "\n").split("\n")) {
+        if (fenced) {
+            out.push(line);
+            if (FENCE.test(line)) {
+                fenced = false;
+                out.push("");
+            }
+            continue;
+        }
+        const previous = out[out.length - 1];
+        if (isBlank(line)) {
+            inList = false;
+            out.push("");
+            continue;
+        }
+        const heading = HEADING.test(line);
+        const item = LIST_ITEM.test(line);
+        const continuesList: boolean = inList && (item || INDENTED.test(line));
+        const separate = FENCE.test(line) || heading || (previous !== undefined && HEADING.test(previous)) || (item && !inList) || (inList && !continuesList);
+        if (separate && !isBlank(previous)) out.push("");
+        if (FENCE.test(line)) {
+            fenced = true;
+            inList = false;
+        } else inList = continuesList || item;
+        out.push(line);
+    }
+    return `${out
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()}\n\n`;
+};
+
 const snowflake = (id: string) => BigInt(id);
 
 export const visibleChangelogs = <T extends Pick<Changelog, "id" | "date" | "published">>(changelogs: T[], now = new Date()) =>
@@ -55,7 +98,7 @@ export const changelogDocument = (changelog: Pick<Changelog, "date" | "body" | "
     return {
         date: changelog.date,
         locale,
-        content: changelog.body.replaceAll("{instance}", instanceName()),
+        content: normalizeChangelogMarkdown(changelog.body.replaceAll("{instance}", instanceName())),
         asset: video ?? image ?? "",
         asset_type: video ? CHANGELOG_ASSET_YOUTUBE : CHANGELOG_ASSET_IMAGE,
     };

@@ -76,6 +76,13 @@ export default definePlugin({
             },
         },
         {
+            find: "actionBarInput:this.renderFooter()",
+            replacement: {
+                match: /actionBarInput:this\.renderFooter\(\)/,
+                replace: "actionBarInput:null",
+            },
+        },
+        {
             find: '"https://discord.com/category/product"',
             replacement: {
                 match: /"https:\/\/discord\.com\/category\/product"/,
