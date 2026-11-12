@@ -62,8 +62,8 @@ export default definePlugin({
             find: ".getMediaEngine().getDesktopSource(",
             replacement: [
                 {
-                    match: /\{if\(\i\.isPlatformEmbedded\)(\(0,\i\.openModalLazy\))/,
-                    replace: "{if(!1)$1",
+                    match: /\{if\((\i\.isPlatformEmbedded)\)(\(0,\i\.openModalLazy\))/,
+                    replace: "{if($1&&$self.hasNativePicker())$2",
                 },
                 {
                     match: /(getDesktopSource\(\i,!0\)\.then\(\i=>\{\(0,\i\.\i\)\(\i,\i,\{pid:null,sourceId:\i,sourceName:)null/,
@@ -131,6 +131,9 @@ export default definePlugin({
             } catch {}
             return stream;
         };
+    },
+    hasNativePicker() {
+        return (window as { DiscordNative?: unknown }).DiscordNative != null;
     },
     pickedName() {
         return (
