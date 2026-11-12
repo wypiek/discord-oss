@@ -91,7 +91,7 @@ test("compose healthcheck rejects API-only startup and accepts the mounted clien
     const execute = () =>
         new Promise((resolve, reject) => {
             const { spawn } = require("node:child_process");
-            const child = spawn(process.execPath, ["-e", command.replaceAll("127.0.0.1:3001", `127.0.0.1:${server.address().port}`)], { stdio: "ignore" });
+            const child = spawn(process.execPath, ["-e", command.replace(/127\.0\.0\.1:\d+/g, `127.0.0.1:${server.address().port}`)], { stdio: "ignore" });
             child.once("error", reject);
             child.once("exit", resolve);
         });

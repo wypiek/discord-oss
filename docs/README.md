@@ -32,6 +32,7 @@
 | [homepage.md](features/homepage.md) | The instance homepage and the loading screen. |
 | [blog-and-help.md](features/blog-and-help.md) | The public blog and help centre, the Markdown they accept and how the dashboard edits them. |
 | [whats-new.md](features/whats-new.md) | What's New changelogs and how operators write them. |
+| [typing-indicator.md](features/typing-indicator.md) | Custom typing indicators with emojis, animations and your own text. |
 | [status.md](features/status.md) | The public status page, component groups, uptime history and the API response time chart. |
 | [phones.md](features/phones.md) | The client on phones, installing it to the home screen, and Discord's Android app. |
 | [desktop.md](features/desktop.md) | OSS Chat, the native desktop and Android app, and building its installers and APK. |

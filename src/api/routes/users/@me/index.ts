@@ -2,7 +2,7 @@ import { assertIdentityNameAllowed } from "@spacebar/util/util/IdentityModeratio
 import bcrypt from "bcrypt";
 import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
-import { EmailChange, Pomelo, authenticatorTypes, checkProfileAcrossGuilds, oauth2User, revokeSessions } from "@spacebar/api/util";
+import { EmailChange, Pomelo, authenticatorTypes, checkProfileAcrossGuilds, normalizeTypingIndicatorStyle, oauth2User, revokeSessions } from "@spacebar/api/util";
 import { AvatarDecoration, User } from "@spacebar/database";
 import {
     broadcastUserUpdate,
@@ -254,6 +254,8 @@ router.patch(
                 display_name_styles: font_id == null && effect_id == null && !colors?.length ? null : { font_id: font_id ?? 0, effect_id: effect_id ?? 0, colors: colors ?? [] },
             });
         }
+
+        if (body.typing_indicator_style !== undefined) Object.assign(user, { typing_indicator_style: await normalizeTypingIndicatorStyle(body.typing_indicator_style) });
 
         const decorationSku = body.avatar_decoration_sku_id !== undefined ? body.avatar_decoration_sku_id : body.avatar_decoration_id;
         if (decorationSku !== undefined) {
