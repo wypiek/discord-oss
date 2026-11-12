@@ -1,12 +1,13 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn, Index } from "typeorm";
+import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn, Index, In } from "typeorm";
 import { BaseClassWithoutId } from "./BaseClass";
 import { Channel } from "./Channel";
 import { Guild } from "./Guild";
 import { Member } from "./Member";
 import { User } from "./User";
-import { InviteType, PublicInvite } from "@spacebar/schemas/api/guilds/Invite";
+import { InviteRole, InviteType, PublicInvite } from "@spacebar/schemas/api/guilds/Invite";
 import { PublicChannel } from "@spacebar/schemas";
 import { Recipient } from "./Recipient";
+import { Role } from "./Role";
 import { DiscordApiErrors } from "@spacebar/util/util";
 
 export const PublicInviteRelation = ["inviter", "guild", "channel"];
@@ -87,6 +88,11 @@ export class Invite extends BaseClassWithoutId {
     @Column()
     flags: number;
 
+    @Column({ type: "jsonb", nullable: true })
+    role_ids?: string[] | null;
+
+    assigned_roles?: Role[];
+
     isExpired() {
         if (this.max_age !== 0 && this.expires_at && this.expires_at < new Date()) return true;
         if (this.max_uses !== 0 && this.uses >= this.max_uses) return true;
@@ -99,6 +105,37 @@ export class Invite extends BaseClassWithoutId {
             relations: { user: true },
         });
         return this;
+    }
+
+    static async loadRoles<T extends Invite | null | undefined>(invites: T[]): Promise<T[]> {
+        const wanted = invites.filter((invite): invite is NonNullable<T> & Invite => !!invite?.guild_id && !!invite.role_ids?.length);
+        const ids = [...new Set(wanted.flatMap((invite) => invite.role_ids ?? []))];
+        if (!ids.length) return invites;
+        const roles = await Role.find({ where: { id: In(ids) } });
+        for (const invite of wanted) {
+            const assigned = new Set(invite.role_ids);
+            invite.assigned_roles = roles.filter((role) => role.guild_id === invite.guild_id && assigned.has(role.id));
+        }
+        return invites;
+    }
+
+    async loadRoles() {
+        await Invite.loadRoles([this]);
+        return this;
+    }
+
+    inviteRoles(): InviteRole[] {
+        return [...(this.assigned_roles ?? [])]
+            .sort((a, b) => b.position - a.position)
+            .map((role) => ({
+                id: role.id,
+                name: role.name,
+                position: role.position,
+                color: role.color,
+                colors: role.colors,
+                icon: role.icon ?? null,
+                unicode_emoji: role.unicode_emoji ?? null,
+            }));
     }
 
     isFriendInvite() {
@@ -152,7 +189,7 @@ export class Invite extends BaseClassWithoutId {
             approximate_presence_count: this.guild.presence_count,
             is_nickname_changeable: true, // TODO
             new_member: true, // TODO
-            roles: [], // TODO
+            roles: this.inviteRoles(),
             show_verification_form: false, // TODO
             target_type: undefined, // TODO
             target_user: undefined, // TODO
@@ -197,6 +234,7 @@ export class Invite extends BaseClassWithoutId {
             inviter_id: invite.inviter_id ?? null,
             ...(invite.flags & 8 && { pending: false }),
         });
+        if (invite.role_ids?.length) await Member.addRoles(user_id, invite.guild_id, invite.role_ids);
         if (invite.uses++ >= invite.max_uses && invite.max_uses !== 0) await Invite.delete({ code });
         else await invite.save();
 

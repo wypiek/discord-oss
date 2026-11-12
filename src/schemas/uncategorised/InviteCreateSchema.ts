@@ -21,4 +21,12 @@ export interface InviteCreateSchema {
     target_user?: string;
     target_user_type?: number;
     flags?: number;
+    /**
+     * @maxItems 250
+     */
+    role_ids?: string[];
+    /**
+     * @maxLength 20
+     */
+    target_application_id?: string;
 }

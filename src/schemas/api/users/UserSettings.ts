@@ -51,7 +51,7 @@ export interface UserSettingsSchema {
     show_current_game: boolean;
     slayer_sdk_receive_dms_in_game: number;
     soundboard_volume: number;
-    status: "online" | "offline" | "dnd" | "idle" | "invisible";
+    status: "online" | "offline" | "dnd" | "idle" | "invisible" | "testing";
     stream_notifications_enabled: boolean;
     theme: "dark" | "light" | "darker" | "midnight"; // dark
     timezone_offset: number; // e.g -60

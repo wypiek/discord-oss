@@ -101,7 +101,7 @@ export class UserSettings extends BaseClassWithoutId {
     show_current_game: boolean = true;
 
     @Column({ nullable: true })
-    status: "online" | "offline" | "dnd" | "idle" | "invisible" = "online";
+    status: "online" | "offline" | "dnd" | "idle" | "invisible" | "testing" = "online";
 
     @Column({ nullable: true })
     stream_notifications_enabled: boolean = false;

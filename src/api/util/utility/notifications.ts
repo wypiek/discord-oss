@@ -175,7 +175,7 @@ const isMuted = (
 
 async function dndUsers(ids: string[]) {
     const rows: { id: string }[] = await Member.query(
-        `SELECT CAST(u.id AS text) AS id FROM users u JOIN user_settings s ON s."index" = u."settingsIndex" WHERE ${sqlArrayIncludes("u.id", "$1")} AND s.status = 'dnd'`,
+        `SELECT CAST(u.id AS text) AS id FROM users u JOIN user_settings s ON s."index" = u."settingsIndex" WHERE ${sqlArrayIncludes("u.id", "$1")} AND s.status IN ('dnd', 'testing')`,
         [ids],
     );
     return new Set(rows.map((r) => r.id));

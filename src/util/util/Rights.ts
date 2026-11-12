@@ -77,6 +77,7 @@ export class Rights extends BitField {
         SUPPORT_USERS: BitFlag(54),
         MANAGE_STAFF: BitFlag(55),
         VIEW_AUDIT_LOG: BitFlag(56),
+        TESTING_PRESENCE: BitFlag(57),
     };
 
     static IMPLIED: [bigint, bigint][] = [

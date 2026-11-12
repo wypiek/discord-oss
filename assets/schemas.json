@@ -925,7 +925,8 @@
                     "idle",
                     "invisible",
                     "offline",
-                    "online"
+                    "online",
+                    "testing"
                 ],
                 "type": "string"
             },
@@ -1096,7 +1097,8 @@
                     "idle",
                     "invisible",
                     "offline",
-                    "online"
+                    "online",
+                    "testing"
                 ],
                 "type": "string"
             },
@@ -2686,6 +2688,17 @@
             },
             "flags": {
                 "type": "integer"
+            },
+            "role_ids": {
+                "maxItems": 250,
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "target_application_id": {
+                "maxLength": 20,
+                "type": "string"
             }
         },
         "additionalProperties": false,
@@ -19086,7 +19099,8 @@
             "idle",
             "invisible",
             "offline",
-            "online"
+            "online",
+            "testing"
         ],
         "type": "string",
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -19467,7 +19481,8 @@
                     "idle",
                     "invisible",
                     "offline",
-                    "online"
+                    "online",
+                    "testing"
                 ],
                 "type": "string",
                 "default": "online"
@@ -21507,6 +21522,25 @@
             },
             "flags": {
                 "type": "integer"
+            },
+            "role_ids": {
+                "anyOf": [
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
+            "assigned_roles": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/definitions/Role"
+                }
             }
         },
         "additionalProperties": false,
@@ -24860,6 +24894,7 @@
             "invisible",
             "offline",
             "online",
+            "testing",
             "unknown"
         ],
         "type": "string",

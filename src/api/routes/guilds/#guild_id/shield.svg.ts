@@ -71,7 +71,7 @@ async function getWidgetJsonData(guild_id: string, useWhiteLogo: boolean = true)
 
     const members = await Member.find({ where: { guild_id }, select: { id: true } });
     const presences = await getUserPresences(members.map((m) => m.id));
-    const online = [...presences.values()].filter((presence) => ["online", "idle", "dnd"].includes(presence.status)).length;
+    const online = [...presences.values()].filter((presence) => ["online", "idle", "dnd", "testing"].includes(presence.status)).length;
 
     return makeBadge({
         label: instanceName(),

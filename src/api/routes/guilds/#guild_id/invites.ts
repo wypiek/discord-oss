@@ -31,7 +31,8 @@ router.get(
                 }),
         );
 
-        return res.json(invites.filter((i) => !i.isExpired()).map((x) => x.toMetadataJSON()) satisfies InviteListResponse);
+        const live = await Invite.loadRoles(invites.filter((i) => !i.isExpired()));
+        return res.json(live.map((x) => x.toMetadataJSON()) satisfies InviteListResponse);
     },
 );
 
