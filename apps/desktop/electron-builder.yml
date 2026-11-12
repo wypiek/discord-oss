@@ -32,9 +32,9 @@ mac:
     NSScreenCaptureUsageDescription: Discord OSS shares your screen when you go live.
   target:
     - target: dmg
-      arch: [arm64, x64]
+      arch: [universal]
     - target: zip
-      arch: [arm64, x64]
+      arch: [universal]
 dmg:
   title: Discord OSS
 win:
