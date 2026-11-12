@@ -386,3 +386,35 @@
 .fosscord-pride-flags-pronouns {
     font-size: 0.875rem;
 }
+
+.fosscord-pride-sidebar-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.fosscord-pride-sidebar-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-muted, transparent);
+    border-radius: var(--radius-sm, 8px);
+    background: var(--background-mod-subtle, var(--background-secondary));
+    color: var(--text-default, var(--text-normal));
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.fosscord-pride-sidebar-tile:hover {
+    background: var(--control-secondary-background-hover, var(--background-modifier-hover));
+}
+
+.fosscord-pride-modal .fosscord-pride {
+    margin: 0 0 16px;
+}
+
+.fosscord-pride-modal .fosscord-ui-section-heading h3 {
+    display: none;
+}

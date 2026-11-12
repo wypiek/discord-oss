@@ -1,6 +1,6 @@
 # Pride badges
 
-People pick pride flags in Settings, Profiles, or at signup, and the flags show right after their display name. **Pride flags are permanent.** No config key, environment variable, admin setting or plugin setting can hide or disable the flags, the picker or flag picking at signup, and the `FosscordPride` plugin can't be turned off. The catalog never has heterosexual or cisgender flags. `scripts/tests/pride-permanent.test.cjs` enforces this. To stop showing a flag, unpick it in the picker.
+People pick pride flags in the profile editor, from the Pride Flags tile in its sidebar, or at signup, and the flags show right after their display name. **Pride flags are permanent.** No config key, environment variable, admin setting or plugin setting can hide or disable the flags, the picker or flag picking at signup, and the `FosscordPride` plugin can't be turned off. The catalog never has heterosexual or cisgender flags. `scripts/tests/pride-permanent.test.cjs` enforces this. To stop showing a flag, unpick it in the picker.
 
 ## Where flags show
 
