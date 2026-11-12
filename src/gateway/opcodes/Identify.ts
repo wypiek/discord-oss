@@ -1,7 +1,7 @@
 import { sqlArrayAggregate, sqlArrayIncludes, sqlZipArrays } from "@spacebar/database/Sql";
 import { In } from "typeorm";
 import { PreloadedUserSettings } from "discord-protos";
-import { Capabilities, CLOSECODES, genSessionId, getGuildCache, OPCODES, Payload, Send, setupListener, WebSocket } from "@spacebar/gateway";
+import { Capabilities, CLOSECODES, genSessionId, getGuildCache, OPCODES, Payload, Send, setupListener, WebSocket, isSettableStatus } from "@spacebar/gateway";
 import { settlePendingConnection } from "../util/PendingConnections";
 import { arrayGroupBy, ElapsedTime, Stopwatch, timeFunction, timePromise } from "@spacebar/extensions";
 import {
@@ -87,7 +87,6 @@ type GuildPresenceMember = Omit<PublicMember, "user">;
 // TODO: user sharding
 // TODO: check privileged intents, if defined in the config
 
-const SettableStatuses = ["online", "idle", "dnd", "invisible"];
 const JOINED_THREAD_BATCH = 1000;
 
 export async function onIdentify(this: WebSocket, data: Payload) {
@@ -332,8 +331,13 @@ export async function onIdentify(this: WebSocket, data: Payload) {
     const statusSettings = settingsProtos?.userSettings?.status;
     const requestedStatus = identify.presence?.status;
     const savedStatus = statusSettings?.status?.value || settings?.status;
+    const rights = await effectiveRights(user.id, user.rights);
     this.session.status = (
-        requestedStatus && SettableStatuses.includes(requestedStatus) ? requestedStatus : savedStatus && SettableStatuses.includes(savedStatus) ? savedStatus : "online"
+        (await isSettableStatus(user.id, requestedStatus, rights.bitfield))
+            ? requestedStatus
+            : (await isSettableStatus(user.id, savedStatus, rights.bitfield))
+              ? savedStatus
+              : "online"
     ) as PrivateStatus;
     const customStatus = statusSettings?.customStatus;
     const customStatusActive =
@@ -804,7 +808,7 @@ export async function onIdentify(this: WebSocket, data: Payload) {
             ({
                 v: 9,
                 application: application ? { id: application.id, flags: application.flags } : undefined,
-                user: user.toPrivateUser(["rights"]),
+                user: { ...user.toPrivateUser(["rights"]), rights: rights.bitfield.toString() } as ReturnType<User["toPrivateUser"]>,
                 user_settings: user.settings?.toLegacy(settingsProtos?.userSettings),
                 user_settings_proto,
                 user_settings_proto_json,

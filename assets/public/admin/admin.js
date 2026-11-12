@@ -349,6 +349,7 @@ const RIGHTS = [
   ["SUPPORT_USERS", 54, "Account recovery and verification"],
   ["MANAGE_STAFF", 55, "Manage staff roles below their own"],
   ["VIEW_AUDIT_LOG", 56, "Read the staff audit log"],
+  ["TESTING_PRESENCE", 57, "Set the Testing status"],
 ];
 const ACCESS_LABELS = {
   settings: "Settings",

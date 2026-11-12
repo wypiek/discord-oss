@@ -1,7 +1,7 @@
 import { assertIdentityNameAllowed } from "@spacebar/util/util/IdentityModeration";
 import { assertMaxLength, UserFieldCaps } from "@spacebar/util/util/UserFieldCaps";
 import { HTTPError } from "lambert-server/HTTPError";
-import { BeforeInsert, BeforeUpdate, Column, Entity, EntityManager, Index, JoinColumn, JoinTable, ManyToMany, ManyToOne, Not, PrimaryGeneratedColumn } from "typeorm";
+import { BeforeInsert, BeforeUpdate, Column, Entity, EntityManager, Index, JoinColumn, JoinTable, ManyToMany, ManyToOne, In, Not, PrimaryGeneratedColumn } from "typeorm";
 import { Stopwatch } from "@spacebar/extensions";
 import { Config, emitEvent, DiscordApiErrors, dropGuildTags } from "@spacebar/util/util";
 import {
@@ -305,6 +305,32 @@ export class Member extends BaseClassWithoutId {
                 guild_id,
             } satisfies GuildMemberUpdateEvent),
         ]);
+    }
+
+    static async addRoles(user_id: string, guild_id: string, role_ids: string[]) {
+        const [member, roles] = await Promise.all([
+            Member.findOneOrFail({
+                where: { id: user_id, guild_id },
+                relations: { user: true, roles: true },
+            }),
+            Role.find({ where: { id: In(role_ids), guild_id }, select: { id: true, managed: true } }),
+        ]);
+        const held = new Set(member.roles.map((role) => role.id));
+        const added = roles.filter((role) => role.id !== guild_id && !role.managed && !held.has(role.id));
+        if (!added.length) return;
+        member.roles.push(...added.map((role) => Role.create({ id: role.id })));
+
+        await member.save();
+        await emitEvent({
+            event: "GUILD_MEMBER_UPDATE",
+            data: {
+                ...member.toPublicMember(),
+                guild_id,
+                user: member.user.toPublicUser(),
+                roles: member.roles.map((x) => x.id).filter((id) => id !== guild_id),
+            },
+            guild_id,
+        } satisfies GuildMemberUpdateEvent);
     }
 
     static async removeRole(user_id: string, guild_id: string, role_id: string) {

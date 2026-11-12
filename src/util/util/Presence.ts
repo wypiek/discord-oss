@@ -9,6 +9,7 @@ export function getMostRelevantSession(sessions: Session[]) {
         online: 0,
         idle: 1,
         dnd: 2,
+        testing: 2,
         invisible: 3,
         offline: 4,
         unknown: 5,
@@ -75,7 +76,7 @@ export interface AggregatedPresence {
     processed_at_timestamp: number;
 }
 
-const PresencePriority: Record<string, number> = { dnd: 0, online: 1, idle: 2 };
+const PresencePriority: Record<string, number> = { testing: 0, dnd: 0, online: 1, idle: 2 };
 const ClientPlatforms = ["desktop", "mobile", "web", "embedded", "vr"] as const;
 export type ClientPlatform = (typeof ClientPlatforms)[number];
 

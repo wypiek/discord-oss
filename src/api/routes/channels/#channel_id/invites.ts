@@ -1,13 +1,26 @@
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
-import { AuditLog, Channel, Invite, PublicInviteRelation, Recipient } from "@spacebar/database";
+import { AuditLog, Channel, Invite, PublicInviteRelation, Recipient, Role } from "@spacebar/database";
+import { In } from "typeorm";
+import { assertRoleEditable, getRoleAuthority } from "@spacebar/api/util/utility/roleAuthorization";
 import { DiscordApiErrors, InviteCreateEvent, emitEvent } from "@spacebar/util";
 import { AuditLogEvents, ChannelType, InviteCreateSchema } from "@spacebar/schemas";
 import { Random } from "@spacebar/extensions";
 import { InviteListResponse } from "@spacebar/schemas/api/guilds/Invite";
 
 const router: Router = Router({ mergeParams: true });
+
+async function authorizeInviteRoles(user_id: string, guild_id: string, requested?: string[]) {
+    const ids = [...new Set(requested ?? [])];
+    if (!ids.length) return [];
+    if (ids.some((id) => !/^\d+$/.test(id))) throw DiscordApiErrors.UNKNOWN_ROLE;
+    const authority = await getRoleAuthority(user_id, guild_id);
+    const roles = await Role.find({ where: { id: In(ids), guild_id } });
+    if (roles.length !== ids.length) throw DiscordApiErrors.UNKNOWN_ROLE;
+    for (const role of roles) assertRoleEditable(authority, role);
+    return ids;
+}
 
 router.post(
     "/",
@@ -63,6 +76,7 @@ router.post(
         }
         const { guild_id } = channel;
         if ((body.flags ?? 0) & 8) req.permission?.hasThrow("KICK_MEMBERS");
+        const role_ids = await authorizeInviteRoles(user_id, guild_id, body.role_ids);
 
         const max_age = Math.max(0, body.max_age ?? 86400);
         const expires_at = max_age == 0 ? undefined : new Date(max_age * 1000 + Date.now());
@@ -79,13 +93,16 @@ router.post(
             channel_id: channel_id,
             inviter_id: user_id,
             flags: body.flags ?? 0,
+            role_ids: role_ids.length ? role_ids : null,
         }).save();
 
         const data = (
-            await Invite.findOneOrFail({
-                where: { code: invite.code },
-                relations: Object.fromEntries(PublicInviteRelation.map((i) => [i, true])),
-            })
+            await (
+                await Invite.findOneOrFail({
+                    where: { code: invite.code },
+                    relations: Object.fromEntries(PublicInviteRelation.map((i) => [i, true])),
+                })
+            ).loadRoles()
         ).toMetadataJSON();
 
         await AuditLog.log({
@@ -139,10 +156,12 @@ router.get(
         const { guild_id } = channel;
 
         const invites = (
-            await Invite.find({
-                where: { guild_id, channel_id },
-                relations: Object.fromEntries(PublicInviteRelation.map((i) => [i, true])), //TODO: cleanup
-            })
+            await Invite.loadRoles(
+                await Invite.find({
+                    where: { guild_id, channel_id },
+                    relations: Object.fromEntries(PublicInviteRelation.map((i) => [i, true])), //TODO: cleanup
+                }),
+            )
         ).map((x) => x.toMetadataJSON());
 
         res.status(200).send(invites satisfies InviteListResponse);

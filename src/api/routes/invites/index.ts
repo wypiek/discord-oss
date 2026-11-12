@@ -103,6 +103,7 @@ router.get(
             throw DiscordApiErrors.UNKNOWN_INVITE;
         }
         await invite.loadGroupRecipients();
+        await invite.loadRoles();
 
         await invite.guild?.withPresenceCount();
         const eventId = req.query.guild_scheduled_event_id ?? req.query.event;
@@ -216,6 +217,7 @@ router.post(
                 relations: Object.fromEntries(PublicInviteRelation.map((i) => [i, true])),
             });
             await invite.guild?.withPresenceCount();
+            await invite.loadRoles();
             return res.json({
                 ...invite.toPublicJSON(),
                 new_member: true,
@@ -233,6 +235,7 @@ router.post(
         if (!invite) return res.json({ code: invite_code, guild_id, new_member });
 
         await invite.guild?.withPresenceCount();
+        await invite.loadRoles();
         res.json({ ...invite.toPublicJSON(), new_member });
     },
 );
@@ -260,6 +263,7 @@ router.delete(
             relations: Object.fromEntries(PublicInviteRelation.map((i) => [i, true])),
         });
         if (!invite) throw DiscordApiErrors.UNKNOWN_INVITE;
+        await invite.loadRoles();
         const { guild_id, channel_id } = invite;
 
         if (invite.isFriendInvite()) {

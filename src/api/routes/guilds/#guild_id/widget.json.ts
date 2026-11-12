@@ -125,7 +125,7 @@ async function getWidgetJsonData(guild_id: string) {
     });
     const cdn = (Config.get().cdn.endpointPublic ?? "").replace(/\/+$/, "");
     const presences = await getUserPresences(members.map((m) => m.id));
-    const onlineMembers = members.filter((m) => ["online", "idle", "dnd"].includes(presences.get(m.id)?.status ?? "offline"));
+    const onlineMembers = members.filter((m) => ["online", "idle", "dnd", "testing"].includes(presences.get(m.id)?.status ?? "offline"));
     const memberData = onlineMembers
         .map((x) => ({
             id: x.id,

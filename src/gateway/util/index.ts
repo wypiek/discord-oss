@@ -9,3 +9,4 @@ export * from "./SessionResume";
 export * from "./PendingConnections";
 export * from "./GuildCache";
 export * from "./Compression";
+export * from "./SettableStatus";

@@ -3,6 +3,7 @@ export enum PublicStatusOrder {
     idle = 1,
     dnd = 2,
     offline = 3,
+    testing = 4,
 }
 
 export enum InternalStatusOrder {
@@ -12,6 +13,7 @@ export enum InternalStatusOrder {
     invisible = 3,
     offline = 4,
     unknown = 5,
+    testing = 6,
 }
 
 export type PublicStatus = keyof typeof PublicStatusOrder;
@@ -22,6 +24,7 @@ export type SetPrivateStatus = PrivateStatus | "unknown";
 export type Status =
     | "idle"
     | "dnd"
+    | "testing"
     | "online"
     | "offline"
     // Send only

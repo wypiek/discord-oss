@@ -33,6 +33,8 @@
 | [blog-and-help.md](features/blog-and-help.md) | The public blog and help centre, the Markdown they accept and how the dashboard edits them. |
 | [whats-new.md](features/whats-new.md) | What's New changelogs and how operators write them. |
 | [typing-indicator.md](features/typing-indicator.md) | Custom typing indicators with emojis, animations and your own text. |
+| [testing-status.md](features/testing-status.md) | The Testing status, a blue dot that mutes notifications, for accounts with the TESTING_PRESENCE right. |
+| [invite-roles.md](features/invite-roles.md) | Invites that give roles to the people who join through them. |
 | [status.md](features/status.md) | The public status page, component groups, uptime history and the API response time chart. |
 | [phones.md](features/phones.md) | The client on phones, installing it to the home screen, and Discord's Android app. |
 | [desktop.md](features/desktop.md) | OSS Chat, the native desktop and Android app, and building its installers and APK. |

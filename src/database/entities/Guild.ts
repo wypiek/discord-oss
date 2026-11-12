@@ -422,7 +422,7 @@ export class Guild extends BaseClass {
     static async countOnlineMembersIn(guild_ids: string[]): Promise<Map<string, number>> {
         if (!guild_ids.length) return new Map();
         const rows: { guild_id: string; count: number }[] = await Guild.query(
-            `SELECT m.guild_id, CAST(COUNT(DISTINCT m.id) AS integer) AS count FROM members m JOIN sessions s ON s.user_id = m.id WHERE ${sqlArrayIncludes("m.guild_id", "$1")} AND s.status IN ('online', 'idle', 'dnd') GROUP BY m.guild_id`,
+            `SELECT m.guild_id, CAST(COUNT(DISTINCT m.id) AS integer) AS count FROM members m JOIN sessions s ON s.user_id = m.id WHERE ${sqlArrayIncludes("m.guild_id", "$1")} AND s.status IN ('online', 'idle', 'dnd', 'testing') GROUP BY m.guild_id`,
             [guild_ids],
         );
         return new Map(rows.map((x) => [`${x.guild_id}`, x.count]));
@@ -430,7 +430,7 @@ export class Guild extends BaseClass {
 
     static async countOnlineMembers(guild_id: string): Promise<number> {
         const [{ count }] = await Guild.query(
-            `SELECT CAST(COUNT(DISTINCT m.id) AS integer) AS count FROM members m JOIN sessions s ON s.user_id = m.id WHERE m.guild_id = $1 AND s.status IN ('online', 'idle', 'dnd')`,
+            `SELECT CAST(COUNT(DISTINCT m.id) AS integer) AS count FROM members m JOIN sessions s ON s.user_id = m.id WHERE m.guild_id = $1 AND s.status IN ('online', 'idle', 'dnd', 'testing')`,
             [guild_id],
         );
         return count;
