@@ -42,3 +42,8 @@ span[class*="messageChipletContainerInner_"] span[class*="messageText_"] {
     align-items: center;
     line-height: 16px !important;
 }
+
+span[class*="messageChipletContainerInner_"] img[class*="messageBadge_"] {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
