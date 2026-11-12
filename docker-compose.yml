@@ -129,7 +129,7 @@ services:
       COLLECTIBLES_REFRESH_HOURS: ${COLLECTIBLES_REFRESH_HOURS:-}
     # on the host's loopback by default, for a reverse proxy or tunnel in front of the server
     ports:
-      - "${SERVER_BIND:-127.0.0.1}:${SERVER_PORT:-32171}:3001"
+      - "${SERVER_BIND:-127.0.0.1}:${SERVER_PORT:-32171}:32171"
     volumes:
       - state:/data/state
       - storage:/data/storage
@@ -142,7 +142,7 @@ services:
           "CMD",
           "bun",
           "-e",
-          "Promise.all(['/readyz', '/api/ping', '/login'].map(async (path) => { try { const r = await fetch('http://127.0.0.1:3001' + path, { signal: AbortSignal.timeout(3000) }); return { path, status: r.status, ok: r.ok }; } catch { return { path, status: 'unreachable', ok: false }; } })).then((checks) => { console.log(JSON.stringify(checks)); process.exit(checks.every((c) => c.ok) ? 0 : 1); })",
+          "Promise.all(['/readyz', '/api/ping', '/login'].map(async (path) => { try { const r = await fetch('http://127.0.0.1:32171' + path, { signal: AbortSignal.timeout(3000) }); return { path, status: r.status, ok: r.ok }; } catch { return { path, status: 'unreachable', ok: false }; } })).then((checks) => { console.log(JSON.stringify(checks)); process.exit(checks.every((c) => c.ok) ? 0 : 1); })",
         ]
       interval: 15s
       timeout: 5s
