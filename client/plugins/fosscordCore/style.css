@@ -7,3 +7,8 @@
 :is(:root, *).theme-light {
     color-scheme: light;
 }
+
+[class*="flowerStarContainer__"] [class*="childContainer__"] > svg[width="13"] {
+    width: 12px;
+    height: 12px;
+}
