@@ -12,6 +12,7 @@ The dashboard is at `/admin`. Operators see every page, and [setup.md](../self-h
 | Instance         | Announcements          | `OPERATOR`        | Encrypted announcements from the official account, see [announcements.md](announcements.md).        |
 | Public pages     | Blog                   | `OPERATOR`        | Posts and categories on `/blog`, see [blog-and-help.md](blog-and-help.md).                          |
 | Public pages     | Help centre            | `OPERATOR`        | Categories, sections and articles on `/support`, see [blog-and-help.md](blog-and-help.md).          |
+| Public pages     | What's New             | `OPERATOR`        | Changelogs in the client's What's New window, see [whats-new.md](whats-new.md).                    |
 | People & servers | Users & profiles       | `VIEW_USERS`      | Accounts, addresses and IP bans.                                                                    |
 | People & servers | Instance invites       | `VIEW_USERS`      | Signup invites and invite trees, see [invites.md](invites.md).                                      |
 | People & servers | Servers                | `MANAGE_GUILDS`   | Servers, their channels and roles.                                                                  |

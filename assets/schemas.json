@@ -15552,6 +15552,89 @@
         "additionalProperties": false,
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
+    "AdminChangelogCreateSchema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+            },
+            "date": {
+                "maxLength": 10,
+                "type": "string"
+            },
+            "body": {
+                "maxLength": 100000,
+                "type": "string"
+            },
+            "image": {
+                "maxLength": 80,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "youtube_video_id": {
+                "maxLength": 200,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "published": {
+                "type": "boolean"
+            },
+            "show_on_startup": {
+                "type": "boolean"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "title"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "AdminChangelogUpdateSchema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "minLength": 1,
+                "maxLength": 200,
+                "type": "string"
+            },
+            "date": {
+                "maxLength": 10,
+                "type": "string"
+            },
+            "body": {
+                "maxLength": 100000,
+                "type": "string"
+            },
+            "image": {
+                "maxLength": 80,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "youtube_video_id": {
+                "maxLength": 200,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "published": {
+                "type": "boolean"
+            },
+            "show_on_startup": {
+                "type": "boolean"
+            }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
     "AdminHelpCategoryCreateSchema": {
         "type": "object",
         "properties": {
@@ -26981,7 +27064,7 @@
         "properties": {
             "allowSlowmodeBypass": {
                 "type": "boolean",
-                "default": false
+                "default": true
             },
             "maxPins": {
                 "type": "integer",
