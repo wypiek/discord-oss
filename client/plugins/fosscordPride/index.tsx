@@ -212,6 +212,9 @@ function PrideSidebarEntry() {
     );
 }
 
+const SafeSidebarEntry = ErrorBoundary.wrap(PrideSidebarEntry, { noop: true });
+const SafeEditingFlags = ErrorBoundary.wrap(({ userId }: { userId?: string }) => <PrideFlags userId={userId} max={8} className="fosscord-pride-flags-pronouns" />, { noop: true });
+
 export default definePlugin({
     name: "FosscordPride",
     description: "Choose locally hosted pride flags in Profiles settings and on the signup form and show them with the pronouns on profiles.",
@@ -220,7 +223,8 @@ export default definePlugin({
     managedStyle,
     startAt: StartAt.DOMContentLoaded,
     renderPicker: () => <PridePicker />,
-    renderSidebarEntry: ErrorBoundary.wrap(() => <PrideSidebarEntry key="fosscord-pride-sidebar" />, { noop: true }),
+    renderSidebarEntry: () => <SafeSidebarEntry key="fosscord-pride-sidebar" />,
+    renderEditingFlags: (user: { id?: string } | undefined) => <SafeEditingFlags key="fosscord-pride-editing" userId={user?.id} />,
     renderSignupPicker: () => <SignupPridePicker key="fosscord-pride-signup" />,
     takeSignupSelection,
     flagsFrom,
@@ -275,10 +279,16 @@ export default definePlugin({
         },
         {
             find: '"user-profile-editing-panel"',
-            replacement: {
-                match: /(?=\i&&\(0,\i\.jsxs\)\(\i\.Fragment,\{children:\[\(0,\i\.jsx\)\(\i,\{user:\i\}\),\(0,\i\.jsx\)\(\i,\{\}\)\]\}\))/,
-                replace: "null==arguments[0]?.selectedGuildId&&$self.renderSidebarEntry(),",
-            },
+            replacement: [
+                {
+                    match: /(?=\i&&\(0,\i\.jsxs\)\(\i\.Fragment,\{children:\[\(0,\i\.jsx\)\(\i,\{user:\i\}\),\(0,\i\.jsx\)\(\i,\{\}\)\]\}\))/,
+                    replace: "null==arguments[0]?.selectedGuildId&&$self.renderSidebarEntry(),",
+                },
+                {
+                    match: /\(0,\i\.jsx\)\(\i,\{displayProfile:\i\}\)(?=,\(0,\i\.jsx\)\(\i,\{\}\),\i\]\}\)\]\}\)\}function \i\(\i\)\{let\{editingMode:)/,
+                    replace: "$&,$self.renderEditingFlags(arguments[0]?.user)",
+                },
+            ],
         },
         {
             find: "REGISTER_PROMO_EMAIL_CHECKBOX_WEB",
