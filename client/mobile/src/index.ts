@@ -3,6 +3,7 @@ import { createMobileE2ee } from "./e2ee";
 import { registerUnifiedPush } from "./push";
 import { createRewriter, type Endpoints, endpointsFromOrigin, rewriteValue } from "./rewrite";
 import { createInstanceSwitcher, originOf } from "./switcher";
+import { sanitizeUserSearchMessage } from "./userSearch";
 
 type AnyRecord = Record<PropertyKey, any>;
 type Factory = (...args: any[]) => unknown;
@@ -103,6 +104,7 @@ const start = () => {
             if (known && known.original === value) return known.wrapped;
             const wrapped = (...args: unknown[]) => {
                 if (name === "Networking") watchAuthorization(args);
+                if (name === "UserSearchWorkerManager" && key === "onmessage" && typeof args[0] === "string") args = [sanitizeUserSearchMessage(args[0]), ...args.slice(1)];
                 const next = rewriteValue(args, rewrite, 5);
                 if (debug && next !== args && !changedMethods.has(`${name}.${String(key)}`)) {
                     changedMethods.add(`${name}.${String(key)}`);
