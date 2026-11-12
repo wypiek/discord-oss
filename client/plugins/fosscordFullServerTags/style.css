@@ -28,3 +28,17 @@
     width: auto !important;
     max-width: none;
 }
+
+span[class*="messageChipletContainerInner_"] {
+    display: inline-flex !important;
+    align-items: center;
+    height: 16px;
+    line-height: 16px !important;
+    vertical-align: middle;
+}
+
+span[class*="messageChipletContainerInner_"] span[class*="messageText_"] {
+    display: inline-flex !important;
+    align-items: center;
+    line-height: 16px !important;
+}
