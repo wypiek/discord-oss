@@ -1,7 +1,7 @@
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
-import { assertOverwriteChanges } from "@spacebar/api/util";
+import { assertOverwriteChanges, copyOverwrites, syncCategoryChildren } from "@spacebar/api/util";
 import { AuditLog, Channel, Member, Role } from "@spacebar/database";
 import { ChannelUpdateEvent, emitEvent } from "@spacebar/util";
 import { AuditLogEvents, ChannelPermissionOverwriteSchema, ChannelPermissionOverwrite, ChannelPermissionOverwriteType } from "@spacebar/schemas";
@@ -37,6 +37,7 @@ router.put(
         } else throw new HTTPError("type not supported", 501);
 
         const requested = { id: overwrite_id, allow: String(body.allow || "0"), deny: String(body.deny || "0") };
+        const overwritesBefore = copyOverwrites(channel.permission_overwrites);
         assertOverwriteChanges(req.permission!, channel.permission_overwrites, [...(channel.permission_overwrites ?? []).filter((x) => x.id !== overwrite_id), requested], true);
         let overwrite: ChannelPermissionOverwrite | undefined = channel.permission_overwrites?.find((x) => x.id === overwrite_id);
         const before = overwrite ? { ...overwrite } : undefined;
@@ -69,6 +70,7 @@ router.put(
                 reason: req.headers["x-audit-log-reason"],
             }),
         ]);
+        await syncCategoryChildren(channel, overwritesBefore);
 
         return res.sendStatus(204);
     },
@@ -83,6 +85,7 @@ router.delete("/:overwrite_id", route({ permission: "MANAGE_ROLES", responses: {
     if (!channel.guild_id) throw new HTTPError("Channel not found", 404);
 
     const removed = channel.permission_overwrites?.find((x) => x.id === overwrite_id);
+    const overwritesBefore = copyOverwrites(channel.permission_overwrites);
     assertOverwriteChanges(req.permission!, channel.permission_overwrites, channel.permission_overwrites?.filter((x) => x.id !== overwrite_id) ?? [], true);
     channel.permission_overwrites = channel.permission_overwrites?.filter((x) => x.id !== overwrite_id);
     if (removed)
@@ -104,6 +107,7 @@ router.delete("/:overwrite_id", route({ permission: "MANAGE_ROLES", responses: {
             data: channel.toJSON(),
         } satisfies ChannelUpdateEvent),
     ]);
+    await syncCategoryChildren(channel, overwritesBefore);
 
     return res.sendStatus(204);
 });

@@ -192,75 +192,59 @@ test("duration changes use the last successful send; disabling allows sends and 
     await assert.rejects(send(item), isLimited);
 });
 
-test("moderator and explicit bypass permissions obey slowmode by default", { skip: !enabled }, async () => {
-    assert.equal(config.limits.channel.allowSlowmodeBypass, false);
-    for (const flag of ["MANAGE_MESSAGES", "MANAGE_CHANNELS", "BYPASS_SLOWMODE", "ADMINISTRATOR"]) {
-        const item = await fixture();
-        const permission = new Permissions(["VIEW_CHANNEL", "SEND_MESSAGES", flag]);
-        assert.ok((await send(item, flag, permission)).id);
-        await assert.rejects(send(item, flag, permission), isLimited);
-        assert.equal(await entities.RateLimit.countBy({ id: `message-slowmode:${item.channel.id}:${user.id}` }), 1);
-    }
-});
-
-test("guild owner concurrent sends admit exactly one message by default", { skip: !enabled }, async () => {
-    const item = await fixture();
+const ownerSends = async (item, count) => {
     const channel = await entities.Channel.findOneOrFail({
         where: { id: item.channel.id },
         relations: { recipients: true },
     });
     const permission = await getPermission(owner.id, item.guild.id, channel, { user: owner });
-    const results = await Promise.allSettled(
-        Array.from({ length: 16 }, () =>
+    return Promise.allSettled(
+        Array.from({ length: count }, () =>
             publishUserMessage({
                 channel,
                 user_id: owner.id,
-                body: { content: "Owner obeys slowmode" },
+                body: { content: "Owner skips slowmode" },
                 message_id: require("../../dist/util/util/Snowflake").Snowflake.generate(),
                 attachments: [],
                 permission,
             }),
         ),
     );
-    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
-    assert.equal(results.filter((result) => result.status === "rejected" && isLimited(result.reason)).length, 15);
-    assert.equal(await entities.Message.countBy({ channel_id: channel.id, author_id: owner.id }), 1);
+};
+
+test("moderators bypass slowmode by default while ordinary users stay limited", { skip: !enabled }, async () => {
+    assert.equal(config.limits.channel.allowSlowmodeBypass, true);
+    for (const flag of ["MANAGE_MESSAGES", "MANAGE_CHANNELS", "BYPASS_SLOWMODE", "ADMINISTRATOR"]) {
+        const item = await fixture();
+        const permission = new Permissions(["VIEW_CHANNEL", "SEND_MESSAGES", flag]);
+        assert.ok((await send(item, flag, permission)).id);
+        assert.ok((await send(item, flag, permission)).id);
+        assert.equal(await entities.RateLimit.countBy({ id: `message-slowmode:${item.channel.id}:${user.id}` }), 0);
+    }
+    const item = await fixture();
+    assert.ok((await send(item)).id);
+    await assert.rejects(send(item), isLimited);
 });
 
-test("explicit instance opt-in restores moderator bypass while ordinary users remain limited", { skip: !enabled }, async () => {
-    config.limits.channel.allowSlowmodeBypass = true;
+test("turning the bypass off holds moderators to slowmode but never owners or administrators", { skip: !enabled }, async () => {
+    config.limits.channel.allowSlowmodeBypass = false;
     try {
-        for (const flag of ["MANAGE_MESSAGES", "MANAGE_CHANNELS", "BYPASS_SLOWMODE", "ADMINISTRATOR"]) {
+        for (const flag of ["MANAGE_MESSAGES", "MANAGE_CHANNELS", "BYPASS_SLOWMODE"]) {
             const item = await fixture();
             const permission = new Permissions(["VIEW_CHANNEL", "SEND_MESSAGES", flag]);
             assert.ok((await send(item, flag, permission)).id);
-            assert.ok((await send(item, flag, permission)).id);
-            assert.equal(
-                await entities.RateLimit.countBy({
-                    id: `message-slowmode:${item.channel.id}:${user.id}`,
-                }),
-                0,
-            );
+            await assert.rejects(send(item, flag, permission), isLimited);
         }
+        const administrator = await fixture();
+        const permission = new Permissions(["VIEW_CHANNEL", "SEND_MESSAGES", "ADMINISTRATOR"]);
+        assert.ok((await send(administrator, "admin", permission)).id);
+        assert.ok((await send(administrator, "admin", permission)).id);
         const item = await fixture();
-        const channel = await entities.Channel.findOneOrFail({
-            where: { id: item.channel.id },
-            relations: { recipients: true },
-        });
-        const permission = await getPermission(owner.id, item.guild.id, channel, { user: owner });
-        for (let i = 0; i < 2; i++)
-            await publishUserMessage({
-                channel,
-                user_id: owner.id,
-                body: { content: "Owner explicit bypass" },
-                message_id: require("../../dist/util/util/Snowflake").Snowflake.generate(),
-                attachments: [],
-                permission,
-            });
-        assert.ok((await send(item)).id);
-        await assert.rejects(send(item), isLimited);
+        const results = await ownerSends(item, 16);
+        assert.equal(results.filter((result) => result.status === "fulfilled").length, 16);
+        assert.equal(await entities.Message.countBy({ channel_id: item.channel.id, author_id: owner.id }), 16);
     } finally {
-        config.limits.channel.allowSlowmodeBypass = false;
+        config.limits.channel.allowSlowmodeBypass = true;
     }
 });
 
@@ -411,7 +395,7 @@ test("concurrent disabled and exempt sends create one readstate while preserving
             assert.equal(preserved.mention_count, 0);
         }
     } finally {
-        config.limits.channel.allowSlowmodeBypass = false;
+        config.limits.channel.allowSlowmodeBypass = true;
     }
 });
 

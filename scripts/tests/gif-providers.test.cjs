@@ -109,11 +109,22 @@ test("tenor genuinely uses upstream v1 and maps Vencord media", async () => {
     assert.equal(url.pathname, "/v1/search");
     assert.equal(result[0].src, "https://media.example/webm");
 });
-test("provider selection never silently substitutes another provider", async () => {
+test("an available provider answers when the requested one is missing", async () => {
     await GifProviderManager.init();
     assert.equal(GifProviderManager.findProvider().id, "klipy");
     assert.equal(GifProviderManager.findProvider("tenor").id, "tenor");
-    assert.equal(GifProviderManager.findProvider("unknown"), undefined);
+    assert.equal(GifProviderManager.findProvider("unknown").id, "klipy");
+    const klipyKey = config.integrations.gifs.klipy.apiKey;
+    delete config.integrations.gifs.klipy.apiKey;
+    try {
+        await GifProviderManager.init();
+        assert.equal(GifProviderManager.defaultProviderId(), "tenor");
+        assert.equal(GifProviderManager.findProvider().id, "tenor");
+        assert.equal(GifProviderManager.findProvider("klipy").id, "tenor");
+    } finally {
+        config.integrations.gifs.klipy.apiKey = klipyKey;
+        await GifProviderManager.init();
+    }
     assert.equal(config.externalRequests.thirdParty, false);
 });
 

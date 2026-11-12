@@ -5,12 +5,14 @@ import {
     assertOverwriteChanges,
     AUTO_ARCHIVE_DURATION_ERROR,
     AUTO_ARCHIVE_DURATIONS,
+    copyOverwrites,
     emitThreadUpdate,
     enforceNameAutomod,
     purgeDeletedChannels,
     removeAppliedTags,
     sendMessage,
     setThreadArchived,
+    syncCategoryChildren,
     threadAuditState,
 } from "@spacebar/api/util";
 import { AuditLog, Channel, Guild, Recipient, Tag, ThreadMember, VoiceChannels } from "@spacebar/database";
@@ -407,6 +409,7 @@ router.patch(
         const update = Object.fromEntries(Object.entries(payload).filter(([key, value]) => columns.has(key) && key !== "id" && value !== undefined));
         const before = { name: channel.name ?? null, icon: channel.icon ?? null };
         const auditBefore = Object.fromEntries(AuditLog.channelKeys.map((key) => [key, (channel as unknown as Record<string, unknown>)[key]]));
+        const overwritesBefore = copyOverwrites(channel.permission_overwrites);
         Object.assign(channel, update);
         if (Object.keys(update).length) await Channel.update({ id: channel.id }, update);
 
@@ -439,6 +442,7 @@ router.patch(
             guild_id: channel.guild_id ?? undefined,
             channel_id,
         } satisfies ChannelUpdateEvent);
+        if (payload.permission_overwrites) await syncCategoryChildren(channel, overwritesBefore);
 
         res.send(channel.toJSON());
     },

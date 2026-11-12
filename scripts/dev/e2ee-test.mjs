@@ -579,6 +579,58 @@ try {
         }
     });
 
+    await phase("the first message in a new conversation can be a wave", async () => {
+        const [waver, waved] = await accounts("waver", "waved");
+        await call("PUT", `/users/@me/relationships/${waved.id}`, waver.token, {});
+        await call("PUT", `/users/@me/relationships/${waver.id}`, waved.token, {});
+        const conversation = (await call("POST", "/users/@me/channels", waver.token, { recipients: [waved.id] })).body;
+        assert.ok(conversation?.id, "new friends share a conversation");
+        const b = await launch(waved, { login: true, channel: conversation.id });
+        try {
+            await waitReady(b);
+        } finally {
+            await close(b);
+        }
+        const a = await launch(waver, { login: true, channel: conversation.id });
+        try {
+            await waitReady(a);
+            const responses = [];
+            a.page.on("response", (response) => {
+                const path = new URL(response.url()).pathname;
+                if (response.request().method() === "POST" && path.startsWith(`/api/v9/channels/${conversation.id}/`)) responses.push({ path, status: response.status() });
+            });
+            const wave = a.page.getByRole("button", { name: /wave/i }).first();
+            await wave.waitFor({ timeout: 20000 });
+            await wave.click();
+            await waitFor("the wave request", async () => responses.length > 0, 15000);
+            await waitFor(
+                "the wave to be stored",
+                async () => sql(`select count(*) from messages where channel_id = '${conversation.id}' and encrypted is not null`) === "1",
+                10000,
+            ).catch(() => {});
+            log(`wave requests ${JSON.stringify(responses)}`);
+            assert.ok(
+                responses.every((response) => response.status < 400),
+                `the wave was refused: ${JSON.stringify(responses)}`,
+            );
+            assert.equal(
+                sql(`select count(*) from messages where channel_id = '${conversation.id}' and encrypted is not null`),
+                "1",
+                "the wave is stored as one encrypted message",
+            );
+            assert.equal(
+                sql(`select count(*) from messages where channel_id = '${conversation.id}' and encrypted is null and type = 0`),
+                "0",
+                "no plaintext wave reached the server",
+            );
+        } catch (error) {
+            await diagnose(a);
+            throw error;
+        } finally {
+            await close(a);
+        }
+    });
+
     await phase("both browsers register devices and send with default encryption", async () => {
         const [a, b] = await launchAll([tester], [friend]);
         try {

@@ -22,7 +22,7 @@ The External requests card on the Site settings page of the admin dashboard edit
 | Service | Used for | When |
 | --- | --- | --- |
 | Discord's site and CDN | The web client at setup and updates, and the switches above. Browsers never contact it. | Setup, then per switch. |
-| Klipy | GIF search, the default provider. | GIF search on and a key from [Klipy's partner panel](https://partner.klipy.com) entered. |
+| Klipy | GIF search, the default provider. Without a key, GIF requests go to Tenor instead. | GIF search on and a key from [Klipy's partner panel](https://partner.klipy.com) entered. |
 | Tenor | The other GIF provider, with a public key. Google retired its API on June 30, 2026, so it can stop answering. | GIF search on. |
 | `cors.estrogen.delivery` | Fetching link preview pages and serving embed media to clients. It sees every destination URL. | `thirdParty` on. |
 | FixTweet, `api.fxtwitter.com` | X and Twitter post previews. | `thirdParty` on and no `external.twitter` token. |

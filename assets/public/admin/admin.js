@@ -1285,7 +1285,7 @@ async function renderSettings(view) {
                         ><textarea name="guild.defaultFeatures" data-lines>${(s.guild.defaultFeatures ?? []).join("\n")}</textarea>
                     </label>
                     ${toggle("guild.publicThreadsInvitable", "Let members invite others to public threads")}
-                    ${toggle("limits.channel.allowSlowmodeBypass", "Allow moderators to bypass slowmode", "Owners and members with Manage Messages, Manage Channels or Bypass Slowmode can send without waiting.")}
+                    ${toggle("limits.channel.allowSlowmodeBypass", "Allow moderators to bypass slowmode", "Members with Manage Messages, Manage Channels or Bypass Slowmode can send without waiting. Server owners and administrators always can.")}
                     ${toggle("guild.discovery.hideJoinedGuilds", "Hide servers people are in from Discovery", "Off is how Discord works. When it's on, whoever adds a server to Discovery never sees it there.")}
                 </div>
                 <div class="card">

@@ -62,6 +62,8 @@ function harness(target) {
         "@spacebar/api/middlewares": { route: () => noop },
         "@spacebar/api/util": {
             assertOverwriteChanges: noop,
+            copyOverwrites: (overwrites = []) => overwrites.map((overwrite) => ({ ...overwrite })),
+            syncCategoryChildren: async () => 0,
             AUTO_ARCHIVE_DURATION_ERROR: {},
             AUTO_ARCHIVE_DURATIONS: [],
             emitThreadUpdate: noop,
