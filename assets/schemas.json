@@ -4761,6 +4761,16 @@
                     "type": "string"
                 }
             },
+            "typing_indicator_style": {
+                "anyOf": [
+                    {
+                        "$ref": "#/definitions/TypingIndicatorStyle"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
             "primary_guild": {
                 "$ref": "#/definitions/PrimaryGuild"
             },
@@ -7418,6 +7428,16 @@
                     }
                 ]
             },
+            "typing_indicator_style": {
+                "anyOf": [
+                    {
+                        "$ref": "#/definitions/TypingIndicatorStyleInput"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
             "avatar_decoration_id": {
                 "maxLength": 64,
                 "type": [
@@ -7458,12 +7478,6 @@
                     {
                         "type": "null"
                     }
-                ]
-            },
-            "typing_indicator_style": {
-                "type": [
-                    "null",
-                    "integer"
                 ]
             },
             "push_provider": {
@@ -17246,6 +17260,16 @@
                     "type": "string"
                 }
             },
+            "typing_indicator_style": {
+                "anyOf": [
+                    {
+                        "$ref": "#/definitions/TypingIndicatorStyle"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
             "primary_guild": {
                 "$ref": "#/definitions/PrimaryGuild"
             },
@@ -17268,6 +17292,53 @@
             "system",
             "username"
         ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "TypingIndicatorStyle": {
+        "type": "object",
+        "properties": {
+            "emojis": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/definitions/TypingIndicatorEmoji"
+                }
+            },
+            "animation": {
+                "type": "integer"
+            },
+            "typing_suggestion": {
+                "type": "integer"
+            },
+            "custom_text": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "animation",
+            "emojis",
+            "typing_suggestion"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "TypingIndicatorEmoji": {
+        "type": "object",
+        "properties": {
+            "unicode_emoji": {
+                "type": "string"
+            },
+            "custom_emoji_id": {
+                "description": "A Twitter-like snowflake, except the epoch is 2015-01-01T00:00:00.000Z\n```\nIf we have a snowflake '266241948824764416' we can represent it as binary:\n\n64                                          22     17     12          0\n 000000111011000111100001101001000101000000  00001  00000  000000000000\n      number of ms since Discord epoch       worker  pid    increment\n```",
+                "type": "string"
+            },
+            "animated": {
+                "type": "boolean"
+            }
+        },
+        "additionalProperties": false,
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "PrimaryGuild": {
@@ -17370,6 +17441,16 @@
                 "anyOf": [
                     {
                         "$ref": "#/definitions/DisplayNameStyle"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
+            "typing_indicator_style": {
+                "anyOf": [
+                    {
+                        "$ref": "#/definitions/TypingIndicatorStyle"
                     },
                     {
                         "type": "null"
@@ -18775,6 +18856,16 @@
             },
             "display_name_styles": {
                 "$ref": "#/definitions/DisplayNameStyle"
+            },
+            "typing_indicator_style": {
+                "anyOf": [
+                    {
+                        "$ref": "#/definitions/TypingIndicatorStyle"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
             },
             "collectibles": {
                 "$ref": "#/definitions/Collectibles"
@@ -27703,6 +27794,52 @@
                         ]
                     }
                 ]
+            }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "TypingIndicatorStyleInput": {
+        "type": "object",
+        "properties": {
+            "emojis": {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                    "$ref": "#/definitions/TypingIndicatorEmojiInput"
+                }
+            },
+            "animation": {
+                "minimum": 0,
+                "maximum": 3,
+                "type": "integer"
+            },
+            "typing_suggestion": {
+                "minimum": 0,
+                "maximum": 7,
+                "type": "integer"
+            },
+            "custom_text": {
+                "maxLength": 64,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "TypingIndicatorEmojiInput": {
+        "type": "object",
+        "properties": {
+            "unicode_emoji": {
+                "maxLength": 64,
+                "type": "string"
+            },
+            "custom_emoji_id": {
+                "pattern": "^\\d{1,20}$",
+                "type": "string"
             }
         },
         "additionalProperties": false,

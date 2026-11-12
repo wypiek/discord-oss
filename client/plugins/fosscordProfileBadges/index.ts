@@ -1,15 +1,18 @@
 import definePlugin from "@utils/types";
 
 import { FosscordAuthor } from "../fosscordCore/shared";
+import managedStyle from "./style.css?managed";
 
 const DIRECTORY_STAFF_BADGE_ID = 22;
 const STAFF_BADGE_ID = "1";
 
 export default definePlugin({
     name: "FosscordProfileBadges",
-    description: "Lets the badge customization panel reorder and hide this instance's own profile badges, including the Staff and Features badges.",
+    description:
+        "Lets the badge customization panel reorder and hide this instance's own profile badges, including the Staff and Features badges, and shows larger icons in the badge directory.",
     authors: [FosscordAuthor],
     required: true,
+    managedStyle,
     directoryBadgeId: (id: string) => (id === STAFF_BADGE_ID || id.startsWith("staff-role-") ? DIRECTORY_STAFF_BADGE_ID : id),
     patches: [
         {

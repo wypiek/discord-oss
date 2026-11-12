@@ -23,6 +23,7 @@ import {
     PrimaryGuild,
     PrivateUserProjection,
     ProfileCollectible,
+    TypingIndicatorStyle,
     RecentAvatar,
     PublicUser,
     PublicUserProjection,
@@ -266,6 +267,9 @@ export class User extends BaseClass {
     display_name_styles?: DisplayNameStyle;
 
     @Column({ type: "jsonb", nullable: true })
+    typing_indicator_style?: TypingIndicatorStyle | null;
+
+    @Column({ type: "jsonb", nullable: true })
     collectibles?: Collectibles;
 
     @Column({ type: "jsonb", nullable: true })
@@ -357,6 +361,7 @@ export class User extends BaseClass {
                 : (this.avatar_decoration_data ?? null),
             collectibles: this.collectibles ?? null,
             display_name_styles: this.display_name_styles ?? null,
+            typing_indicator_style: this.typing_indicator_style ?? null,
             primary_guild: this.primary_guild ?? null,
             bot: this.bot,
             system: this.system,

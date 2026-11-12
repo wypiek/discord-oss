@@ -70,6 +70,7 @@ export interface UserModifySchema {
     display_name_colors?: DisplayNameColorList | null;
     display_name_effect_id?: User_DisplayNameEffect | null;
     display_name_font_id?: User_DisplayNameFont | null;
+    typing_indicator_style?: TypingIndicatorStyleInput | null;
 
     /**
      * @maxLength 64
@@ -88,7 +89,6 @@ export interface UserModifySchema {
      */
     primary_guild_id?: string | null;
     vad_colors?: DisplayNameColorList | null;
-    typing_indicator_style?: number | null;
 
     /**
      * @maxLength 32
@@ -106,4 +106,38 @@ export interface UserModifySchema {
      * @maxLength 4096
      */
     push_voip_token?: string;
+}
+
+export interface TypingIndicatorEmojiInput {
+    /**
+     * @maxLength 64
+     */
+    unicode_emoji?: string;
+    /**
+     * @pattern ^\d{1,20}$
+     */
+    custom_emoji_id?: string;
+}
+
+export interface TypingIndicatorStyleInput {
+    /**
+     * @maxItems 3
+     */
+    emojis?: TypingIndicatorEmojiInput[];
+    /**
+     * @minimum 0
+     * @maximum 3
+     * @TJS-type integer
+     */
+    animation?: number;
+    /**
+     * @minimum 0
+     * @maximum 7
+     * @TJS-type integer
+     */
+    typing_suggestion?: number;
+    /**
+     * @maxLength 64
+     */
+    custom_text?: string | null;
 }

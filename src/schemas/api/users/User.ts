@@ -44,6 +44,7 @@ interface UserEntityPleaseRewriteThankYou {
     badge_ids?: string[];
     avatar_decoration_data?: AvatarDecorationData;
     display_name_styles?: DisplayNameStyle;
+    typing_indicator_style?: TypingIndicatorStyle | null;
     collectibles?: Collectibles;
     primary_guild?: PrimaryGuild;
     profile_collectibles?: ProfileCollectible[] | null;
@@ -59,6 +60,7 @@ export interface PartialUser {
     avatar_decoration_data?: AvatarDecorationData | null;
     collectibles?: Collectibles | null;
     display_name_styles?: DisplayNameStyle | null;
+    typing_indicator_style?: TypingIndicatorStyle | null;
     primary_guild?: PrimaryGuild | null;
     bot?: boolean;
     system?: boolean;
@@ -104,6 +106,19 @@ export interface DisplayNameStyle {
     colors: number[];
 }
 
+export interface TypingIndicatorEmoji {
+    unicode_emoji?: string;
+    custom_emoji_id?: Snowflake;
+    animated?: boolean;
+}
+
+export interface TypingIndicatorStyle {
+    emojis: TypingIndicatorEmoji[];
+    animation: number;
+    typing_suggestion: number;
+    custom_text?: string | null;
+}
+
 export interface PrimaryGuild {
     identity_enabled: boolean | null;
     identity_guild_id: Snowflake | null;
@@ -130,6 +145,7 @@ export enum PublicUserEnum {
     badge_ids,
     avatar_decoration_data,
     display_name_styles,
+    typing_indicator_style,
     collectibles,
     primary_guild,
     pride_badges,
