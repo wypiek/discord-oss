@@ -4,6 +4,7 @@
     "version": "1.0.0",
     "description": "Discord OSS for macOS, Windows and Linux",
     "author": "Discord OSS contributors",
+    "homepage": "https://github.com/wypiek/discord-oss",
     "license": "AGPL-3.0-only",
     "private": true,
     "main": "dist/main.js",

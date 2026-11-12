@@ -43,7 +43,7 @@ Run `bun install --cwd apps/mobile` and `bun run --cwd apps/mobile sync` to comp
 | -------- | --------------------------------------------------------- | ---------------- |
 | macOS    | `.dmg` and `.zip` for Apple silicon and Intel             | `macos-latest`   |
 | Windows  | `.exe` installer for x64 and Arm64                        | `windows-latest` |
-| Linux    | `.AppImage` and `.deb` for x64 and Arm64                  | `ubuntu-latest`  |
+| Linux    | `.AppImage` and `.tar.gz` for any distribution, `.deb` for Debian and Ubuntu, `.rpm` for Fedora, openSUSE and RHEL, and `.pacman` for Arch, each for x64 and Arm64 | `ubuntu-latest`  |
 | Android  | `.apk`                                                    | `ubuntu-latest`  |
 
 The files are uploaded as workflow artifacts, and a tag also attaches them to a GitHub release named after the tag. The version comes from the tag, and `1.0.0` otherwise. The Windows job checks out only `apps/` with `core.protectNTFS` off, because some paths in the repository contain `:`, which Windows can't check out.
