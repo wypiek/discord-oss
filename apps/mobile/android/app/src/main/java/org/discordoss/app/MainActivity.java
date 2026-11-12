@@ -91,7 +91,6 @@ public class MainActivity extends BridgeActivity {
 
     private void tuneWebView(WebView webView) {
         webView.setBackgroundColor(BACKGROUND);
-        webView.setLayerType(WebView.LAYER_TYPE_HARDWARE, null);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);

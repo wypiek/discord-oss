@@ -41,7 +41,7 @@ Run `bun install --cwd apps/mobile` and `bun run --cwd apps/mobile sync` to comp
 
 | Platform | Files                                                     | Built on         |
 | -------- | --------------------------------------------------------- | ---------------- |
-| macOS    | `.dmg` and `.zip` for Apple silicon and Intel             | `macos-latest`   |
+| macOS    | One universal `.dmg` and `.zip` that runs natively on Apple silicon and Intel | `macos-latest`   |
 | Windows  | `.exe` installer for x64 and Arm64                        | `windows-latest` |
 | Linux    | `.AppImage` and `.tar.gz` for any distribution, `.deb` for Debian and Ubuntu, `.rpm` for Fedora, openSUSE and RHEL, and `.pacman` for Arch, each for x64 and Arm64 | `ubuntu-latest`  |
 | Android  | `.apk`                                                    | `ubuntu-latest`  |

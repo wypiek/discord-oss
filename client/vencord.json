@@ -6,7 +6,9 @@
     "autoUpdateNotification": false
   },
   "plugins": {
-    "BetterFolders": true,
+    "BetterFolders": {
+      "enabled": false
+    },
     "BetterGifAltText": true,
     "CopyEmojiMarkdown": true,
     "CopyUserURLs": true,
