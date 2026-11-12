@@ -2,7 +2,7 @@
 
 Testing is a fifth status next to Online, Idle, Do Not Disturb and Invisible. Others see it as a full dot like Online, colored `#3BA3E8`. It mutes notifications the same way Do Not Disturb does: no desktop notifications, notification sounds or incoming call rings, and no push notifications from the server.
 
-Only accounts with the `TESTING_PRESENCE` instance right (bit 57) can use it. Operators have it through `OPERATOR`, and a staff role can carry it too. Turn it on for an account in the admin dashboard under the account's rights.
+Only accounts with the `TESTING_PRESENCE` instance right (bit 57) can use it. It is a new right of its own, separate from `PRESENCE` (bit 35), which new accounts get by default. The default rights for new accounts (`register.defaultRights`, 875069521787904) don't include bit 57, so nobody has it until an operator turns it on for their account in the admin dashboard under the account's rights. Operators have it through `OPERATOR`, which implies every right.
 
 ## Server
 
