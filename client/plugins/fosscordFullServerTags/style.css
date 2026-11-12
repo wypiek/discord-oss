@@ -29,7 +29,6 @@
     max-width: none;
 }
 
-/* in a message header the client draws the tag inline with a 2px line height, which leaves its text and badge sitting low in the box */
 span[class*="messageChipletContainerInner_"] {
     display: inline-flex !important;
     align-items: center;
