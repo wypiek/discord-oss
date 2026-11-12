@@ -112,7 +112,7 @@ With `?debug=1` the bundle runs known answer tests for every primitive 15 second
 | REST headers | `X-Super-Properties` is the same properties object in base64, the user agent is `Discord-Android/<build>;RNA`. | [Client properties](https://docs.discord.food/reference#client-properties) |
 | Lazy guilds | OP 14 for one guild and OP 37 for several guilds at once | [Opcodes](https://docs.discord.food/topics/opcodes-and-status-codes) |
 | Push | `POST /users/@me/devices` with `provider: "gcm"` and an FCM token, `DELETE` with the same body on logout. `PATCH /users/@me` can carry `push_provider` and `push_token`. | [Push notifications](https://docs.discord.food/topics/push-notifications) |
-| Images | Avatars, icons and emojis as `.webp` or `.png` with `?size=` | [Image formatting](https://discord.com/developers/docs/reference#image-formatting) |
+| Images | Avatars, icons, emojis and server tag badges as `.webp` or `.png` with `?size=`. Fresco can't decode SVG, so `/clan-badges/<guild>/<hash>.png` and `.webp` are rendered to that format, at least 64 pixels, and only `.svg` or no extension gets the SVG. | [Image formatting](https://discord.com/developers/docs/reference#image-formatting) |
 
 ## What works today
 
