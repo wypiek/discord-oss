@@ -45,7 +45,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production \
-    PORT=3001 \
+    PORT=32171 \
     CONFIG_PATH=/data/state/config.json \
     STORAGE_LOCATION=/data/storage \
     PION_SFU_IPC=/run/sfu/sfu.sock \
@@ -69,6 +69,6 @@ RUN if [ -n "$REVISION" ]; then printf '{"rev":"%s","lastModified":%s}\n' "$REVI
     && ln -s /data/client/cache_compressed assets/cache_compressed \
     && chown -R bun:bun /data /run/sfu
 USER bun
-EXPOSE 3001
+EXPOSE 32171
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
 CMD ["server"]
