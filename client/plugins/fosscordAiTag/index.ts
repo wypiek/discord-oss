@@ -25,7 +25,26 @@ export default definePlugin({
         if (flags & AI_ACCOUNT_FLAG) return types.AI;
     },
 
+    hasTag(user: { publicFlags?: number } | null | undefined) {
+        return ((user?.publicFlags ?? 0) & (OFFICIAL_TAG_FLAG | SYSTEM_TAG_FLAG | AI_ACCOUNT_FLAG)) !== 0;
+    },
+
     patches: [
+        {
+            find: 'location:"DiscordTag"',
+            all: true,
+            replacement: {
+                match: /(\i)=(\i)\?null:(\i)\.isSystemUser\(\)\?(\i\.\i)\.SYSTEM_DM:\3\.bot\?\4\.BOT:null/,
+                replace: "$1=$2?null:$self.tagType($3,$4)??($3.isSystemUser()?$4.SYSTEM_DM:$3.bot?$4.BOT:null)",
+            },
+        },
+        {
+            find: '"user-profile-editing-panel"',
+            replacement: {
+                match: /user:(\i),forceUsername:!0,(className:\i\.\i,usernameClass:\i\.\i,discriminatorClass:\i\.\i,)hideBotTag:!0/,
+                replace: "user:$1,forceUsername:!0,$2hideBotTag:!$self.hasTag($1)",
+            },
+        },
         {
             find: /\.isSystemUser\(\)\?\i=\i\.\i\.SYSTEM_DM:\i\.bot&&/,
             all: true,
