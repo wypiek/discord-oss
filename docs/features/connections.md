@@ -83,6 +83,14 @@ The connection stores the Roblox user ID and is named after the username.
 
 The connection stores the Bungie.net membership ID and is named after the Bungie Name, such as `Guardian#0042`.
 
+### Discord
+
+1. Open [discord.com/developers/applications](https://discord.com/developers/applications) and create an application.
+2. Under OAuth2, add the callback URL from the dashboard as a redirect.
+3. Paste the client ID and client secret into the dashboard and turn Discord on.
+
+Discord's own client has no Discord entry in its list of connection platforms, so the `FosscordConnections` plugin adds one at the front of the list. The entry uses the instance icon from `/favicon.svg`, and a connected account links to `https://discord.com/users/<id>`. `assets/client_patches/71-connections.js` still hides it when the server reports Discord as off.
+
 ## How the client completes a sign in
 
 1. `GET /api/v9/connections/<provider>/authorize` returns the provider's sign in URL and the client opens it in a popup.
