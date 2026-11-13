@@ -4780,6 +4780,23 @@ async function mountBadgeOverrides(container) {
                         )}
                     </select>
                 </label>
+                <label
+                    >The Void<span class="hint"
+                        >Only staff can grant it, change its level or take it away. Higher levels show as locked in the user's badge directory.${
+                          data.void_granted_at ? ` Granted ${new Date(data.void_granted_at).toLocaleDateString()}.` : ""
+                        }</span
+                    >
+                    <span class="row" style="gap:8px">
+                        ${data.void_tier ? badgeIcon({ icon: data.void_tiers.find((tier) => tier.key === data.void_tier)?.icon }) : ""}
+                        <select name="void_tier" aria-label="Level of The Void">
+                            <option value="">No Void badge</option>
+                            ${data.void_tiers.map(
+                              (tier, index) =>
+                                html`<option value="${tier.key}" ${data.void_tier === tier.key ? raw("selected") : ""}>${tier.name} (level ${index + 1})</option>`,
+                            )}
+                        </select>
+                    </span>
+                </label>
                 <div class="stack" style="gap:6px">
                     <span class="muted">Levels. Pick one to set the badge to it; it keeps levelling up from there. Real progress removes the override.</span>
                     <div class="badge-rarity-grid">
@@ -4821,6 +4838,7 @@ async function mountBadgeOverrides(container) {
     );
     const changes = () => {
       const nitro = $("select[name=nitro_tier]", container).value || null;
+      const voidTier = $("select[name=void_tier]", container).value || null;
       const rarity = Object.fromEntries(
         $$("[data-rarity]", container)
           .map((select) => [select.dataset.rarity, select.value ? Number(select.value) : null])
@@ -4837,6 +4855,7 @@ async function mountBadgeOverrides(container) {
       );
       return {
         ...(nitro !== data.nitro_tier ? { nitro_tier: nitro } : {}),
+        ...(voidTier !== data.void_tier ? { void_tier: voidTier } : {}),
         ...(Object.keys(rarity).length ? { rarity } : {}),
         ...(Object.keys(levels).length ? { levels } : {}),
       };

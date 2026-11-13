@@ -81,6 +81,7 @@ test("profile response keeps free feature entitlements and custom badges without
         "@spacebar/util": {
             ...util,
             ...load("src/util/util/BadgeCatalog.ts"),
+            ...load("src/util/util/VoidBadge.ts"),
             ACCOUNT_AGE_BADGE: 18,
             STREAMING_BADGE: 19,
             GAME_TIME_BADGE: 20,

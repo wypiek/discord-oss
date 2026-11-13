@@ -2,8 +2,24 @@ import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
 import { adminCustomizationTarget, recordAdminCustomization } from "@spacebar/api/util/handlers/AdminUserCustomization";
 import { BADGE_RARITIES, badgeDirectory, NITRO_BADGE_ID, nitroProgress, tieredProgress } from "@spacebar/api/util/utility/profileBadges";
+import { notifyUserUpdate } from "@spacebar/api/util/utility/moderatorBadge";
 import { BadgeOverrides, getDatabase, User, UserActivityStats } from "@spacebar/database";
-import { ACCOUNT_AGE_BADGE, activityProgress, broadcastUserUpdate, FieldErrors, GAME_TIME_BADGE, GAME_VARIETY_BADGE, STREAMING_BADGE, TIERED_BADGES } from "@spacebar/util";
+import {
+    ACCOUNT_AGE_BADGE,
+    activityProgress,
+    broadcastUserUpdate,
+    currentVoidGrant,
+    FieldErrors,
+    GAME_TIME_BADGE,
+    GAME_VARIETY_BADGE,
+    grantVoidBadge,
+    STREAMING_BADGE,
+    TIERED_BADGES,
+    VOID_BADGE_ID,
+    VOID_BADGE_TIERS,
+    voidBadgeIcon,
+    voidBadgeTier,
+} from "@spacebar/util";
 import { AdminBadgeOverridesSchema } from "@spacebar/schemas";
 
 const router = Router({ mergeParams: true });
@@ -74,6 +90,12 @@ export function applyBadgeOverrides(
             next.nitro_since = since.toISOString();
         }
     }
+    if (body.void_tier !== undefined) {
+        if (body.void_tier === null) delete next.the_void;
+        else if (!voidBadgeTier(body.void_tier))
+            throw FieldErrors({ void_tier: { code: "BASE_TYPE_CHOICES", message: `Choose one of ${VOID_BADGE_TIERS.map((tier) => tier.key).join(", ")}` } });
+        else next.the_void = grantVoidBadge(current.the_void, body.void_tier, now);
+    }
     for (const [id, rarity] of Object.entries(body.rarity ?? {})) {
         if (!/^[\w-]{1,64}$/.test(id)) throw FieldErrors({ rarity: { code: "BASE_TYPE_BAD_FORMAT", message: "Badge ids are numbers or badge row ids" } });
         if (rarity === null) delete next.rarity![id];
@@ -82,6 +104,13 @@ export function applyBadgeOverrides(
     }
     if (!Object.keys(next.rarity!).length) delete next.rarity;
     return next;
+}
+
+const voidTierName = (grant: BadgeOverrides["the_void"]) => currentVoidGrant(grant)?.tier.name ?? null;
+
+export function voidBadgeChanges(before: BadgeOverrides["the_void"], after: BadgeOverrides["the_void"]) {
+    const [old, now] = [voidTierName(before), voidTierName(after)];
+    return old === now ? [] : [{ key: VOID_BADGE_ID, old_value: old ?? undefined, new_value: now ?? undefined }];
 }
 
 async function describe(userId: string) {
@@ -107,7 +136,12 @@ async function describe(userId: string) {
             tiers: definition.tiers.map((tier) => ({ key: tier.key, name: tier.name, milestone_text: tier.milestone_text })),
         };
     });
+    const voidGrant = currentVoidGrant(overrides.the_void);
     return {
+        void_tier: voidGrant?.tier.key ?? null,
+        void_granted_at: voidGrant?.granted_at ?? null,
+        void_tier_set_at: voidGrant?.tier_set_at ?? null,
+        void_tiers: VOID_BADGE_TIERS.map((tier) => ({ key: tier.key, name: tier.name, icon: voidBadgeIcon(tier.key) })),
         nitro_since: overrides.nitro_since ?? null,
         nitro_tier: reached.at(-1)?.key ?? null,
         nitro_tiers: NITRO_TIERS.map((tier) => ({ key: tier.key, name: tier.name, milestone_text: tier.milestone_text, months: tier.threshold })),
@@ -120,7 +154,7 @@ async function describe(userId: string) {
 
 router.get(
     "/",
-    route({ right: "VIEW_USERS", spacebarOnly: true, description: "The user's Nitro badge level, rarity overrides and badges" }),
+    route({ right: "VIEW_USERS", spacebarOnly: true, description: "The user's Nitro badge level, The Void level, rarity overrides and badges" }),
     async (req: Request, res: Response) => {
         const target = await adminCustomizationTarget(req);
         res.json(await describe(target.id));
@@ -133,7 +167,7 @@ router.patch(
         right: "MANAGE_USERS",
         spacebarOnly: true,
         requestBody: "AdminBadgeOverridesSchema",
-        description: "Set the user's Nitro badge level or start date and override the rarity of their badges",
+        description: "Set the user's Nitro badge level or start date, grant, change or remove The Void and override the rarity of their badges",
     }),
     async (req: Request, res: Response) => {
         const target = await adminCustomizationTarget(req, "badges");
@@ -142,8 +176,9 @@ router.patch(
         const next = applyBadgeOverrides(user.badge_overrides ?? {}, req.body as AdminBadgeOverridesSchema, new Date(), real);
         await getDatabase()!.transaction(async (manager) => {
             await manager.update(User, { id: target.id }, { badge_overrides: next });
-            await recordAdminCustomization(req, target.id, "badge_overrides", ["badge_overrides"], manager);
+            await recordAdminCustomization(req, target.id, "badge_overrides", ["badge_overrides"], manager, voidBadgeChanges(user.badge_overrides?.the_void, next.the_void));
         });
+        await notifyUserUpdate(target.id);
         await broadcastUserUpdate(target.id);
         res.json(await describe(target.id));
     },

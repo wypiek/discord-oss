@@ -25,7 +25,7 @@ const STAFF_ICON = "5e74e9b61934fc1f67c65515d1f7e60d";
 
 const same = (actual, expected, message) => assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, message);
 
-const catalog = loadModule("src/util/util/BadgeCatalog.ts", {});
+const catalog = { ...loadModule("src/util/util/BadgeCatalog.ts", {}), ...loadModule("src/util/util/VoidBadge.ts", {}) };
 
 const staff = async (members = MEMBERS) => {
     const modules = loadStaffModules({ roles: ROLES, members });

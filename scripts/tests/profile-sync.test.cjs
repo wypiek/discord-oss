@@ -39,6 +39,8 @@ const transpiled = (file) => ts.transpileModule(fs.readFileSync(file, "utf8"), {
 
 const catalogModule = { exports: {} };
 vm.runInNewContext(transpiled("src/util/util/BadgeCatalog.ts"), { exports: catalogModule.exports, module: catalogModule });
+const voidModule = { exports: {} };
+vm.runInNewContext(transpiled("src/util/util/VoidBadge.ts"), { exports: voidModule.exports, module: voidModule });
 
 const profileBadgesFor = (database, util) => {
     const module = { exports: {} };
@@ -52,6 +54,7 @@ const profileBadgesFor = (database, util) => {
                 return {
                     ...util,
                     ...catalogModule.exports,
+                    ...voidModule.exports,
                     ACCOUNT_AGE_BADGE: 18,
                     STREAMING_BADGE: 19,
                     GAME_TIME_BADGE: 20,

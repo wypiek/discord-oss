@@ -5,6 +5,7 @@ export * from "./HomePage";
 export * from "./Markdown";
 export * from "./ActivityBadges";
 export * from "./BadgeCatalog";
+export * from "./VoidBadge";
 export * from "./OpenGraph";
 export * from "./DefaultAvatars";
 //export * from "./Categories";
