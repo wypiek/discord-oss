@@ -25,6 +25,7 @@
 | [discovery.md](features/discovery.md) | The Discover page, search and ranking. |
 | [notifications.md](features/notifications.md) | Notification settings, read states and Web Push. |
 | [link-embeds.md](features/link-embeds.md) | Link previews and embedded media. |
+| [markdown-attachments.md](features/markdown-attachments.md) | The preview of Markdown file attachments and the LaTeX math it typesets. |
 | [activities.md](features/activities.md) | Embedded activities. |
 | [profile-widgets.md](features/profile-widgets.md) | Application profile widgets. |
 | [badges.md](features/badges.md) | Profile badges, levelled badges, legacy badges, the Features badge and rarity. |
