@@ -14,7 +14,7 @@ The FosscordMarkdownMath plugin in `client/plugins/fosscordMarkdownMath` typeset
 | `$$...$$` on its own | A display block, centred.                  |
 | `\[...\]`            | A display block, centred. It can span lines. |
 
-`$` delimiters follow Discord's rules: no space just inside the delimiters and no digit right after the closing `$`, so `$5 and $10` stays text. `\\(` is an escaped backslash followed by a parenthesis, not math. Math inside inline code or a fenced code block stays code. A delimiter that never closes stays text, so the collapsed card, which shows only the first 6 lines, can show the start of a `\[` block as text until it is expanded.
+`$` delimiters follow Discord's rules: no space just inside the delimiters and no digit right after the closing `$`, so `$5 and $10` stays text. `\\(` is an escaped backslash followed by a parenthesis, not math. Math inside inline code or a fenced code block stays code. A delimiter that never closes stays text. The collapsed card normally shows the first 6 lines. When a `$$` or `\[` block is still open at line 6, it shows up to 30 more lines so the whole formula fits, and when the block doesn't close within those, it stops just before the block instead of showing half of it. Math inside code doesn't count. `scripts/tests/markdown-math-preview.test.cjs` covers this.
 
 The card and the whole-file dialog both render math. A formula wider than the card scrolls sideways. KaTeX draws with the current text colour, so it follows the dark and light themes. Turning off Render Markdown in the menu, or picking another language with `<>`, shows the raw source.
 

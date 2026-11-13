@@ -3,6 +3,7 @@ import definePlugin from "@utils/types";
 
 import { FosscordAuthor } from "../fosscordCore/shared";
 import { bracketMath, isDisplayMath, isMathToken, renderMath } from "./math";
+import { mathSafeLineCount } from "./preview";
 import managedStyle from "./style.css?managed";
 
 const STYLESHEET_URL = "/assets/katex/katex.min.css";
@@ -40,6 +41,7 @@ export default definePlugin({
     required: true,
     managedStyle,
     bracketMath,
+    previewLines: (lines: string[] | undefined, wanted: number, markdown: boolean) => (markdown ? mathSafeLineCount(lines, wanted) : wanted),
     pushMath(parent: MarkdownNode, token: MathToken, key: number) {
         if (!isMathToken(token.type)) return false;
         const display = isDisplayMath(token.type);
@@ -54,6 +56,14 @@ export default definePlugin({
         document.querySelector(`link[data-${STYLESHEET_MARKER}]`)?.remove();
     },
     patches: [
+        {
+            find: '"--custom-plaintext-preview-collapsed-lines":6',
+            all: true,
+            replacement: {
+                match: /(\i)\?\.slice\(0,(\i)\)(?=\.join\("\\n"\)\?\?"",\i=\i\|\|\2<\i;return\(0,\i\.jsxs\)\("div",\{className:\i\(\)\(\i,\i\.\i\),children:\[\(0,\i\.jsx\)\(\i\.\i,\{className:\i\(\)\(\i\.\i,\{\[\i\.\i\]:!\i&&!(\i)\}\))/,
+                replace: "$1?.slice(0,$self.previewLines($1,$2,$3))",
+            },
+        },
         {
             find: 'case"math_block":',
             replacement: [
