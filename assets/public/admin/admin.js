@@ -1170,9 +1170,12 @@ const setPath = (obj, path, value) => {
   keys.reduce((o, k) => (o[k] ??= {}), obj)[last] = value;
 };
 
+const CONNECTION_FIELD_LABELS = { clientId: "Client ID", clientSecret: "Client secret", apiKey: "API key" };
+
 async function renderSettings(view) {
   const s = await api("/admin/settings");
   const gifs = await api("/admin/gifs");
+  const connections = await api("/admin/connections");
   const text = (path, label, hint, type = "text", placeholder = "") =>
     html`<label
             >${label}${hint ? html`<span class="hint">${hint}</span>` : ""}<input type="${type}" name="${path}" value="${getPath(s, path) ?? ""}" placeholder="${placeholder}"
@@ -1220,6 +1223,7 @@ async function renderSettings(view) {
                 <div class="settings-jump" aria-label="Settings shortcuts">
                     <a href="#/settings" data-settings-target="settings-instance">Instance</a><a href="#/settings" data-settings-target="settings-branding">Branding</a
                     ><a href="#/settings" data-settings-target="settings-registration">Registration</a
+                    ><a href="#/settings" data-settings-target="settings-connections">Connections</a
                     ><a href="#/settings" data-settings-target="settings-limits">Feature limits</a>
                 </div>
                 <div class="card">
@@ -1270,6 +1274,52 @@ async function renderSettings(view) {
                     </div>
                     <button class="btn" type="button" id="gif-save">Save GIF settings</button>
                     <p class="hint">Google announced Tenor API retirement. This compatibility provider uses the same endpoint as Vencord; availability depends on Tenor.</p>
+                </div>
+                <div class="card" id="settings-connections">
+                    <h2>Connected accounts</h2>
+                    <p class="muted">
+                        Providers people can link in User Settings, Connections. Each one also needs third-party integrations on, and most need an app registered with the provider.
+                        Secrets stay on the server.
+                    </p>
+                    ${connections.third_party ? "" : html`<p><span class="badge warn"><span class="dot"></span>Third-party integrations are off, so every provider is hidden.</span></p>`}
+                    ${connections.connections.map(
+                      (provider) =>
+                        html`<details class="settings-section" data-connection="${provider.id}">
+                                <summary>
+                                    ${provider.name}
+                                    ${provider.available
+                                      ? html`<span class="badge ok"><span class="dot"></span>Available</span>`
+                                      : provider.enabled && !provider.configured
+                                        ? html`<span class="badge warn"><span class="dot"></span>Needs credentials</span>`
+                                        : html`<span class="badge"><span class="dot"></span>Off</span>`}
+                                </summary>
+                                <div class="stack">
+                                    <label class="toggle"
+                                        ><input type="checkbox" data-connection-enabled ${provider.enabled ? raw("checked") : ""} /><span>Let people connect ${provider.name}</span></label
+                                    >
+                                    ${provider.fields.map((field) =>
+                                      field.secret
+                                        ? html`<label
+                                                >${CONNECTION_FIELD_LABELS[field.name] ?? field.name}<span class="hint">${field.set ? "A value is set. Leave blank to keep it." : "Not set."}</span
+                                                ><input type="password" autocomplete="new-password" data-connection-field="${field.name}" /></label
+                                            ><label class="toggle"
+                                                ><input type="checkbox" data-connection-clear="${field.name}" /><span
+                                                    >Remove the ${(CONNECTION_FIELD_LABELS[field.name] ?? field.name).toLowerCase()}</span
+                                                ></label
+                                            >`
+                                        : html`<label
+                                            >${CONNECTION_FIELD_LABELS[field.name] ?? field.name}<input
+                                                type="text"
+                                                data-connection-field="${field.name}"
+                                                value="${field.value ?? ""}"
+                                          /></label>`,
+                                    )}
+                                    <label>Callback URL<span class="hint">Register this address with the provider.</span><input type="text" readonly value="${provider.callback_url}" /></label>
+                                    ${provider.setup_url ? html`<p class="hint"><a href="${provider.setup_url}" target="_blank" rel="noreferrer">Provider setup page</a></p>` : ""}
+                                    <button class="btn" type="button" data-connection-save>Save ${provider.name}</button>
+                                </div>
+                            </details>`,
+                    )}
                 </div>
                 <div class="card" id="settings-limits">
                     <h2>Feature limits</h2>
@@ -1518,6 +1568,24 @@ ${(s.register.blacklistedUsernames ?? []).join("\n")}</textarea>
     );
     if (saved) renderSettings(view);
   });
+  for (const section of $$("[data-connection]", view))
+    $("[data-connection-save]", section).addEventListener("click", async (event) => {
+      const values = {};
+      const clear = $$("[data-connection-clear]", section)
+        .filter((input) => input.checked)
+        .map((input) => input.dataset.connectionClear);
+      for (const input of $$("[data-connection-field]", section)) {
+        const value = input.value.trim();
+        if (value) values[input.dataset.connectionField] = value;
+        else if (input.type !== "password") clear.push(input.dataset.connectionField);
+      }
+      const saved = await act(
+        event.currentTarget,
+        () => api(`/admin/connections/${section.dataset.connection}`, { method: "PATCH", body: { enabled: $("[data-connection-enabled]", section).checked, values, clear } }),
+        "Connection settings saved",
+      );
+      if (saved) renderSettings(view);
+    });
   for (const link of $$("[data-settings-target]", view))
     link.addEventListener("click", (event) => {
       event.preventDefault();

@@ -302,6 +302,7 @@ export async function initRateLimits(app: Router) {
     app.use("/channels/:channel_id", rateLimit(routes.channel));
     const userProfile = rateLimit({ bucket: "PATCH users/@me", ...routes.userProfile });
     app.patch("/users/:user_id", (req, res, next) => ([req.user_id, "@me"].includes(`${req.params.user_id}`) ? userProfile(req, res, next) : next()));
+    app.post("/users/@me/connections/domain/:domain", rateLimit({ bucket: "POST users/@me/connections/domain", ...routes.domainConnection }));
     app.use("/users/@me/instance-invites", rateLimit({ bucket: "users/@me/instance-invites", ...routes.instanceInvite }));
     const userWrites = rateLimit({ onlyWrites: true, ...routes.user });
     app.use("/users/:user_id", (req, res, next) =>

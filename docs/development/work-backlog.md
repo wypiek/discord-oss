@@ -145,6 +145,8 @@ Start with `docs/development/parity.md; client/plugins; client/equicord-patches`
 - [ ] Serialize concurrent role hierarchy mutations and finish bot privileged intent approval and MESSAGE_CONTENT projection.
 - [ ] **APP-024** Check H.264 negotiation compatibility in the SFU.
 - [x] **APP-025** Answer `GET /users/@me/program-rewards`. It answers `{ "rewards": [] }` with a declared `ProgramRewardsResponse`, since rewards are a paid perk.
+- [x] **APP-026** Make Connections complete in the stock client. Domain verification checks a `_discord` TXT record or `/.well-known/discord` file, `callback/session-handoff` answers 10020 so OAuth callbacks reach the server, and Steam, Bluesky, Roblox and Bungie.net are new providers with an admin card for credentials. See [connections.md](../features/connections.md).
+- [ ] **APP-027** Sign in to Steam, Bluesky, Roblox and Bungie.net with real accounts and credentials on a public `https` instance and record the result in [connections.md](../features/connections.md).
 
 ## GIFs and external dependencies (P1)
 

@@ -24,7 +24,7 @@ router.post(
                 },
             });
 
-        if (!connection.settings.enabled)
+        if (!connection.isAvailable)
             throw FieldErrors({
                 provider_id: {
                     message: "This connection has been disabled server-side.",
@@ -35,7 +35,6 @@ router.post(
         const userId = connection.getUserId(body.state);
         const connectedAccnt = await connection.handleCallback(body);
 
-        // whether we should emit a connections update event, only used when a connection doesnt already exist
         if (connectedAccnt)
             await emitEvent({
                 event: "USER_CONNECTIONS_UPDATE",

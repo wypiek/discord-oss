@@ -1,7 +1,7 @@
 import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
 import { ConnectedAccount } from "@spacebar/database";
-import { DiscordApiErrors, emitEvent, FieldErrors } from "@spacebar/util";
+import { ConnectionStore, DiscordApiErrors, emitEvent, FieldErrors } from "@spacebar/util";
 import { DomainConnection, ResponseError } from "@spacebar/api/util";
 import { ConnectionUpdateSchema } from "@spacebar/schemas";
 
@@ -60,12 +60,17 @@ router.patch("/", route({ requestBody: "ConnectionUpdateSchema" }), async (req: 
 router.post("/", route({ responses: { 200: {}, 400: { body: "APIErrorResponse" } } }), async (req: Request, res: Response) => {
     const { connection_name, connection_id } = req.params as { [key: string]: string };
     if (connection_name !== "domain") throw DiscordApiErrors.UNKNOWN_CONNECTION;
-
-    const domain = DomainConnection.normalize(decodeURIComponent(connection_id));
-    if (!domain)
+    if (!ConnectionStore.connections.get("domain")?.isAvailable)
         throw FieldErrors({
-            domain: { code: "DOMAIN_INVALID", message: "Enter a valid domain, like example.com." },
+            domain: { code: "DOMAIN_CONNECTIONS_DISABLED", message: "Domain verification is turned off on this server." },
         });
+
+    const normalized = DomainConnection.normalize(connection_id);
+    if (normalized.rejection)
+        throw FieldErrors({
+            domain: { code: normalized.rejection === "reserved" ? "DOMAIN_RESERVED" : "DOMAIN_INVALID", message: DomainConnection.rejectionMessage(normalized.rejection) },
+        });
+    const { domain } = normalized;
 
     const existing = await ConnectedAccount.findOne({
         where: { user_id: req.user_id, type: "domain", external_id: domain },
@@ -73,7 +78,8 @@ router.post("/", route({ responses: { 200: {}, 400: { body: "APIErrorResponse" }
     if (existing) return res.json(existing.toJSON());
 
     const proof = DomainConnection.proof(req.user_id, domain);
-    if (!(await DomainConnection.verify(domain, proof)))
+    const result = await DomainConnection.verify(domain, proof);
+    if (result !== "verified")
         throw new ResponseError(400, {
             message: "Invalid Form Body",
             code: 50035,
@@ -81,8 +87,8 @@ router.post("/", route({ responses: { 200: {}, 400: { body: "APIErrorResponse" }
                 domain: {
                     _errors: [
                         {
-                            code: "DOMAIN_VERIFICATION_FAILED",
-                            message: "We couldn't verify this domain. Check the record and try again in a few minutes.",
+                            code: result === "unavailable" ? "DOMAIN_LOOKUP_FAILED" : "DOMAIN_VERIFICATION_FAILED",
+                            message: DomainConnection.failureMessage(result, domain, proof),
                         },
                     ],
                 },

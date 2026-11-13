@@ -30,6 +30,7 @@
 | [activities.md](features/activities.md) | Embedded activities. |
 | [music-presence.md](features/music-presence.md) | Spotify and SoundCloud Listening activities, the Spotify connection, the desktop app's music readers and external activity images. |
 | [profile-widgets.md](features/profile-widgets.md) | Application profile widgets. |
+| [connections.md](features/connections.md) | Connected accounts, domain verification and setting up Steam, Bluesky, Roblox, Bungie.net and the OAuth providers. |
 | [profile-privacy.md](features/profile-privacy.md) | The Private profile setting and what people who aren't friends see. |
 | [profile-banners.md](features/profile-banners.md) | How a profile banner is uploaded, stored, sent to other people and served. |
 | [badges.md](features/badges.md) | Profile badges, levelled badges, legacy badges, the Features badge and rarity. |

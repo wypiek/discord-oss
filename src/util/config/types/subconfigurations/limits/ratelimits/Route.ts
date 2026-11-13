@@ -65,6 +65,10 @@ export class RouteRateLimit {
         count: 5,
         window: 60,
     };
+    domainConnection: RateLimitOptions = {
+        count: 10,
+        window: 60,
+    };
     attachment: RateLimitOptions = {
         count: 20,
         window: 10,

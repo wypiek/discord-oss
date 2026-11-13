@@ -363,6 +363,15 @@ await check("users", "connection authorize (github)", async () => {
     const r = await call("GET", "/connections/github/authorize", A);
     return r.status === 200 ? true : { skip: true, note: "provider not configured" };
 });
+await check("users", "connection callback session handoff falls through to the callback", async () => {
+    const r = await call("POST", "/connections/steam/callback/session-handoff", null, { state: "probe" });
+    return { ok: r.status === 404 && r.body?.code === 10020, note: `${r.status} ${r.body?.code}` };
+});
+await check("users", "domain connection issues a dh= proof", async () => {
+    const r = await call("POST", "/users/@me/connections/domain/parity-probe.invalid-zone.dev", A, {});
+    if (r.body?.errors?.domain?._errors?.[0]?.code === "DOMAIN_CONNECTIONS_DISABLED") return { skip: true, note: "thirdParty off" };
+    return { ok: r.status === 400 && /^dh=[0-9a-f]{40}$/.test(r.body?.proof ?? ""), note: `${r.status} ${r.body?.errors?.domain?._errors?.[0]?.code}` };
+});
 await check("users", "profile widgets", async () => st(await call("GET", "/users/@me/widgets", A), 200));
 await check("users", "data package request", async () => st(await call("POST", "/users/@me/harvest", A, {}), 200, 202));
 await check("users", "pomelo username change", async () => st(await call("POST", "/users/@me/pomelo-attempt", A, { username: `free${suffix}` }), 200));

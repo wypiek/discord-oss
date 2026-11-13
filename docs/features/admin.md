@@ -112,7 +112,9 @@ The Sticker packs page holds packs imported from Discord, as [setup.md](../self-
 
 ## Site settings
 
-Site settings holds the instance configuration, and everything it doesn't show is in the configuration file described in [setup.md](../self-hosting/setup.md#configuration-file). [signup.md](signup.md), [invites.md](invites.md), [automod.md](automod.md), [homepage.md](homepage.md) and [external-services.md](../self-hosting/external-services.md) describe their own settings.
+Site settings holds the instance configuration, and everything it doesn't show is in the configuration file described in [setup.md](../self-hosting/setup.md#configuration-file). [signup.md](signup.md), [invites.md](invites.md), [automod.md](automod.md), [homepage.md](homepage.md), [connections.md](connections.md) and [external-services.md](../self-hosting/external-services.md) describe their own settings.
+
+The Connected accounts card turns each connection provider on or off, sets its client ID, secret and API key, and shows the callback URL to register with the provider. It reads `GET /api/v9/admin/connections` and saves with `PATCH /api/v9/admin/connections/<provider>`. Secrets are never sent back, only whether one is set.
 
 The Client addresses card sets how the server finds a visitor's address for rate limits, bans and the address caps. Address header sets `security.forwardedFor`. Automatic, the blank value, and `X-Forwarded-For` both read `X-Forwarded-For` from trusted proxies and `CF-Connecting-IP` from Cloudflare. The other choices are `CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP` and `Fly-Client-IP`. Trusted proxies sets `security.trustedProxies`, a comma separated list of addresses, CIDR ranges or the names `loopback`, `linklocal` and `uniquelocal`, which is all three names when blank and takes effect after a restart. Under Docker, `scripts/docker-configure.js` resets the header to `X-Forwarded-For` and the proxies to `TRUSTED_PROXIES` on every start, so set the proxies in `.env` there.
 

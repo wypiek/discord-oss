@@ -28,7 +28,9 @@ The External requests card on the Site settings page of the admin dashboard edit
 | FixTweet, `api.fxtwitter.com` | X and Twitter post previews. | `thirdParty` on and no `external.twitter` token. |
 | Linked websites | Link previews, YouTube, Vimeo and Dailymotion players, and domain verification. | `thirdParty` on. |
 | AbuseIPDB, IPData, Stop Forum Spam | IP and signup reputation. | `thirdParty` on and a key configured. |
-| OAuth providers | Connected accounts on Twitch, Epic Games, Battle.net, Reddit, Facebook, GitHub, Google, Spotify, Xbox, Discord and X. | `thirdParty` on, the connection configured and a user links an account. |
+| OAuth providers | Connected accounts on Twitch, Epic Games, Battle.net, Reddit, Facebook, GitHub, Google, Spotify, Xbox, Discord, X, Roblox and Bungie.net. | `thirdParty` on, the connection configured and a user links an account. |
+| Steam | Steam connections: OpenID sign in on `steamcommunity.com`, the public profile for the persona name, and `api.steampowered.com` when a Web API key is set. | `thirdParty` on and a user links an account. |
+| AT Protocol servers | Bluesky connections: `plc.directory`, the handle's domain or DNS, and the account's PDS and authorization server, such as `bsky.social`. | `thirdParty` on and a user links an account. |
 | Browser push services | Web Push, see [notifications.md](../features/notifications.md). | `thirdParty` and Web Push on. |
 | SMTP, Mailgun, Mailjet, SendGrid | Email. | An operator configures one. |
 | S3 | Object storage instead of local files. | An operator configures it. |

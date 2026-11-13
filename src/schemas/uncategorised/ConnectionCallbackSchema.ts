@@ -7,7 +7,11 @@ export interface ConnectionCallbackSchema {
      * @maxLength 512
      */
     state: string;
-    insecure: boolean;
-    friend_sync: boolean;
-    openid_params?: unknown; // TODO: types
+    /**
+     * @maxLength 512
+     */
+    iss?: string;
+    insecure?: boolean;
+    friend_sync?: boolean;
+    openid_params?: { [key: string]: string };
 }
