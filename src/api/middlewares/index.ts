@@ -6,6 +6,7 @@ export * from "./ExternalProxy";
 export * from "./KlipyProxy";
 export * from "./PayloadJson";
 export * from "./ImageProxy";
+export * from "./ImageUploadLimit";
 export * from "./RateLimit";
 export * from "./Route";
 export * from "./Translation";

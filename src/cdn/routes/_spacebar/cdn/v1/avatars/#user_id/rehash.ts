@@ -1,13 +1,9 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { Router, Response, Request } from "express";
 import { fileTypeFromBuffer } from "file-type";
 import { route } from "@spacebar/api";
-import { storage, FileStorage } from "@spacebar/cdn";
+import { storage, FileStorage, imageHash } from "@spacebar/cdn";
 import { Message, User, Webhook } from "@spacebar/database";
-
-const ANIMATED_MIME_TYPES = ["image/apng", "image/gif", "image/gifv"];
-const STATIC_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/avif", "image/svg+xml", "image/svg"];
 
 const router = Router({ mergeParams: true });
 
@@ -36,10 +32,8 @@ router.post(
             console.log(dirEnt);
             res.write(`Found dirEnt: ${dirEnt}...`);
             const buffer = await fs.readFile(storage.getFsPath(`avatars/${user_id}/${dirEnt}`));
-            let hash = crypto.createHash("md5").update(buffer).digest("hex");
-
             const type = await fileTypeFromBuffer(buffer);
-            if (ANIMATED_MIME_TYPES.includes(type?.mime ?? "")) hash = `a_${hash}`; // animated icons have a_ infront of the hash
+            const hash = imageHash(buffer, type?.mime);
 
             res.write(` Read file, correct hash: ${hash}, type: ${type?.mime}...`);
 

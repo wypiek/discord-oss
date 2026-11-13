@@ -1,14 +1,11 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { join } from "node:path";
 import { Router, Response, Request } from "express";
 import { fileTypeFromBuffer } from "file-type";
 import { Config, DEFAULT_AVATARS_FOLDER, defaultAvatarSvg, isRequestSignature } from "@spacebar/util";
 import { HTTPError } from "lambert-server/HTTPError";
-import { storage, internalUpload, setCacheControl, safeMediaType } from "../util";
-
-// TODO: generate different sizes of icon
-// TODO: generate different image types of icon
+import { storage, internalUpload, setCacheControl } from "../util";
+import { imageHash, sendImage } from "../util/imageVariants";
 
 const ANIMATED_MIME_TYPES = ["image/apng", "image/gif", "image/gifv"];
 const STATIC_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/avif", "image/svg+xml", "image/svg"];
@@ -26,11 +23,9 @@ router.post(
         const { buffer, size } = req.file;
         const { user_id } = req.params as { [key: string]: string };
 
-        let hash = crypto.createHash("md5").update(buffer).digest("hex");
-
         const type = await fileTypeFromBuffer(buffer);
         if (!type || !ALLOWED_MIME_TYPES.includes(type.mime)) throw new HTTPError("Invalid file type");
-        if (ANIMATED_MIME_TYPES.includes(type.mime)) hash = `a_${hash}`; // animated icons have a_ infront of the hash
+        const hash = imageHash(buffer, type.mime);
 
         const path = `avatars/${user_id}/${hash}`;
         const endpoint = Config.get().cdn.endpointPublic;
@@ -53,11 +48,7 @@ router.get("/:user_id", setCacheControl, async (req: Request, res: Response) => 
 
     const file = await storage.get(path);
     if (!file) throw new HTTPError("not found", 404);
-    const type = await fileTypeFromBuffer(file);
-
-    res.set("Content-Type", safeMediaType(type?.mime));
-
-    return res.send(file);
+    return sendImage(req, res, path, file);
 });
 
 export const getAvatar = async (req: Request, res: Response) => {
@@ -73,11 +64,7 @@ export const getAvatar = async (req: Request, res: Response) => {
         return res.type("image/svg+xml").send(defaultAvatarSvg(0));
     }
     if (!file) throw new HTTPError("not found", 404);
-    const type = await fileTypeFromBuffer(file);
-
-    res.set("Content-Type", safeMediaType(type?.mime));
-
-    return res.send(file);
+    return sendImage(req, res, path, file);
 };
 
 router.get("/:user_id/:hash", setCacheControl, getAvatar);

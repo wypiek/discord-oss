@@ -24,7 +24,21 @@ import { ProcessLifecycle, SystemdLifecycle } from "../util/util/ProcessLifecycl
 import { outboundProxyStatus } from "../util/util/networking/SocksTransport";
 import { Monitoring } from "../util/monitoring/Monitoring";
 import { BcryptWorkerPool } from "../util/util/workers/bcrypt/BcryptWorkerPool";
-import { Authentication, CORS, ExternalProxy, ImageProxy, KlipyProxy, BodyParser, ErrorHandler, initRateLimits, initTopLevelRateLimits, initTranslation } from "./middlewares";
+import {
+    Authentication,
+    CORS,
+    ExternalProxy,
+    ImageProxy,
+    ImageUploadLimit,
+    KlipyProxy,
+    BodyParser,
+    ErrorHandler,
+    initRateLimits,
+    initTopLevelRateLimits,
+    initTranslation,
+    jsonBodyLimit,
+    DEFAULT_JSON_BODY_BYTES,
+} from "./middlewares";
 import { initInstance } from "./util/handlers/Instance";
 import { initEmbeddedActivities } from "./activities";
 import {
@@ -71,8 +85,9 @@ export class SpacebarServer extends Server {
         useClientAddress(this.app, () => Config.get().security);
 
         this.app.use(CORS);
-        this.app.use(BodyParser({ inflate: true, limit: "10mb" }));
+        this.app.use(BodyParser({ inflate: true, limit: DEFAULT_JSON_BODY_BYTES }, (req) => jsonBodyLimit(req.method, req.path)));
         this.app.use(Authentication);
+        this.app.use(ImageUploadLimit);
 
         const app = this.app;
         const api = Router({ mergeParams: true });

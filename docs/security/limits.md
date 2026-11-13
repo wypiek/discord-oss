@@ -25,12 +25,30 @@ Creating an upload slot needs View Channel and Attach Files in the channel. Only
 
 | Upload                                                                 | Largest file                                                           |
 | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Avatars, banners, icons, splashes, emojis, role icons and other images | About 7.5 MiB, the base64 data URI that fits in the 10 MiB JSON body   |
+| Avatars, banners, icons, splashes, emojis, role icons and other images | 10 MiB, as on Discord                                                  |
 | Guild stickers                                                         | 512 KiB, as on Discord                                                 |
 | Soundboard sounds                                                      | 512 KB                                                                 |
 | Data packages                                                          | No fixed limit. Each account keeps one, and a new one replaces it      |
 
-A sticker over 512 KiB is refused with 413 while it is being read, so the server never holds more than that in memory for one sticker. There is no config key for the size of these images. The JSON body limit is the only cap on them, and every image counts toward the storage quota of the account that uploaded it.
+A sticker over 512 KiB is refused with 413 while it is being read, so the server never holds more than that in memory for one sticker. There is no config key for the size of these images, and every image counts toward the storage quota of the account that uploaded it.
+
+The client sends images as base64 data URIs inside a JSON body, which makes them about a third larger. JSON bodies are limited to 10 MiB, except on the routes that take images, where the limit is about 13.3 MiB for each image the route accepts plus 1 MiB, so `PATCH /guilds/:id` with its icon, banner, splash and discovery splash takes up to about 54 MiB. An image over 10 MiB is refused with 400 and Discord's form error, `BINARY_TYPE_MAX_SIZE` "File cannot be larger than 10240.0 kb.", which the client shows in the settings save bar. A body over its route's limit gets 413 with code 40005 "Request entity too large". The client refuses files over 10 MB itself before it uploads them.
+
+A reverse proxy in front of the server needs to accept these bodies too. Caddy has no body limit by default. nginx refuses bodies over 1 MiB unless `client_max_body_size` is raised, so set it to at least `cdn.maxAttachmentSize`, `client_max_body_size 500m;` with the defaults.
+
+## Images the CDN serves
+
+Avatars, banners, icons, splashes, server profile banners and per-server avatars and banners are stored as uploaded, and the CDN converts them for each request the way Discord's CDN does:
+
+| Request                                        | Response                                                     |
+| ---------------------------------------------- | ------------------------------------------------------------ |
+| `?size=N`                                      | Scaled to fit in N by N pixels, never enlarged, N from 16 to 4096 |
+| `.gif`                                         | Animated GIF when the upload is animated                     |
+| `.webp?animated=true`                          | Animated WebP when the upload is animated                    |
+| `.png`, `.jpg`, `.webp` without `animated=true` | The first frame                                              |
+| No extension                                   | The file as uploaded                                         |
+
+Animated GIF, WebP, APNG and AVIF uploads get a hash that starts with `a_`, and static ones don't. Animated GIF and WebP copies keep every frame, the frame delays and the loop count. APNG and AVIF stay as uploaded for animated requests. Each CDN process renders at most 2 images at a time with up to 64 waiting, each render has 20 seconds, and it keeps the last 64 MiB of rendered copies in memory. When a render fails or the queue is full, the CDN serves the file as uploaded. Without the optional `sharp` package it always serves the file as uploaded.
 
 ## Upload memory on the CDN
 

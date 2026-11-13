@@ -81,7 +81,7 @@ docker compose restart server
 
 ## Your own reverse proxy
 
-Compose doesn't run a proxy or terminate TLS. Point your reverse proxy or tunnel at `127.0.0.1:32171`, or `SERVER_BIND:SERVER_PORT` if you changed them, with websocket upgrades, and have it serve `DOMAIN` over HTTPS. [native.md](native.md) has a Caddy example for a proxy installed on the host. A stack that ran the bundled Caddy before keeps that container and its `caddy_data` and `caddy_config` volumes until you remove them with `docker rm -f` and `docker volume rm`.
+Compose doesn't run a proxy or terminate TLS. Point your reverse proxy or tunnel at `127.0.0.1:32171`, or `SERVER_BIND:SERVER_PORT` if you changed them, with websocket upgrades, and have it serve `DOMAIN` over HTTPS. [native.md](native.md) has a Caddy example for a proxy installed on the host. The proxy has to accept request bodies up to `cdn.maxAttachmentSize`, 500 MiB by default, or banner and attachment uploads fail with 413. Caddy has no limit, nginx needs `client_max_body_size 500m;` and Cloudflare Tunnel refuses bodies over 100 MB on the Free and Pro plans. A stack that ran the bundled Caddy before keeps that container and its `caddy_data` and `caddy_config` volumes until you remove them with `docker rm -f` and `docker volume rm`.
 
 Outside Docker, the server can serve HTTPS and HTTP/2 itself on a port other than `PORT`, because TLS on the shared port fails under Bun:
 

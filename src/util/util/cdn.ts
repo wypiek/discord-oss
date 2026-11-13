@@ -4,6 +4,8 @@ import { InternalCdnAttachment } from "@spacebar/util/dtos/MessageOptions";
 import { declaredAttachmentFilename } from "./AttachmentFilename";
 import { storageOwnership } from "../../cdn/util/storageOwnership";
 import { Config } from "./Config";
+import { DiscordApiErrors } from "./Constants";
+import { dataUriPayloadBytes, MAX_IMAGE_UPLOAD_BYTES } from "./ImageUpload";
 
 export async function uploadFile(
     path: string,
@@ -84,6 +86,7 @@ export async function uploadMessageFiles<T extends object>(
 
 export async function handleFile(path: string, body?: string, principal?: string): Promise<string | undefined> {
     if (!body || !body.startsWith("data:")) return undefined;
+    if (dataUriPayloadBytes(body) > MAX_IMAGE_UPLOAD_BYTES) throw DiscordApiErrors.FILE_EXCEEDS_MAXIMUM_SIZE;
     try {
         const mimetype = body.split(":")[1].split(";")[0];
         const buffer = Buffer.from(body.split(",")[1], "base64");

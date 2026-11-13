@@ -88,15 +88,17 @@ for (const name of files) {
                           }
                         : n === "lambert-server/HTTPError"
                           ? { HTTPError }
-                          : n === "../util"
-                            ? util
-                            : n === "@spacebar/database"
-                              ? {}
-                              : n === "@spacebar/schemas"
+                          : n === "../util/imageVariants"
+                            ? require("../../src/cdn/util/imageVariants.ts")
+                            : n === "../util"
+                              ? util
+                              : n === "@spacebar/database"
                                 ? {}
-                                : n === "@spacebar/api/util"
-                                  ? { ensureStandardStickerPacks: async () => {} }
-                                  : require(n),
+                                : n === "@spacebar/schemas"
+                                  ? {}
+                                  : n === "@spacebar/api/util"
+                                    ? { ensureStandardStickerPacks: async () => {} }
+                                    : require(n),
         },
     );
     app.use(`/${name}`, m.exports.default);

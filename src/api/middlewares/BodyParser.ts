@@ -3,7 +3,6 @@ import { NextFunction, Request, Response } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 
 const errorMessages: { [key: string]: [string, number] } = {
-    "entity.too.large": ["Request body too large", 413],
     "entity.parse.failed": ["Invalid JSON body", 400],
     "entity.verify.failed": ["Entity verification failed", 403],
     "request.aborted": ["Request aborted", 400],
@@ -25,12 +24,19 @@ function bodyReservation(limit: OptionsJson["limit"]) {
     return Math.ceil(Number(match[1]) * ({ b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3 }[match[2]?.toLowerCase() ?? "b"] ?? 1)) * 2;
 }
 
-export function BodyParser(opts?: OptionsJson) {
-    const jsonParser = bodyParser.json(opts);
-    const maximumReservation = bodyReservation(opts?.limit);
+type JsonParser = { jsonParser: ReturnType<typeof bodyParser.json>; maximumReservation: number };
+
+export function BodyParser(opts?: OptionsJson, limitFor?: (req: Request) => number) {
+    const parsers = new Map<OptionsJson["limit"], JsonParser>();
+    const parserFor = (limit: OptionsJson["limit"]) => {
+        let parser = parsers.get(limit);
+        if (!parser) parsers.set(limit, (parser = { jsonParser: bodyParser.json({ ...opts, limit }), maximumReservation: bodyReservation(limit) }));
+        return parser;
+    };
 
     return (req: Request, res: Response, next: NextFunction) => {
         if (!req.headers["content-type"]) req.headers["content-type"] = "application/json";
+        const { jsonParser, maximumReservation } = parserFor(limitFor?.(req) ?? opts?.limit);
 
         if (!req.is("application/json")) return jsonParser(req, res, next);
         if (req.readableEnded || (!req.headers["transfer-encoding"] && !req.headers["content-length"])) return jsonParser(req, res, next);
@@ -66,6 +72,11 @@ export function BodyParser(opts?: OptionsJson) {
         jsonParser(req, res, (err) => {
             clearTimeout(deadline);
             if (expired) return;
+            if (err?.type === "entity.too.large") {
+                res.setHeader("Connection", "close");
+                res.once("finish", () => req.destroy());
+                return res.status(413).json({ message: "Request entity too large", code: 40005 });
+            }
             if (err) {
                 const [message, status] = errorMessages[err.type] || ["Invalid Body", 400];
                 const errorMessage = message.includes("charset") || message.includes("encoding") ? `${message} "${err.charset || err.encoding}"` : message;
