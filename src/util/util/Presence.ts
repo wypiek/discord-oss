@@ -180,6 +180,7 @@ function sanitizeActivity(x: Record<string, unknown>) {
             .filter((platform) => platform !== undefined);
     const buttons = sanitizeActivityButtons(x.buttons);
     if (buttons) activity.buttons = buttons;
+    activity.content_classification = { loaded: true };
     return activity;
 }
 

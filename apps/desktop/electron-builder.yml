@@ -30,6 +30,7 @@ mac:
     NSCameraUsageDescription: Discord OSS uses the camera for video calls.
     NSAudioCaptureUsageDescription: Discord OSS shares your computer's audio when you stream your screen.
     NSScreenCaptureUsageDescription: Discord OSS shares your screen when you go live.
+    NSAppleEventsUsageDescription: Discord OSS reads the song playing in Spotify to show it on your profile.
   target:
     - target: dmg
       arch: [universal]

@@ -46,6 +46,7 @@ export interface Activity {
         type?: "track" | "episode";
     };
     session_id: string;
+    content_classification?: { loaded: boolean };
 }
 
 export enum ActivityType {

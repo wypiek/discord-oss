@@ -204,7 +204,7 @@ test("custom status activities and string buttons pass through when they fit", (
         { name: "Custom Status", type: 4, state: "hi", emoji: { name: "🏳️‍⚧️" }, created_at: 5 },
         { name: "Game", type: "0", buttons: ["Join", long(40)] },
     ]);
-    assert.deepEqual(plain(custom), { name: "Custom Status", type: 4, state: "hi", emoji: { name: "🏳️‍⚧️" }, created_at: 5 });
+    assert.deepEqual(plain(custom), { name: "Custom Status", type: 4, state: "hi", emoji: { name: "🏳️‍⚧️" }, created_at: 5, content_classification: { loaded: true } });
     assert.equal(rich.type, 0);
     assert.deepEqual(plain(rich.buttons), ["Join", long(32)]);
 });

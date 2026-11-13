@@ -1323,6 +1323,32 @@
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
+    "ApplicationExternalAssetsSchema": {
+        "type": "object",
+        "properties": {
+            "urls": {
+                "minItems": 1,
+                "maxItems": 10,
+                "items": {
+                    "type": "string",
+                    "maxLength": 900
+                },
+                "type": "array"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "urls"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "ApplicationExternalAssetsResponse": {
+        "type": "array",
+        "items": {
+            "$ref": "#/definitions/ApplicationExternalAsset"
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
     "AutomodMentionSpamRuleSchema": {
         "type": "object",
         "properties": {
@@ -17773,6 +17799,18 @@
             },
             "session_id": {
                 "type": "string"
+            },
+            "content_classification": {
+                "type": "object",
+                "properties": {
+                    "loaded": {
+                        "type": "boolean"
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "loaded"
+                ]
             }
         },
         "additionalProperties": false,
@@ -25026,6 +25064,23 @@
             "unknown"
         ],
         "type": "string",
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "ApplicationExternalAsset": {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string"
+            },
+            "external_asset_path": {
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "external_asset_path",
+            "url"
+        ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "DefaultReactionInput": {

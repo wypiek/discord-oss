@@ -28,6 +28,7 @@
 | [link-embeds.md](features/link-embeds.md) | Link previews and embedded media. |
 | [markdown-attachments.md](features/markdown-attachments.md) | The preview of Markdown file attachments and the LaTeX math it typesets. |
 | [activities.md](features/activities.md) | Embedded activities. |
+| [music-presence.md](features/music-presence.md) | Spotify and SoundCloud Listening activities, the Spotify connection, the desktop app's music readers and external activity images. |
 | [profile-widgets.md](features/profile-widgets.md) | Application profile widgets. |
 | [profile-privacy.md](features/profile-privacy.md) | The Private profile setting and what people who aren't friends see. |
 | [profile-banners.md](features/profile-banners.md) | How a profile banner is uploaded, stored, sent to other people and served. |
