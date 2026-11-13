@@ -249,6 +249,8 @@ const harness = () => {
             if (name === "@spacebar/api/util/utility/badgeSettings") return badgeSettingsModule.exports;
             if (name === "@spacebar/api/util/utility/profileBadges") return profileBadgesFor(stubs("@spacebar/database"), stubs("@spacebar/util"));
             if (name === "@spacebar/api/util/handlers/Application") return {};
+            if (name === "@spacebar/api/util/utility/profilePrivacy") return { viewerSeesFullProfile: async () => true };
+            if (name === "@spacebar/api/util/utility/profileVisibility") return { limitedProfile: (profile) => ({ ...profile, private: true }) };
             throw Error(name);
         },
     });

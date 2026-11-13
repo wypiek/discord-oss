@@ -26,6 +26,7 @@ import {
     TypingIndicatorStyle,
     RecentAvatar,
     PublicUser,
+    PublicUserOutputKeys,
     PublicUserProjection,
     UserFlags,
     UserGuildSettings,
@@ -337,7 +338,7 @@ export class User extends BaseClass {
         this.clean_data();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const user: any = {};
-        PublicUserProjection.forEach((x) => {
+        PublicUserOutputKeys.forEach((x) => {
             user[x] = this[x];
         });
 
