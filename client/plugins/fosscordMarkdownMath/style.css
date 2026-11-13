@@ -1,0 +1,13 @@
+.fosscord-math-display {
+    display: block;
+    max-width: 100%;
+    overflow: auto hidden;
+}
+
+.fosscord-math-display > .katex-display {
+    margin: 0.5em 0;
+}
+
+.fosscord-math .katex {
+    font-size: 1.1em;
+}

@@ -44,5 +44,5 @@
   },
   "patches": "equicord-patches",
   "settingsKey": "EquicordSettings",
-  "pluginDependencies": ["mediabunny"]
+  "pluginDependencies": ["katex", "mediabunny"]
 }
