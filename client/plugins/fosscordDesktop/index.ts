@@ -40,7 +40,7 @@ function mixAppSounds(stream: MediaStream) {
 }
 export default definePlugin({
     name: "FosscordDesktop",
-    description: "Makes the Discord desktop app use the browser voice engine, the only one Fosscord's voice server speaks.",
+    description: "Lets the Discord desktop app use its native voice engine when the instance speaks native UDP voice, and the browser engine otherwise.",
     authors: [FosscordAuthor],
     required: true,
     patches: [
@@ -81,10 +81,10 @@ export default definePlugin({
         {
             find: "startDavePreload(){",
             replacement: [
-                { match: /fetchDave:\(0,\i\.isWeb\)\(\)/, replace: "fetchDave:!0" },
+                { match: /fetchDave:(\(0,\i\.isWeb\)\(\))/, replace: "fetchDave:$1||$self.usesWebEngine()" },
                 {
-                    match: /\(0,\i\.isWeb\)\(\)(&&\i\.fetchAsyncResources\(\{fetchDave:!0\}\))/,
-                    replace: "!0$1",
+                    match: /(\(0,\i\.isWeb\)\(\))(&&\i\.fetchAsyncResources\(\{fetchDave:!0\}\))/,
+                    replace: "($1||$self.usesWebEngine())$2",
                 },
             ],
         },
@@ -144,27 +144,18 @@ export default definePlugin({
             ).__fosscordPicked ?? null
         );
     },
+    nativeVoice() {
+        return (window as { GLOBAL_ENV?: { NATIVE_VOICE?: boolean } }).GLOBAL_ENV?.NATIVE_VOICE === true;
+    },
+    usesWebEngine() {
+        return !(window as { DiscordNative?: unknown }).DiscordNative || !this.nativeVoice();
+    },
     allowEngine(engine: unknown, native: unknown) {
-        return !(
-            (
-                window as {
-                    DiscordNative?: unknown;
-                }
-            ).DiscordNative && engine === native
-        );
+        return engine !== native || !(window as { DiscordNative?: unknown }).DiscordNative || this.nativeVoice();
     },
     withClips(engine: any, Native: any) {
         const proto = Native?.prototype;
-        if (
-            !(
-                window as {
-                    DiscordNative?: unknown;
-                }
-            ).DiscordNative ||
-            !proto ||
-            proto.hasClipsV3Support == null
-        )
-            return engine;
+        if (!(window as { DiscordNative?: unknown }).DiscordNative || !this.usesWebEngine() || !proto || proto.hasClipsV3Support == null) return engine;
         const quiet = new Proxy({}, { get: () => () => {} });
         const stand = Object.assign(Object.create(proto), {
             clipsRecordingEventContext: { id: "", soundshareId: 0, applicationName: "" },

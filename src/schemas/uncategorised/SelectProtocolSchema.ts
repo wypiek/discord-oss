@@ -14,6 +14,15 @@ export interface SelectProtocolSchema {
               mode: string;
           };
     /**
+     * @maxLength 64
+     */
+    address?: string;
+    port?: number;
+    /**
+     * @maxLength 64
+     */
+    mode?: string;
+    /**
      * @maxLength 65536
      */
     sdp?: string;
@@ -29,6 +38,8 @@ export interface SelectProtocolSchema {
         priority: number;
         payload_type: number;
         rtx_payload_type?: number;
+        encode?: boolean;
+        decode?: boolean;
     }[];
     /**
      * @maxLength 64

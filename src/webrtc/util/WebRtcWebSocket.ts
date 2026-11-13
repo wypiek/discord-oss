@@ -15,6 +15,7 @@ export interface WebRtcWebSocket extends WebSocket {
     maxDaveVersion: number;
     daveVersion: number;
     clientPlatform?: number;
+    voiceProtocol?: "webrtc" | "udp";
     sentMessages?: { seq: number; data: string | Buffer }[];
     sessionCleanups?: (() => Promise<unknown>)[];
     resumedBy?: WebRtcWebSocket;

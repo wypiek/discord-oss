@@ -77,6 +77,10 @@ class PionClient implements WebRtcClient<unknown> {
         });
     }
 
+    async useNativeTransport(ssrc: number, mode: string, key: Buffer) {
+        await this.server.ipc.request({ type: "native", clientId: this.uniqueId, ssrc, mode, key: key.toString("base64") });
+    }
+
     requestKeyframe() {
         if (this.published.video) this.server.ipc.send({ type: "keyframe", clientId: this.uniqueId });
     }

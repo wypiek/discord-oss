@@ -121,9 +121,12 @@ test("joining and leaving don't wait for each member's socket in turn", async ()
     try {
         const dave = { DAVE_PROTOCOL_VERSION: 1, DaveSession: { find: () => undefined, get: () => ({ join: async () => {} }) } };
         const { onSelectProtocol } = load("src/webrtc/opcodes/SelectProtocol.ts", {
+            "node:crypto": require("node:crypto"),
             "@spacebar/schemas": { validateSchema: (name, data) => data },
+            "@spacebar/util/util/NativeVoice": { nativeVoiceEnabled: () => false, isNativeVoiceMode: () => false },
             "@spacebar/webrtc": room.webrtc,
             "../dave/DaveSession": dave,
+            "./Video": { onVideo: async () => {} },
         });
         const { VoiceSessions } = load("src/webrtc/util/VoiceSessions.ts", {
             "@spacebar/database": {},

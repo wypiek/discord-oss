@@ -5,6 +5,11 @@ import { validateSchema, VoiceVideoSchema } from "@spacebar/schemas";
 
 const pendingVideo = new WeakMap<WebRtcClient<WebRtcWebSocket>, VoicePayload>();
 
+export function mapNativeSsrc(subscriber: WebRtcWebSocket, userId: string, ssrc: number | undefined, speaking: number | undefined) {
+    if (subscriber.voiceProtocol !== "udp" || !ssrc) return Promise.resolve();
+    return Send(subscriber, { op: VoiceOPCodes.SPEAKING, d: { user_id: userId, speaking: speaking ?? 0, ssrc } });
+}
+
 function subscribeRoom(publisher: WebRtcWebSocket, voiceRoomId: string, type: "audio" | "video", subscribed: Set<WebRtcClient<WebRtcWebSocket>>) {
     const pending = [...mediaServer.getClientsForRtcServer<WebRtcWebSocket>(voiceRoomId)].filter(
         (client) => client.user_id !== publisher.user_id && !client.isSubscribedToTrack(publisher.user_id, type),
@@ -101,9 +106,10 @@ export async function onVideo(this: WebRtcWebSocket, payload: VoicePayload) {
     }
 
     await Promise.all(
-        Array.from(clientsThatNeedUpdate).map((client) => {
+        Array.from(clientsThatNeedUpdate).map(async (client) => {
             const ssrcs = client.getOutgoingStreamSSRCsForUser(this.user_id);
 
+            await mapNativeSsrc(client.websocket, this.user_id, ssrcs.audio_ssrc, this.moderation?.mute ? 0 : this.speaking);
             return Send(client.websocket, {
                 op: VoiceOPCodes.VIDEO,
                 d: {
@@ -184,7 +190,8 @@ export async function subscribeToProducers(this: WebRtcWebSocket): Promise<void>
                 } as VoiceVideoSchema,
             });
             const { speaking, moderation } = client.websocket;
-            if (speaking && !moderation?.mute && ssrcs.audio_ssrc)
+            if (this.voiceProtocol === "udp") await mapNativeSsrc(this, client.user_id, ssrcs.audio_ssrc, moderation?.mute ? 0 : speaking);
+            else if (speaking && !moderation?.mute && ssrcs.audio_ssrc)
                 await Send(this, {
                     op: VoiceOPCodes.SPEAKING,
                     d: { user_id: client.user_id, speaking, ssrc: ssrcs.audio_ssrc },
