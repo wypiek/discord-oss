@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame } from "electron";
+import type { MusicTrack, MusicWatch } from "./music-types";
 
 if (location.protocol === "file:") {
     contextBridge.exposeInMainWorld("discordOss", {
@@ -16,6 +17,18 @@ if (location.protocol === "file:") {
         platform: process.platform,
         focusWindow: () => ipcRenderer.send("app:focus"),
         openInstanceSwitcher: () => ipcRenderer.send("app:switcher"),
+        music: {
+            sources: ["spotify", "soundcloud"],
+            watch: (sources: MusicWatch) => ipcRenderer.send("music:watch", { spotify: sources?.spotify === true, soundcloud: sources?.soundcloud === true }),
+            onTracks: (listener: (tracks: MusicTrack[]) => void) => {
+                const handler = (_event: Electron.IpcRendererEvent, tracks: MusicTrack[]) => listener(tracks);
+                ipcRenderer.on("music:tracks", handler);
+                return () => {
+                    ipcRenderer.off("music:tracks", handler);
+                };
+            },
+            openSoundCloud: () => ipcRenderer.send("music:open-soundcloud"),
+        },
     });
     webFrame.executeJavaScript(
         `(() => {
