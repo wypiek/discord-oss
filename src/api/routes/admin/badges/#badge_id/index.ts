@@ -3,6 +3,7 @@ import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
 import { Badge, User } from "@spacebar/database";
 import { AdminBadgeUpdateSchema } from "@spacebar/schemas";
+import { isModeratorAlumniBadge, syncModeratorAlumni } from "@spacebar/api/util";
 import { resolveBadgeIcon, serializeBadge } from "../index";
 
 const router = Router({ mergeParams: true });
@@ -41,11 +42,15 @@ router.delete(
     }),
     async (req: Request, res: Response) => {
         const id = req.params.badge_id as string;
-        await Badge.findOneOrFail({ where: { id }, select: { id: true } });
+        const badge = await Badge.findOneOrFail({ where: { id }, select: { id: true, icon: true } });
+        const holders: { id: string }[] = isModeratorAlumniBadge(badge)
+            ? await User.query(`SELECT "id" FROM "users" WHERE ${sqlArrayIncludes("CAST($1 AS bigint)", '"badge_ids"')}`, [id])
+            : [];
         await User.query(`UPDATE "users" SET "badge_ids" = ${sqlArrayRemove('"badge_ids"', "CAST($1 AS bigint)")} WHERE ${sqlArrayIncludes("CAST($1 AS bigint)", '"badge_ids"')}`, [
             id,
         ]);
         await Badge.delete({ id });
+        await syncModeratorAlumni(holders.map((holder) => String(holder.id)));
         res.sendStatus(204);
     },
 );

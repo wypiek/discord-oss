@@ -40,6 +40,7 @@ export * from "./utility/safety";
 export * from "./utility/bans";
 export * from "./utility/detectableGames";
 export * from "./utility/staffBadge";
+export * from "./utility/moderatorBadge";
 export * from "./utility/partnerBadge";
 export * from "./utility/instanceDiscovery";
 export * from "./utility/categorySync";

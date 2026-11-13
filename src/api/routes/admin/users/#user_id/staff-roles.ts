@@ -4,7 +4,7 @@ import { route } from "@spacebar/api/middlewares";
 import { StaffRoleMember, User } from "@spacebar/database";
 import { loadStaffRoles, rolesOf } from "@spacebar/util";
 import { AdminUserStaffRolesSchema, AuditLogEvents } from "@spacebar/schemas";
-import { assertBelowActor, assertCanViewUser, canActOn, recordStaffAction, staffActor } from "@spacebar/api/util";
+import { assertBelowActor, assertCanViewUser, canActOn, recordStaffAction, staffActor, syncModeratorAlumni } from "@spacebar/api/util";
 import { refreshStaffRoles } from "../../staff/roles/index";
 
 const router = Router({ mergeParams: true });
@@ -57,6 +57,7 @@ router.put(
         for (const role_id of added) await StaffRoleMember.insert({ user_id: String(user.id), role_id, assigned_by: req.user_id, assigned_at: new Date() });
         for (const role_id of removed) await StaffRoleMember.delete({ user_id: String(user.id), role_id });
         const next = await refreshStaffRoles();
+        await syncModeratorAlumni([String(user.id)], { notify: "all", snap: next });
         res.locals.staffAudited = true;
         for (const role_id of added)
             await recordStaffAction({

@@ -86,7 +86,7 @@ async function renderStaffRoles(view) {
                           ${roleDot(role)}
                           <div>
                             <strong>${role.name}</strong>
-                            ${role.show_badge ? html`<span class="muted">Shows a staff badge</span>` : ""}
+                            ${role.badge === "moderator_alumni" ? html`<span class="muted">Shows the Moderator Programs Alumni badge</span>` : role.show_badge ? html`<span class="muted">Shows a staff badge</span>` : ""}
                           </div>
                         </div>
                       </td>
@@ -167,7 +167,11 @@ function openStaffRole(data, role, refresh) {
         </div>
         <label class="toggle"
           ><input type="checkbox" name="show_badge" ${role?.show_badge ? "checked" : ""} ${editable ? "" : "disabled"} /><span
-            >Show a staff badge<span class="hint">Members get the instance staff badge on their profile, named after this role.</span></span
+            >Show a badge<span class="hint"
+              >Members get the instance staff badge on their profile, named after this role. A moderator role, one with Moderate accounts or Remove content and none of
+              Manage accounts, Manage servers, Manage staff, Skip rate limits or Registration tokens, gives the Moderator Programs Alumni badge
+              instead.</span
+            ></span
           ></label
         >
         <fieldset class="stack" style="border: 0; padding: 0; margin: 0">

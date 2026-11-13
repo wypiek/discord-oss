@@ -37,10 +37,10 @@ A staff role is a named set of instance rights with a position, a color and a ba
 
 | Role            | Position | Rights                                                                                                    | Badge |
 | --------------- | -------- | --------------------------------------------------------------------------------------------------------- | ----- |
-| Admin           | 4        | `MANAGE_USERS`, `MANAGE_GUILDS`, `MANAGE_MESSAGES`, `MANAGE_STAFF`, `VIEW_AUDIT_LOG` and everything below | yes   |
-| Moderator       | 3        | `MODERATE_USERS`, `VIEW_MODERATION`, `VIEW_USERS`, `MANAGE_MESSAGES`                                      | yes   |
-| Support         | 2        | `SUPPORT_USERS`, `VIEW_USERS`, `VIEW_MODERATION`, `RESEND_VERIFICATION_EMAIL`                             | yes   |
-| Read-only audit | 1        | `VIEW_AUDIT_LOG`, `VIEW_MODERATION`                                                                       | no    |
+| Admin           | 4        | `MANAGE_USERS`, `MANAGE_GUILDS`, `MANAGE_MESSAGES`, `MANAGE_STAFF`, `VIEW_AUDIT_LOG` and everything below | Staff |
+| Moderator       | 3        | `MODERATE_USERS`, `VIEW_MODERATION`, `VIEW_USERS`, `MANAGE_MESSAGES`                                      | Moderator Programs Alumni |
+| Support         | 2        | `SUPPORT_USERS`, `VIEW_USERS`, `VIEW_MODERATION`, `RESEND_VERIFICATION_EMAIL`                             | Staff |
+| Read-only audit | 1        | `VIEW_AUDIT_LOG`, `VIEW_MODERATION`                                                                       | none  |
 
 | Right             | Allows                                                                                                        |
 | ----------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -52,7 +52,18 @@ A staff role is a named set of instance rights with a position, a color and a ba
 | `MANAGE_STAFF`    | Create, edit, reorder, delete and assign staff roles.                                                         |
 | `VIEW_AUDIT_LOG`  | Read the audit log.                                                                                           |
 
-Staff can't act on an account at or above their own level, which is their highest role position, and can't assign or move a role to it or above or give a role a right they don't have. They also can't open that account's page, sessions, two factor methods, invites, standing, staff roles, settings, widgets or pride badges, though the user search still lists it. Operators are above every role. A role with the badge switch on shows a staff badge on its members' profiles.
+Staff can't act on an account at or above their own level, which is their highest role position, and can't assign or move a role to it or above or give a role a right they don't have. They also can't open that account's page, sessions, two factor methods, invites, standing, staff roles, settings, widgets or pride badges, though the user search still lists it. Operators are above every role.
+
+### Role badges
+
+A role with the badge switch on gives its members a profile badge. Which badge depends on the role's rights:
+
+- A moderator role holds `MODERATE_USERS` or `MANAGE_MESSAGES` and none of `MANAGE_USERS`, `MANAGE_GUILDS`, `MANAGE_STAFF`, `BYPASS_RATE_LIMITS`, `SEND_BACKDATED_EVENTS` or `CREATE_REGISTRATION_TOKENS`. Its members get Discord's Moderator Programs Alumni badge and the `CERTIFIED_MODERATOR` public flag (`1 << 18`), and no staff badge. The default Moderator role is one.
+- Any other role gives the staff badge, named after the highest such role the member holds, for example "<instance name> Admin".
+
+Someone with a moderator role and another badge role shows both: the staff badge from the other role and the alumni badge. The rule only looks at rights, so renaming a role doesn't change its badge, and the Staff roles page says which badge each role shows.
+
+The alumni badge from a role is not stored on the account. Profiles add it while the person holds the role, and it goes away with the role. A Moderator Programs Alumni badge given by hand on the user's page stays when the role is removed, and the profile never shows it twice. The `CERTIFIED_MODERATOR` flag is on while the account has the badge from either source. Assigning or removing a role, editing a role's name, rights, position or badge switch, reordering roles, deleting a role, editing a user's badges and deleting the alumni badge all update the flag and send `USER_UPDATE` and a member update to clients, so open profiles refresh. Each API start runs the same check over every staff role member, every account with the flag and every account with the badge, so moderators from before this rule get the flag on the first start and nothing changes on later starts. Badges that come from raw account rights rather than roles are unchanged: an account whose own `rights` give it the admin panel still gets the stored staff badge.
 
 ## Audit log
 
