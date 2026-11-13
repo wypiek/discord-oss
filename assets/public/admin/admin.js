@@ -1171,6 +1171,24 @@ const setPath = (obj, path, value) => {
 };
 
 const CONNECTION_FIELD_LABELS = { clientId: "Client ID", clientSecret: "Client secret", apiKey: "API key" };
+const CONNECTION_ORIGIN_SOURCES = {
+  apiEndpoint: "the public API endpoint",
+  serverName: "the server name",
+  frontPage: "the homepage URL",
+};
+const CONNECTION_CALLBACK_LABELS = { steam: "Return URL", bluesky: "Client metadata URL" };
+const CONNECTION_CALLBACK_HINTS = {
+  steam: "Steam uses OpenID, so there is no app to register. People are sent back here after signing in.",
+  bluesky: "Bluesky reads this file to identify the instance. It must be reachable over public https.",
+};
+const connectionOriginWarning = (origin) => {
+  if (!origin) return html`<p><span class="badge danger"><span class="dot"></span>No public address, so no provider can send people back.</span></p>`;
+  const { protocol, hostname } = new URL(origin);
+  if (["localhost", "127.0.0.1", "[::1]"].includes(hostname) || hostname.endsWith(".localhost"))
+    return html`<p><span class="badge warn"><span class="dot"></span>This is a local address. Providers can only send back browsers on this machine.</span></p>`;
+  if (protocol !== "https:") return html`<p><span class="badge warn"><span class="dot"></span>Most providers only accept https callback URLs.</span></p>`;
+  return "";
+};
 
 async function renderSettings(view) {
   const s = await api("/admin/settings");
@@ -1281,7 +1299,23 @@ async function renderSettings(view) {
                         Providers people can link in User Settings, Connections. Each one also needs third-party integrations on, and most need an app registered with the provider.
                         Secrets stay on the server.
                     </p>
-                    ${connections.third_party ? "" : html`<p><span class="badge warn"><span class="dot"></span>Third-party integrations are off, so every provider is hidden.</span></p>`}
+                    <div class="stack" id="connections-general">
+                        <label class="toggle"
+                            ><input type="checkbox" id="connections-third-party" ${connections.third_party ? raw("checked") : ""} /><span
+                                >Allow third-party connections<span class="hint">Every provider stays hidden from User Settings while this is off.</span></span
+                            ></label
+                        >
+                        <label
+                            >Public address for callbacks<span class="hint"
+                                >Providers send people back to this address after they sign in. Leave blank to use the public API endpoint. Now using
+                                ${connections.callback_origin ?? "nothing, so sign-ins can't finish"}${connections.callback_origin_source && connections.callback_origin_source !== "connectionsOrigin"
+                                  ? ` from ${CONNECTION_ORIGIN_SOURCES[connections.callback_origin_source]}`
+                                  : ""}.</span
+                            ><input type="text" id="connections-origin" value="${connections.connections_origin ?? ""}" placeholder="https://example.com" spellcheck="false" autocomplete="off"
+                        /></label>
+                        ${connectionOriginWarning(connections.callback_origin)}
+                        <button class="btn" type="button" id="connections-general-save">Save connection settings</button>
+                    </div>
                     ${connections.connections.map(
                       (provider) =>
                         html`<details class="settings-section" data-connection="${provider.id}">
@@ -1314,8 +1348,16 @@ async function renderSettings(view) {
                                                 value="${field.value ?? ""}"
                                           /></label>`,
                                     )}
-                                    <label>Callback URL<span class="hint">Register this address with the provider.</span><input type="text" readonly value="${provider.callback_url}" /></label>
-                                    ${provider.setup_url ? html`<p class="hint"><a href="${provider.setup_url}" target="_blank" rel="noreferrer">Provider setup page</a></p>` : ""}
+                                    ${provider.id === "domain"
+                                      ? html`<p class="hint">Domains are verified with a DNS TXT record or a file on the domain, so there is nothing to register.</p>`
+                                      : html`<label
+                                            >${CONNECTION_CALLBACK_LABELS[provider.id] ?? "Redirect URL"}<span class="hint"
+                                                >${CONNECTION_CALLBACK_HINTS[provider.id] ?? "Register this exact address in the provider's app settings."}</span
+                                            ><span class="copy-row"
+                                                ><input type="text" readonly value="${provider.link_url}" /><button class="btn" type="button" data-copy-connection-url>Copy</button></span
+                                            ></label
+                                        >`}
+                                    ${provider.setup_url ? html`<p class="hint"><a href="${provider.setup_url}" target="_blank" rel="noreferrer">Open ${provider.name}'s developer page</a></p>` : ""}
                                     <button class="btn" type="button" data-connection-save>Save ${provider.name}</button>
                                 </div>
                             </details>`,
@@ -1568,6 +1610,32 @@ ${(s.register.blacklistedUsernames ?? []).join("\n")}</textarea>
     );
     if (saved) renderSettings(view);
   });
+  $("#connections-general-save", view).addEventListener("click", async (event) => {
+    const saved = await act(
+      event.currentTarget,
+      () =>
+        api("/admin/connections", {
+          method: "PATCH",
+          body: { third_party: $("#connections-third-party", view).checked, connections_origin: $("#connections-origin", view).value.trim() || null },
+        }),
+      "Connection settings saved",
+    );
+    if (saved) renderSettings(view);
+  });
+  for (const button of $$("[data-copy-connection-url]", view))
+    button.addEventListener("click", async () => {
+      const input = button.previousElementSibling;
+      try {
+        await navigator.clipboard.writeText(input.value);
+      } catch {
+        input.select();
+        document.execCommand("copy");
+      }
+      button.textContent = "Copied";
+      setTimeout(() => {
+        button.textContent = "Copy";
+      }, 1500);
+    });
   for (const section of $$("[data-connection]", view))
     $("[data-connection-save]", section).addEventListener("click", async (event) => {
       const values = {};

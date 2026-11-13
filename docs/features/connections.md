@@ -8,11 +8,11 @@ People link accounts from other services in User Settings, Connections, and choo
 
 ## Setting up providers
 
-Open the admin dashboard, Site settings, Connected accounts. Each provider has a switch, its credentials and the callback URL to register with the provider. Secrets are never sent back to the dashboard, only whether one is set. The dashboard refuses to turn a provider on before its required credentials are filled in. A save takes effect at once in the process that served it. When the API runs in several processes, restart the others.
+Open the admin dashboard, Site settings, Connected accounts. The top of the card turns third-party connections on or off and sets the public address used in callback URLs. Each provider has a switch, its credentials, the callback URL to register with the provider with a Copy button, and a link to the provider's developer page. Secrets are never sent back to the dashboard, only whether one is set. The dashboard refuses to turn a provider on before its required credentials are filled in. A save takes effect at once in the process that served it. When the API runs in several processes, restart the others.
 
 The settings live in the `connection_config` table as one row per `<provider>_<setting>` key, such as `roblox_clientId`, holding a JSON value. The older OAuth providers throw at startup when they are turned on without credentials, so prefer the dashboard over editing the table.
 
-Callback URLs are `<origin>/connections/<provider>/callback`. The origin is the first of `general.frontPage`, `general.serverName` and `api.endpointPublic` that is an `http` or `https` URL.
+Callback URLs are `<origin>/connections/<provider>/callback`. The origin is the first of these that gives an `http` or `https` URL: `api.connectionsOrigin`, which the card's public address field sets, `api.endpointPublic`, `general.serverName` with `https://` added when it has no scheme, and `general.frontPage`. The homepage URL comes last because it is only a link on the status page and can point to another site. The card shows which address is in use and warns when it is missing, local or not `https`, since most providers only accept `https` redirect URLs.
 
 | Provider | Credentials | On by default | Notes |
 | --- | --- | --- | --- |
