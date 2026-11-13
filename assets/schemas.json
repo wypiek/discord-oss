@@ -4141,6 +4141,49 @@
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
+    "RoleExpirationResponse": {
+        "type": "object",
+        "properties": {
+            "guild_id": {
+                "type": "string"
+            },
+            "user_id": {
+                "type": "string"
+            },
+            "role_id": {
+                "type": "string"
+            },
+            "expires_at": {
+                "type": "string"
+            },
+            "assigned_by": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "created_at": {
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "assigned_by",
+            "created_at",
+            "expires_at",
+            "guild_id",
+            "role_id",
+            "user_id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "RoleExpirationsResponse": {
+        "type": "array",
+        "items": {
+            "$ref": "#/definitions/RoleExpirationResponse"
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
     "SettingsProtoResponse": {
         "type": "object",
         "properties": {
@@ -5771,6 +5814,16 @@
                 "maxItems": 1000,
                 "type": "array"
             },
+            "role_expirations": {
+                "maxProperties": 250,
+                "type": "object",
+                "additionalProperties": {
+                    "type": [
+                        "null",
+                        "string"
+                    ]
+                }
+            },
             "nick": {
                 "maxLength": 32,
                 "type": [
@@ -5904,6 +5957,28 @@
             },
             "deaf": {
                 "type": "boolean"
+            }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "MemberRoleAssignSchema": {
+        "type": "object",
+        "properties": {
+            "expires_at": {
+                "maxLength": 64,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "duration_seconds": {
+                "minimum": 60,
+                "maximum": 31536000,
+                "type": [
+                    "null",
+                    "integer"
+                ]
             }
         },
         "additionalProperties": false,
@@ -17100,6 +17175,9 @@
                 "items": {
                     "type": "string"
                 }
+            },
+            "role_expirations": {
+                "$ref": "#/definitions/Record%3Cstring%2Cstring%3E"
             }
         },
         "required": [

@@ -38,6 +38,7 @@
 | [typing-indicator.md](features/typing-indicator.md) | Custom typing indicators with emojis, animations and your own text. |
 | [testing-status.md](features/testing-status.md) | The Testing status, a blue dot that mutes notifications, for accounts with the TESTING_PRESENCE right. |
 | [invite-roles.md](features/invite-roles.md) | Invites that give roles to the people who join through them. |
+| [temporary-roles.md](features/temporary-roles.md) | Roles given for a set time that the server removes when they expire. |
 | [status.md](features/status.md) | The public status page, component groups, uptime history and the API response time chart. |
 | [phones.md](features/phones.md) | The client on phones, installing it to the home screen, and Discord's Android app. |
 | [desktop.md](features/desktop.md) | The Discord OSS desktop and Android apps, their instance switcher, and building the installers and APK. |

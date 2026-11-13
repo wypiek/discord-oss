@@ -29,6 +29,7 @@ export * from "./Guild";
 export * from "./InstanceBan";
 export * from "./Invite";
 export * from "./Member";
+export * from "./MemberRoleExpiration";
 export * from "./Message";
 export * from "./Migration";
 export * from "./Note";

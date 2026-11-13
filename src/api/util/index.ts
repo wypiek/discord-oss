@@ -19,6 +19,8 @@ export * from "./handlers/ImageFiles";
 export * from "./handlers/CloudUploads";
 export * from "./handlers/UserMessage";
 export * from "./handlers/ScheduledMessages";
+export * from "./handlers/TemporaryRoles";
+export * from "./utility/roleExpiry";
 export * from "./utility/profile";
 export * from "./utility/collectiblePurchases";
 export * from "./utility/emailChange";

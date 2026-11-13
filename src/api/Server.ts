@@ -35,6 +35,7 @@ import {
     startImageFileSweeper,
     startMessagePurger,
     startScheduledMessageSender,
+    startTemporaryRoleExpirer,
     startThreadArchiver,
     syncAllModeratorAlumni,
 } from "./util";
@@ -158,6 +159,7 @@ export class SpacebarServer extends Server {
         await super.start();
         startThreadArchiver();
         startScheduledMessageSender();
+        startTemporaryRoleExpirer();
         startMessagePurger();
         startAttachmentFileSweeper();
         startImageFileSweeper();

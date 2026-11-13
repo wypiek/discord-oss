@@ -112,6 +112,7 @@ export const PublicMemberProjection: PublicMemberKeys[] = [
 export type PublicMember = Omit<Pick<Member, PublicMemberKeys>, "roles"> & {
     user: PublicUser;
     roles: string[]; // only role ids not objects
+    role_expirations?: Record<string, string>;
 };
 
 export type PublicMemberListResponse = PublicMember[];

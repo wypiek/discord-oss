@@ -7,6 +7,10 @@ export interface MemberChangeSchema {
      */
     roles?: GuildIdList;
     /**
+     * @maxProperties 250
+     */
+    role_expirations?: { [role_id: string]: string | null };
+    /**
      * @maxLength 32
      */
     nick?: string | null;

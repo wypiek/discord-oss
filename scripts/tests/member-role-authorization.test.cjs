@@ -21,6 +21,7 @@ function harness({ owner = false, actorRoles, roleOverrides = {} } = {}) {
         INVALID_FORM_BODY: new Error("Invalid form body"),
     };
     const writes = [];
+    const audits = [];
     const imports = {
         "@spacebar/database": {
             Guild: { findOneOrFail: async () => ({ id: "100", owner_id: owner ? "bot" : "owner" }) },
@@ -36,9 +37,13 @@ function harness({ owner = false, actorRoles, roleOverrides = {} } = {}) {
                     roles.filter((r) => (Array.isArray(where) ? where.some((w) => w.id === r.id && w.guild_id === r.guild_id) : r.guild_id === where.guild_id)),
                 findOne: async ({ where }) => roles.find((r) => r.id === where.id && r.guild_id === where.guild_id),
             },
-            AuditLog: { log: async () => {} },
+            AuditLog: { log: async (entry) => audits.push(entry) },
+            MemberRoleExpiration: {
+                forMember: async () => ({}),
+                setFor: async (member, ...args) => writes.push(["expiry", ...args]),
+            },
         },
-        "@spacebar/util": { DiscordApiErrors: errors },
+        "@spacebar/util": { DiscordApiErrors: errors, FieldErrors: (fields) => Object.assign(new Error("Invalid form body"), { fields }) },
         "@spacebar/util/util/IdentityModeration": {},
         "@spacebar/schemas": { AuditLogEvents: { MEMBER_ROLE_UPDATE: 25 } },
         "@spacebar/api/middlewares": { route: () => () => {} },
@@ -62,6 +67,8 @@ function harness({ owner = false, actorRoles, roleOverrides = {} } = {}) {
     }
     const helper = fs.existsSync(helperPath) ? load(helperPath) : {};
     imports["@spacebar/api/util/utility/memberRoleAuthorization"] = helper;
+    const expiry = load("src/api/util/utility/roleExpiry.ts");
+    imports["@spacebar/api/util"] = expiry;
     const handlers = {};
     const patchHandlers = {};
     const member = {
@@ -94,7 +101,7 @@ function harness({ owner = false, actorRoles, roleOverrides = {} } = {}) {
             ),
     };
     imports.typeorm = {};
-    imports["@spacebar/api/util"] = {};
+    imports["@spacebar/api/util"] = expiry;
     imports["@spacebar/util"].getPermission = async () => ({ hasThrow: () => {} });
     imports["@spacebar/util"].emitEvent = async () => {};
     imports["@spacebar/database"].AuditLog.diff = () => [];
@@ -110,15 +117,18 @@ function harness({ owner = false, actorRoles, roleOverrides = {} } = {}) {
         roles,
         errors,
         writes,
+        audits,
         helper,
+        member,
         patch: (body) => memberPatch({ user_id: "bot", params: { guild_id: "100", member_id: "target" }, body, headers: {} }, { json: () => {} }),
         bulkRole: (role_id, member_ids = ["800"]) => bulkRolePatch({ user_id: "bot", params: { guild_id: "100", role_id }, body: { member_ids } }, { json: () => {} }),
-        invoke: (method, role_id) =>
+        invoke: (method, role_id, body) =>
             handlers[method](
                 {
                     user_id: "bot",
                     params: { guild_id: "100", member_id: "@me", role_id },
                     headers: {},
+                    body,
                 },
                 { sendStatus: () => {} },
             ),
@@ -245,4 +255,71 @@ test("bulk role member endpoint preserves the owner exception for ordinary roles
     assert.equal(h.writes.length, 1);
     await assert.rejects(h.bulkRole("500"), (e) => e === h.errors.MISSING_PERMISSIONS);
     assert.equal(h.writes.length, 1);
+});
+
+test("temporary assignment follows the same hierarchy before any write", async () => {
+    for (const id of ["300", "400", "500", "100"]) {
+        const h = harness();
+        await assert.rejects(h.invoke("put", id, { duration_seconds: 3600 }), (e) => e === h.errors.MISSING_PERMISSIONS);
+        assert.equal(h.writes.length, 0);
+    }
+});
+test("temporary assignment rejects durations outside one minute to 365 days before any write", async () => {
+    for (const body of [
+        { duration_seconds: 59 },
+        { duration_seconds: 365 * 24 * 3600 + 1 },
+        { duration_seconds: 90.5 },
+        { expires_at: new Date(Date.now() - 1000).toISOString() },
+        { expires_at: new Date(Date.now() + 366 * 24 * 3600 * 1000).toISOString() },
+        { expires_at: "not a date" },
+        { expires_at: new Date(Date.now() + 3600_000).toISOString(), duration_seconds: 3600 },
+    ]) {
+        const h = harness();
+        await assert.rejects(h.invoke("put", "200", body), (e) => !!e.fields);
+        assert.equal(h.writes.length, 0);
+    }
+});
+test("temporary assignment passes the expiry to the role add and notes it in the audit reason", async () => {
+    const h = harness();
+    const before = Date.now();
+    await h.invoke("put", "200", { duration_seconds: 86400 });
+    assert.equal(h.writes.length, 1);
+    const [kind, user, guild, role, expiration] = h.writes[0];
+    assert.deepEqual([kind, user, guild, role, expiration.assigned_by], ["add", "bot", "100", "200", "bot"]);
+    assert.ok(Math.abs(expiration.expires_at.getTime() - before - 86400_000) < 5000);
+    assert.match(h.audits[0].reason, /temporary until/);
+});
+test("a bodyless role add clears any expiry, as the Discord-compatible call", async () => {
+    const h = harness();
+    await h.invoke("put", "200");
+    assert.equal(h.writes[0][4].expires_at, null);
+    assert.equal(h.audits[0].reason, undefined);
+});
+test("member PATCH role_expirations checks the hierarchy before saving", async () => {
+    const h = harness();
+    const later = new Date(Date.now() + 3600_000).toISOString();
+    await assert.rejects(h.patch({ role_expirations: { 300: later } }), (e) => e === h.errors.MISSING_PERMISSIONS);
+    await assert.rejects(h.patch({ role_expirations: { 500: later } }), (e) => e === h.errors.MISSING_PERMISSIONS);
+    await assert.rejects(h.patch({ role_expirations: { 100: later } }), (e) => !!e.fields);
+    assert.equal(h.writes.length, 0);
+});
+test("member PATCH role_expirations needs the role held after the change", async () => {
+    const h = harness();
+    const later = new Date(Date.now() + 3600_000).toISOString();
+    await assert.rejects(h.patch({ role_expirations: { 200: later } }), (e) => !!e.fields?.["role_expirations.200"]);
+    assert.equal(h.writes.length, 0);
+    await h.patch({ roles: ["300", "200"], role_expirations: { 200: later } });
+    assert.deepEqual(
+        h.writes.map((write) => write[0]),
+        ["save", "expiry"],
+    );
+    assert.equal(h.writes[1][1], "200");
+    assert.equal(h.writes[1][2].toISOString(), later);
+    assert.equal(h.writes[1][3], "bot");
+});
+test("member PATCH role_expirations null makes a held role permanent", async () => {
+    const h = harness();
+    await h.patch({ roles: ["300", "200"] });
+    await h.patch({ role_expirations: { 200: null } });
+    assert.deepEqual(Array.from(h.writes.at(-1)), ["expiry", "200", null, "bot"]);
 });
