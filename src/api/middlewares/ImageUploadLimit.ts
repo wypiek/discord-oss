@@ -26,7 +26,11 @@ const IMAGE_ROUTES: ImageRoute[] = [
     { methods: ["POST", "PATCH", "PUT"], path: /^\/admin(?:\/|$)/, images: 4 },
 ];
 
-export const apiRoutePath = (path: string) => path.replace(/^\/api(?:\/v\d+)?(?=\/|$)/, "").replace(/\/+$/, "") || "/";
+export const apiRoutePath = (path: string) =>
+    path
+        .replace(/%40/gi, "@")
+        .replace(/^\/api(?:\/v\d+)?(?=\/|$)/, "")
+        .replace(/\/+$/, "") || "/";
 
 export function imageUploadCount(method: string, path: string) {
     if (!/^\/api(?:\/|$)/.test(path)) return 0;
