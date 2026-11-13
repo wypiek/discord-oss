@@ -22,7 +22,7 @@ interface UserResponse {
 export default class FacebookConnection extends Connection {
     public readonly id = "facebook";
     public readonly friendlyName = "Facebook";
-    public readonly setupUrl = "(missing - contributions welcome)";
+    public readonly setupUrl = "https://developers.facebook.com/apps";
     public readonly requiredScopes = [];
 
     public readonly authorizeUrl = "https://www.facebook.com/v14.0/dialog/oauth";

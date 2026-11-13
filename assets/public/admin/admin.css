@@ -2659,3 +2659,14 @@ a.stat:focus-visible,
 .image-picker .btn {
   flex-direction: row;
 }
+
+.copy-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.copy-row input {
+    flex: 1;
+    min-width: 0;
+}

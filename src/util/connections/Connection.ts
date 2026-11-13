@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { ConnectedAccount } from "../../database/entities";
 import { ConnectedAccountSchema, ConnectionCallbackSchema } from "@spacebar/schemas";
 import { Config, DiscordApiErrors } from "../util";
+import { resolveConnectionOrigin } from "./ConnectionOrigin";
 
 export interface ConnectionState {
     userId: string;
@@ -16,9 +17,13 @@ export interface AuthorizationOptions {
 const STATE_LIFETIME = 15 * 60 * 1000;
 const MAX_STATES = 10_000;
 
-export function publicWebOrigin() {
+export function connectionOriginSource() {
     const { general, api } = Config.get();
-    return [general.frontPage, general.serverName, api.endpointPublic].map((value) => (value && /^https?:\/\//.test(value) ? new URL(value).origin : null)).find(Boolean) ?? "";
+    return resolveConnectionOrigin(general, api);
+}
+
+export function publicWebOrigin() {
+    return connectionOriginSource().origin;
 }
 
 export abstract class Connection {
