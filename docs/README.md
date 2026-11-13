@@ -30,6 +30,7 @@
 | [activities.md](features/activities.md) | Embedded activities. |
 | [profile-widgets.md](features/profile-widgets.md) | Application profile widgets. |
 | [profile-privacy.md](features/profile-privacy.md) | The Private profile setting and what people who aren't friends see. |
+| [profile-banners.md](features/profile-banners.md) | How a profile banner is uploaded, stored, sent to other people and served. |
 | [badges.md](features/badges.md) | Profile badges, levelled badges, legacy badges, the Features badge and rarity. |
 | [pride-badges.md](features/pride-badges.md) | Pride flags after display names and at signup. |
 | [homepage.md](features/homepage.md) | The instance homepage and the loading screen. |

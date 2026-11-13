@@ -135,7 +135,7 @@ router.get("/", route({ responses: { 200: { body: "UserProfileResponse" } } }), 
             : {}),
     };
 
-    res.json((await viewerSeesFullProfile(user_id, req.user_id, req.rights)) ? profile : limitedProfile(profile));
+    res.set("Cache-Control", "private, no-store").json((await viewerSeesFullProfile(user_id, req.user_id, req.rights)) ? profile : limitedProfile(profile));
 });
 
 router.patch("/", route({ requestBody: "UserProfileModifySchema" }), async (req: Request, res: Response) => {

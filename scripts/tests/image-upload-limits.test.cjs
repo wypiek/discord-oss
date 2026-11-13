@@ -60,6 +60,8 @@ test("only routes that take image data URIs get a larger JSON body limit", () =>
         ["PATCH", "/api/guilds/1570868838633877682", 4],
         ["PATCH", "/api/v10/users/@me", 2],
         ["PATCH", "/api/v9/users/@me/profile", 1],
+        ["PATCH", "/api/v9/users/%40me/profile", 1],
+        ["PATCH", "/api/v9/guilds/1/profile/%40me", 2],
         ["PATCH", "/api/v9/guilds/1/profile", 2],
         ["PATCH", "/api/v9/guilds/1/profile/@me", 2],
         ["PATCH", "/api/v9/guilds/1/members/@me", 2],
@@ -98,6 +100,8 @@ test("a 10 MiB banner fits its route while other routes keep the 10 MiB body lim
         const accepted = await send(port, "PATCH", "/api/v9/guilds/1", { banner });
         assert.equal(accepted.status, 200, accepted.body);
         assert.ok(JSON.parse(accepted.body).received > 13 * MiB);
+        const profileBanner = await send(port, "PATCH", "/api/v9/users/%40me/profile", { banner });
+        assert.equal(profileBanner.status, 200, profileBanner.body);
         const refused = await send(port, "POST", "/api/v9/channels/1/messages", { content: banner });
         assert.equal(refused.status, 413);
         assert.deepEqual(JSON.parse(refused.body), { message: "Request entity too large", code: 40005 });
@@ -127,6 +131,7 @@ test("an image over 10 MiB is refused with Discord's field error", () => {
     };
     assert.equal(run({ banner: dataUri(MAX_IMAGE_UPLOAD_BYTES) }), undefined);
     assert.equal(run({ banner: dataUri(MAX_IMAGE_UPLOAD_BYTES + 1) }, "POST", "/api/v9/channels/1/messages"), undefined);
+    assert.equal(run({ banner: dataUri(MAX_IMAGE_UPLOAD_BYTES + 1) }, "PATCH", "/api/v9/users/%40me/profile").code, 50035);
     const error = run({ banner: dataUri(MAX_IMAGE_UPLOAD_BYTES + 1), splash: dataUri(4) });
     assert.equal(error.code, 50035);
     assert.equal(error.message, "Invalid Form Body");
