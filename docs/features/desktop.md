@@ -55,3 +55,20 @@ Signing is optional:
 - Android: set `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD` and optionally `ANDROID_KEY_ALIAS` (default `discord-oss`). Without them each build is signed with a new key, and Android won't install it over an earlier one.
 
 To build the desktop installers locally, run `bun run --cwd apps/desktop dist`. They land in `apps/desktop/release`.
+
+## Switching the official Discord desktop apps
+
+The official Discord desktop apps (Stable, PTB, Canary and Development) can use a Discord OSS instance too, with an instance switcher inside the app. `apps/official-desktop` holds a small module that the app's own main process loads in front of Discord's desktop core, and an installer that adds it. Nothing in Discord's files changes except one `try { require(...) } catch` line at the top of `discord_desktop_core/index.js`, and a failure in the module can't stop Discord from starting.
+
+Once installed, the app has a Switch instance item in its tray menu and, on macOS, in the app menu, and `Cmd+Shift+O` or `Ctrl+Shift+O` opens it from the main window. The switcher lists Discord and the instances used before, with the current one marked, and has a field to add one. A new address is checked through `/.well-known/discord-oss`. Choosing an instance writes `WEBAPP_ENDPOINT` and `API_ENDPOINT` to the app's `settings.json`, which the official app reads itself, and restarts the app. Choosing Discord removes both keys. The list is kept in `discord-oss-instances.json` next to `settings.json`.
+
+The installer is one program per platform, built by the `switcher` job in `.github/workflows/apps.yml` as `Discord-OSS-Instance-Switcher-<platform>`:
+
+| Command | What it does |
+| --- | --- |
+| `install` | Adds the switcher to every official app it finds, or only one with `--channel stable`, `ptb`, `canary` or `development`. |
+| `install --instance discord.lifestyle` | Also points the app at that instance right away. `--discord` points it back at discord.com. |
+| `uninstall` | Removes the line and the module again. |
+| `status` | Lists the apps it found and whether the switcher is installed. |
+
+It finds the apps in `~/Library/Application Support/<profile>` on macOS, `%LOCALAPPDATA%\<app>` on Windows and `~/.config/<profile>` on Linux. Restart the app after installing. A Discord update replaces the desktop core, so run `install` again after one. `scripts/tests/official-desktop-switcher.test.cjs` covers the settings it writes, the discovery check and installing into a fake app folder.

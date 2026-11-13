@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'" />
+        <title>Switch instance</title>
+        <style>
+            :root {
+                color-scheme: dark;
+                font-family: "gg sans", "Noto Sans", -apple-system, "Segoe UI", sans-serif;
+            }
+            body {
+                margin: 0;
+                padding: 24px;
+                background: #1a1a1e;
+                color: #f2f3f5;
+                user-select: none;
+            }
+            h1 {
+                margin: 0 0 6px;
+                font-size: 22px;
+            }
+            p {
+                margin: 0 0 18px;
+                color: #b5bac1;
+                font-size: 13px;
+                line-height: 1.45;
+            }
+            .label {
+                margin: 20px 0 8px;
+                color: #b5bac1;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+                text-transform: uppercase;
+            }
+            .row {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                width: 100%;
+                margin-bottom: 8px;
+                padding: 12px 14px;
+                border: 1px solid transparent;
+                border-radius: 10px;
+                background: #242429;
+                color: inherit;
+                font: inherit;
+                text-align: left;
+                cursor: pointer;
+            }
+            .row:hover {
+                background: #2e2e34;
+            }
+            .row.current {
+                border-color: #5865f2;
+            }
+            .row .text {
+                flex: 1;
+                min-width: 0;
+            }
+            .row .name {
+                font-size: 15px;
+                font-weight: 600;
+            }
+            .row .host {
+                margin-top: 2px;
+                overflow: hidden;
+                color: #b5bac1;
+                font-size: 12px;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .badge {
+                color: #5865f2;
+                font-size: 11px;
+                font-weight: 700;
+            }
+            .forget {
+                padding: 4px 8px;
+                border: 0;
+                border-radius: 6px;
+                background: transparent;
+                color: #b5bac1;
+                font: inherit;
+                font-size: 12px;
+                cursor: pointer;
+            }
+            .forget:hover {
+                background: #3a3a40;
+                color: #f23f43;
+            }
+            input {
+                box-sizing: border-box;
+                width: 100%;
+                padding: 11px 12px;
+                border: 1px solid #3a3a40;
+                border-radius: 8px;
+                outline: none;
+                background: #111114;
+                color: #f2f3f5;
+                font: inherit;
+                font-size: 15px;
+                user-select: text;
+            }
+            input:focus {
+                border-color: #5865f2;
+            }
+            .error {
+                min-height: 18px;
+                margin-top: 8px;
+                color: #f23f43;
+                font-size: 13px;
+            }
+            .actions {
+                display: flex;
+                gap: 8px;
+                margin-top: 10px;
+            }
+            .button {
+                flex: 1;
+                padding: 10px;
+                border: 0;
+                border-radius: 8px;
+                background: #5865f2;
+                color: #fff;
+                font: inherit;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+            }
+            .button.secondary {
+                background: #2e2e34;
+            }
+            .button:disabled {
+                opacity: 0.5;
+                cursor: default;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Switch instance</h1>
+        <p id="intro">Choose where this app connects. It restarts on the instance you pick, and you sign in with that instance's account.</p>
+        <div id="list"></div>
+        <div class="label">Add a Discord OSS instance</div>
+        <form id="add">
+            <input id="address" placeholder="discord.lifestyle" autocomplete="off" spellcheck="false" />
+            <div class="error" id="error" role="alert"></div>
+            <div class="actions">
+                <button class="button secondary" type="button" id="cancel">Cancel</button>
+                <button class="button" type="submit" id="connect">Connect</button>
+            </div>
+        </form>
+        <script>
+            const api = window.discordOss;
+            const list = document.getElementById("list");
+            const error = document.getElementById("error");
+            const address = document.getElementById("address");
+            const connect = document.getElementById("connect");
+            let state = { current: null, instances: [] };
+
+            const element = (tag, className, text) => {
+                const node = document.createElement(tag);
+                if (className) node.className = className;
+                if (text !== undefined) node.textContent = text;
+                return node;
+            };
+
+            const hostOf = (url) => url.replace(/^https?:\/\//, "");
+
+            const busy = (label) => {
+                connect.disabled = !!label;
+                connect.textContent = label || "Connect";
+                for (const button of list.querySelectorAll("button")) button.disabled = !!label;
+            };
+
+            const choose = async (instance) => {
+                if ((instance?.url ?? null) === state.current) return api.close();
+                busy("Restarting…");
+                await api.switchTo(instance);
+            };
+
+            const row = (instance, current, name, host) => {
+                const button = element("button", `row${current ? " current" : ""}`);
+                button.type = "button";
+                const text = element("div", "text");
+                text.append(element("div", "name", name), element("div", "host", host));
+                button.append(text);
+                if (current) button.append(element("span", "badge", "CURRENT"));
+                if (instance && !current) {
+                    const forget = element("span", "forget", "Remove");
+                    forget.setAttribute("role", "button");
+                    forget.addEventListener("click", async (event) => {
+                        event.stopPropagation();
+                        state.instances = await api.forget(instance.url);
+                        render();
+                    });
+                    button.append(forget);
+                }
+                button.addEventListener("click", () => choose(instance));
+                return button;
+            };
+
+            const render = () => {
+                list.replaceChildren(row(null, state.current === null, "Discord", "discord.com"));
+                const known = [...state.instances];
+                if (state.current && !known.some((item) => item.url === state.current)) known.unshift({ url: state.current, name: hostOf(state.current) });
+                for (const instance of known) list.append(row(instance, instance.url === state.current, instance.name, hostOf(instance.url)));
+            };
+
+            document.getElementById("add").addEventListener("submit", async (event) => {
+                event.preventDefault();
+                error.textContent = "";
+                if (!address.value.trim()) return;
+                busy("Checking…");
+                try {
+                    const instance = await api.discover(address.value);
+                    await choose(instance);
+                } catch (failure) {
+                    busy(null);
+                    error.textContent = String(failure?.message ?? failure).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+                }
+            });
+            document.getElementById("cancel").addEventListener("click", () => api.close());
+            document.addEventListener("keydown", (event) => event.key === "Escape" && api.close());
+
+            address.focus();
+            api.state().then((next) => {
+                if (!next) return;
+                state = next;
+                render();
+            });
+        </script>
+    </body>
+</html>

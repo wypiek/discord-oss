@@ -68,3 +68,6 @@ workers/.dev/
 apps/desktop/release/
 apps/mobile/www/switcher.js
 apps/mobile/android/app/build/
+apps/official-desktop/dist/
+apps/official-desktop/node_modules/
+*.bun-build
