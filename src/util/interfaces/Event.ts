@@ -318,6 +318,7 @@ export interface GuildMemberUpdateEvent extends Event {
     data: {
         guild_id: string;
         roles: string[];
+        role_expirations?: Record<string, string>;
         user: PublicUser;
         nick?: string;
         joined_at?: Date;

@@ -1,0 +1,156 @@
+.fosscord-temp-roles-badge {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    margin-left: 2px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: var(--text-muted);
+}
+
+button.fosscord-temp-roles-badge {
+    cursor: pointer;
+}
+
+button.fosscord-temp-roles-badge:hover {
+    color: var(--text-default);
+}
+
+.fosscord-temp-roles-badge:focus-visible {
+    outline: 2px solid var(--brand-500);
+    outline-offset: 1px;
+}
+
+.fosscord-temp-roles-modal .fosscord-temp-roles-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 16px;
+}
+
+.fosscord-temp-roles-role {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--background-base-lower);
+}
+
+.fosscord-temp-roles-dot {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    border-radius: 50%;
+}
+
+.fosscord-temp-roles-label {
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.fosscord-temp-roles-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.fosscord-temp-roles-chip {
+    padding: 6px 14px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    background: var(--background-base-lower);
+    color: var(--text-default);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+        background-color 120ms ease-out,
+        border-color 120ms ease-out;
+}
+
+.fosscord-temp-roles-chip:hover {
+    background: var(--background-mod-subtle);
+}
+
+.fosscord-temp-roles-chip[aria-checked="true"] {
+    border-color: var(--brand-500);
+    background: var(--brand-500);
+    color: var(--white);
+}
+
+.fosscord-temp-roles-chip:focus-visible,
+.fosscord-temp-roles-picker-toggle:focus-visible {
+    outline: 2px solid var(--brand-500);
+    outline-offset: 2px;
+}
+
+.fosscord-temp-roles-custom {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.fosscord-temp-roles-input {
+    padding: 8px 10px;
+    border: 1px solid var(--input-border, var(--border-subtle));
+    border-radius: 8px;
+    background: var(--input-background, var(--background-base-lowest));
+    color: var(--text-default);
+    font-size: 14px;
+    color-scheme: light dark;
+}
+
+.fosscord-temp-roles-input[aria-invalid="true"] {
+    border-color: var(--status-danger);
+}
+
+.fosscord-temp-roles-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--background-base-lower);
+}
+
+.fosscord-temp-roles-footer {
+    gap: 8px;
+}
+
+.fosscord-temp-roles-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.fosscord-temp-roles-picker-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--background-surface-high, var(--background-floating));
+    color: var(--interactive-normal);
+    font-size: 14px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: var(--shadow-high, none);
+}
+
+.fosscord-temp-roles-picker-toggle:hover {
+    color: var(--interactive-hover);
+}
+
+.fosscord-temp-roles-picker-toggle[aria-pressed="true"] {
+    border-color: var(--brand-500);
+    color: var(--text-strong);
+}

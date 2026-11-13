@@ -2,7 +2,22 @@ import { assertIdentityNameAllowed } from "@spacebar/util/util/IdentityModeratio
 import { Request, Response, Router } from "express";
 import { authorizeMemberRoleChanges } from "@spacebar/api/util/utility/memberRoleAuthorization";
 import { route } from "@spacebar/api/middlewares";
-import { Application, AuditLog, Ban, Channel, Emoji, Guild, Member, OAuth2Token, PublicGuildRelations, Role, Sticker, VoiceChannels, VoiceState } from "@spacebar/database";
+import {
+    Application,
+    AuditLog,
+    Ban,
+    Channel,
+    Emoji,
+    Guild,
+    Member,
+    MemberRoleExpiration,
+    OAuth2Token,
+    PublicGuildRelations,
+    Role,
+    Sticker,
+    VoiceChannels,
+    VoiceState,
+} from "@spacebar/database";
 import { IsNull, MoreThan, Not } from "typeorm";
 import {
     CollectibleItemType,
@@ -20,7 +35,15 @@ import {
     Permissions,
     ReadyGuildDTO,
 } from "@spacebar/util";
-import { assertOutranks, checkMemberProfile, noteRightsBypass, onGuildMemberJoin } from "@spacebar/api/util";
+import {
+    assertOutranks,
+    checkMemberProfile,
+    describeRoleExpiry,
+    noteRightsBypass,
+    onGuildMemberJoin,
+    resolveRoleExpirationChanges,
+    roleExpiryAuditReason,
+} from "@spacebar/api/util";
 import { AuditLogEvents, MemberChangeSchema, PublicMemberProjection, PublicUserProjection } from "@spacebar/schemas";
 
 const router = Router({ mergeParams: true });
@@ -153,6 +176,7 @@ router.get(
             ...member.toPublicMember(),
             user: member.user.toPublicUser(),
             roles: member.roles.map((x) => x.id).filter((id) => id !== guild_id),
+            role_expirations: await MemberRoleExpiration.forMember(guild_id, member_id),
         });
     },
 );
@@ -197,6 +221,22 @@ router.patch(
         if ("roles" in body) {
             permission.hasThrow("MANAGE_ROLES");
             authorizedRoles = await authorizeMemberRoleChanges(req.user_id, guild_id, rolesBefore, body.roles ?? []);
+        }
+        const expirationChanges = resolveRoleExpirationChanges(body.role_expirations, guild_id);
+        if (expirationChanges.size) {
+            permission.hasThrow("MANAGE_ROLES");
+            await authorizeMemberRoleChanges(req.user_id, guild_id, [], [...expirationChanges.keys()]);
+            const heldAfter = new Set((authorizedRoles ?? member.roles).map((role) => role.id));
+            const missing = [...expirationChanges].filter(([role_id, expires_at]) => expires_at && !heldAfter.has(role_id)).map(([role_id]) => role_id);
+            if (missing.length)
+                throw FieldErrors(
+                    Object.fromEntries(
+                        missing.map((role_id) => [
+                            `role_expirations.${role_id}`,
+                            { code: "ROLE_NOT_ASSIGNED", message: "Assign the role in roles, or to the member first, before giving it an expiry." },
+                        ]),
+                    ),
+                );
         }
 
         if ("nick" in body) {
@@ -244,6 +284,7 @@ router.patch(
             avatar_id,
             vad_colors,
             channel_id: voiceChannelId,
+            role_expirations: _roleExpirations,
             ...changes
         } = body;
 
@@ -347,6 +388,7 @@ router.patch(
         }
 
         await member.save();
+        for (const [role_id, expires_at] of expirationChanges) await MemberRoleExpiration.setFor(member, role_id, expires_at, req.user_id);
         if ("mute" in body || "deaf" in body) await VoiceChannels.setServerMute(guild_id, member_id, { mute: body.mute, deaf: body.deaf });
         if ("channel_id" in body) await VoiceChannels.move(guild_id, member_id, voiceChannelId ?? null);
         else if (member.communication_disabled_until) await VoiceChannels.move(guild_id, member_id, null).catch(() => undefined);
@@ -357,6 +399,7 @@ router.patch(
             guild_id,
             user: member.user.toPublicUser(),
             roles: member.roles.map((x) => x.id),
+            role_expirations: await MemberRoleExpiration.forMember(guild_id, member_id),
         };
 
         // do not use promise.all as we have to first write to db before emitting the event to catch errors
@@ -385,8 +428,11 @@ router.patch(
             });
         const added = data.roles.filter((id) => !rolesBefore.includes(id));
         const removed = rolesBefore.filter((id) => id !== guild_id && !data.roles.includes(id));
-        if ("roles" in body && (added.length || removed.length)) {
+        const rolesChanged = "roles" in body && (added.length || removed.length);
+        const expiring = [...expirationChanges].filter(([role_id]) => data.roles.includes(role_id));
+        if (rolesChanged || expiring.length) {
             const names = new Map((await Role.find({ where: { guild_id }, select: { id: true, name: true } })).map((role) => [role.id, role.name]));
+            const expiryNotes = expiring.map(([role_id, expires_at]) => describeRoleExpiry(names.get(role_id), expires_at));
             await AuditLog.log({
                 guild_id,
                 user_id: req.user_id,
@@ -396,7 +442,7 @@ router.patch(
                     ...(added.length ? [{ key: "$add", new_value: added.map((id) => ({ id, name: names.get(id) })) }] : []),
                     ...(removed.length ? [{ key: "$remove", new_value: removed.map((id) => ({ id, name: names.get(id) })) }] : []),
                 ] as unknown as AuditLog["changes"],
-                reason,
+                reason: roleExpiryAuditReason(reason, expiryNotes),
             });
         }
 

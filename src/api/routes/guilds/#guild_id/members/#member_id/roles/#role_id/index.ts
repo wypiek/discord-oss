@@ -1,4 +1,5 @@
 import { authorizeMemberRoleChanges } from "@spacebar/api/util/utility/memberRoleAuthorization";
+import { describeRoleExpiry, resolveRoleAssignmentExpiry, roleExpiryAuditReason } from "@spacebar/api/util";
 import { route } from "@spacebar/api/middlewares";
 import { AuditLog, Member, Role } from "@spacebar/database";
 import { DiscordApiErrors } from "@spacebar/util";
@@ -47,6 +48,9 @@ router.put(
         permission: "MANAGE_ROLES",
         responses: {
             204: {},
+            400: {
+                body: "APIErrorResponse",
+            },
             403: {},
         },
     }),
@@ -55,8 +59,9 @@ router.put(
         const member_id = req.params.member_id === "@me" ? req.user_id : (req.params.member_id as string);
 
         if (role_id === guild_id) throw DiscordApiErrors.MISSING_PERMISSIONS;
+        const expires_at = resolveRoleAssignmentExpiry(req.body);
         await authorizeMemberRoleChanges(req.user_id, guild_id, [], [role_id]);
-        await Member.addRole(member_id, guild_id, role_id);
+        await Member.addRole(member_id, guild_id, role_id, { expires_at, assigned_by: req.user_id });
         const role = await Role.findOne({
             where: { id: role_id, guild_id },
             select: { id: true, name: true },
@@ -67,7 +72,7 @@ router.put(
             action_type: AuditLogEvents.MEMBER_ROLE_UPDATE,
             target_id: member_id,
             changes: [{ key: "$add", new_value: [{ id: role_id, name: role?.name }] }] as unknown as AuditLog["changes"],
-            reason: req.headers["x-audit-log-reason"],
+            reason: roleExpiryAuditReason(req.headers["x-audit-log-reason"], expires_at ? [describeRoleExpiry(role?.name, expires_at)] : []),
         });
         res.sendStatus(204);
     },
