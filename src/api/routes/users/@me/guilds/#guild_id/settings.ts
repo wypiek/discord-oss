@@ -1,9 +1,8 @@
 import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
-import { Channel, Guild, Member, Recipient, User, userGuildSettingsEntry } from "@spacebar/database";
+import { assertChannelOverridesInScope } from "@spacebar/api/util/utility/guildSettingsChannels";
+import { Guild, Member, User, userGuildSettingsEntry } from "@spacebar/database";
 import { DefaultUserGuildSettings, UserGuildSettings, UserGuildSettingsSchema } from "@spacebar/schemas";
-import { In } from "typeorm";
-import { DiscordApiErrors } from "@spacebar/util";
 
 const isPrivate = (guild_id: string) => guild_id === "@me" || guild_id === "null";
 
@@ -56,22 +55,9 @@ router.patch(
     async (req: Request, res: Response) => {
         const body = req.body as UserGuildSettingsSchema;
         const guild_id = req.params.guild_id as string;
-        const channel_ids = Object.keys(body.channel_overrides ?? {});
-
-        if (isPrivate(guild_id)) {
-            if (
-                channel_ids.length &&
-                (await Recipient.count({
-                    where: { user_id: req.user_id, channel_id: In(channel_ids) },
-                })) !== channel_ids.length
-            )
-                throw DiscordApiErrors.UNKNOWN_CHANNEL;
-            return res.json(await Member.updateGuildSettings(req.user_id, null, body as Partial<UserGuildSettings>));
-        }
-
-        if (channel_ids.length && (await Channel.count({ where: { id: In(channel_ids), guild_id } })) !== channel_ids.length) throw DiscordApiErrors.UNKNOWN_CHANNEL;
-
-        res.json(await Member.updateGuildSettings(req.user_id, guild_id, body as Partial<UserGuildSettings>));
+        const target = isPrivate(guild_id) ? null : guild_id;
+        await assertChannelOverridesInScope(req.user_id, target, body.channel_overrides);
+        res.json(await Member.updateGuildSettings(req.user_id, target, body as Partial<UserGuildSettings>));
     },
 );
 

@@ -24,6 +24,7 @@
 | [announcements.md](features/announcements.md) | Encrypted announcements from the official account. |
 | [discovery.md](features/discovery.md) | The Discover page, search and ranking. |
 | [notifications.md](features/notifications.md) | Notification settings, read states and Web Push. |
+| [channel-pinning.md](features/channel-pinning.md) | Pinning channels to the top of your own channel list in any server. |
 | [link-embeds.md](features/link-embeds.md) | Link previews and embedded media. |
 | [markdown-attachments.md](features/markdown-attachments.md) | The preview of Markdown file attachments and the LaTeX math it typesets. |
 | [activities.md](features/activities.md) | Embedded activities. |
