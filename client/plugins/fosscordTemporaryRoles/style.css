@@ -134,23 +134,38 @@ button.fosscord-temp-roles-badge:hover {
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 100%;
+    min-height: 40px;
     padding: 8px 12px;
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
     background: var(--background-surface-high, var(--background-floating));
-    color: var(--interactive-normal);
+    color: var(--text-default);
     font-size: 14px;
     font-weight: 500;
+    line-height: 18px;
     text-align: left;
     cursor: pointer;
-    box-shadow: var(--shadow-high, none);
+    transition:
+        background-color 120ms ease-out,
+        border-color 120ms ease-out;
+}
+
+.fosscord-temp-roles-picker-toggle .fosscord-temp-roles-clock {
+    flex-shrink: 0;
+    color: var(--text-muted);
 }
 
 .fosscord-temp-roles-picker-toggle:hover {
-    color: var(--interactive-hover);
+    background: var(--background-mod-subtle, var(--background-surface-higher));
 }
 
 .fosscord-temp-roles-picker-toggle[aria-pressed="true"] {
     border-color: var(--brand-500);
-    color: var(--text-strong);
+    background: color-mix(in oklab, var(--brand-500) 18%, var(--background-surface-high, var(--background-floating)));
+    color: var(--text-strong, var(--header-primary));
+}
+
+.fosscord-temp-roles-picker-toggle[aria-pressed="true"] .fosscord-temp-roles-clock {
+    color: var(--brand-360, var(--brand-500));
 }
