@@ -179,7 +179,7 @@ chat.example.com {
 }
 ```
 
-A proxy on another host needs its address in `TRUSTED_PROXIES` and must be the only host that can reach port 3001. Register at `https://chat.example.com/register` and grant your account the operator right, see [setup.md](setup.md#operator-account):
+Caddy accepts request bodies of any size. nginx refuses bodies over 1 MiB by default, which breaks banner and attachment uploads, so add `client_max_body_size 500m;` to its server block, see [limits.md](../security/limits.md#images-stickers-and-sounds). A proxy on another host needs its address in `TRUSTED_PROXIES` and must be the only host that can reach port 3001. Register at `https://chat.example.com/register` and grant your account the operator right, see [setup.md](setup.md#operator-account):
 
 ```sh
 sudo -u meowcord /usr/local/bin/bun --env-file=/etc/meowcord/meowcord.env /opt/meowcord/scripts/ops/operator.mjs grant ACCOUNT_ID

@@ -15,6 +15,7 @@ export * from "./email";
 export * from "./ipc/Event";
 export * from "./ipc/BackgroundWork";
 export * from "./FieldError";
+export * from "./ImageUpload";
 export * from "./Intents";
 export * from "./InvisibleCharacters";
 export * from "./JSON";

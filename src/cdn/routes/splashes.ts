@@ -1,13 +1,11 @@
 import { Router, Response, Request } from "express";
-import crypto from "node:crypto";
 import { fileTypeFromBuffer } from "file-type";
 import { HTTPError } from "lambert-server/HTTPError";
 import { Config, isRequestSignature } from "@spacebar/util";
-import { storage, internalUpload, setCacheControl, setCacheControlNotFound, safeMediaType } from "../util";
+import { storage, internalUpload, setCacheControl, setCacheControlNotFound } from "../util";
+import { imageHash, sendImage } from "../util/imageVariants";
 
 // TODO: check premium and animated pfp are allowed in the config
-// TODO: generate different sizes of icon
-// TODO: generate different image types of icon
 // TODO: delete old icons
 
 const ANIMATED_MIME_TYPES = ["image/apng", "image/gif", "image/gifv"];
@@ -25,11 +23,9 @@ router.post(
         const { buffer, size } = req.file;
         const { guild_id } = req.params as { [key: string]: string };
 
-        let hash = crypto.createHash("md5").update(buffer).digest("hex");
-
         const type = await fileTypeFromBuffer(buffer);
         if (!type || !ALLOWED_MIME_TYPES.includes(type.mime)) throw new HTTPError("Invalid file type");
-        if (ANIMATED_MIME_TYPES.includes(type.mime)) hash = `a_${hash}`; // animated icons have a_ infront of the hash
+        const hash = imageHash(buffer, type.mime);
 
         const path = `${pathPrefix}/${guild_id}/${hash}`;
         const endpoint = Config.get().cdn.endpointPublic;
@@ -52,11 +48,7 @@ router.get("/:guild_id", setCacheControl, async (req: Request, res: Response) =>
 
     const file = await storage.get(path);
     if (!file) return setCacheControlNotFound(req, res);
-    const type = await fileTypeFromBuffer(file);
-
-    res.set("Content-Type", safeMediaType(type?.mime));
-
-    return res.send(file);
+    return sendImage(req, res, path, file);
 });
 
 export const getAvatar = async (req: Request, res: Response) => {
@@ -67,11 +59,7 @@ export const getAvatar = async (req: Request, res: Response) => {
 
     const file = await storage.get(path);
     if (!file) return setCacheControlNotFound(req, res);
-    const type = await fileTypeFromBuffer(file);
-
-    res.set("Content-Type", safeMediaType(type?.mime));
-
-    return res.send(file);
+    return sendImage(req, res, path, file);
 };
 
 router.get("/:guild_id/:hash", setCacheControl, getAvatar);

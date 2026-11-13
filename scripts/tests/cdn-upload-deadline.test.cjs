@@ -25,6 +25,8 @@ const load = (endpoint, uploadDeadlineSeconds) => {
             require(name) {
                 if (name === "lambert-server/HTTPError") return { HTTPError };
                 if (name === "./AttachmentFilename") return require("../../src/util/util/AttachmentFilename.ts");
+                if (name === "./Constants") return require("../../src/util/util/Constants.ts");
+                if (name === "./ImageUpload") return require("../../src/util/util/ImageUpload.ts");
                 if (name === "./Config")
                     return { Config: { get: () => ({ security: { requestSignature: "trusted" }, cdn: { endpointPrivate: endpoint, uploadDeadlineSeconds } }) } };
                 if (name === "../../cdn/util/storageOwnership") return { storageOwnership: { getStore: () => undefined, run: (_principal, work) => work() } };

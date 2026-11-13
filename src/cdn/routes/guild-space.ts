@@ -1,9 +1,9 @@
-import crypto from "node:crypto";
 import { Router, Response, Request } from "express";
 import { fileTypeFromBuffer } from "file-type";
 import { HTTPError } from "lambert-server/HTTPError";
 import { Config, isRequestSignature } from "@spacebar/util";
-import { storage, internalUpload, setCacheControl, setCacheControlNotFound, safeMediaType } from "../util";
+import { storage, internalUpload, setCacheControl, setCacheControlNotFound } from "../util";
+import { imageHash, sendImage } from "../util/imageVariants";
 
 const ANIMATED_MIME_TYPES = ["image/apng", "image/gif", "image/gifv"];
 const ALLOWED_MIME_TYPES = [...ANIMATED_MIME_TYPES, "image/png", "image/jpeg", "image/webp", "image/avif"];
@@ -20,8 +20,7 @@ router.post(
 
         const type = await fileTypeFromBuffer(buffer);
         if (!type || !ALLOWED_MIME_TYPES.includes(type.mime)) throw new HTTPError("Invalid file type");
-        const md5 = crypto.createHash("md5").update(buffer).digest("hex");
-        const hash = ANIMATED_MIME_TYPES.includes(type.mime) ? `a_${md5}` : md5;
+        const hash = imageHash(buffer, type.mime);
 
         await storage.set(`guild-space/${guild_id}/banner/${hash}`, buffer);
 
@@ -36,12 +35,10 @@ router.post(
 
 router.get("/:guild_id/banner/:hash", setCacheControl, async (req: Request, res: Response) => {
     const { guild_id, hash } = req.params as { [key: string]: string };
-    const file = await storage.get(`guild-space/${guild_id}/banner/${hash.split(".")[0]}`);
+    const path = `guild-space/${guild_id}/banner/${hash.split(".")[0]}`;
+    const file = await storage.get(path);
     if (!file) return setCacheControlNotFound(req, res);
-    const type = await fileTypeFromBuffer(file);
-
-    res.set("Content-Type", safeMediaType(type?.mime));
-    return res.send(file);
+    return sendImage(req, res, path, file);
 });
 
 router.delete("/:guild_id/banner/:hash", async (req: Request, res: Response) => {
