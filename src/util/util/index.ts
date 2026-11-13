@@ -44,3 +44,4 @@ export * from "./DiscoverySearch";
 export * from "./VideoFrame";
 export * from "./ApexExperiments";
 export * from "./VoiceHealth";
+export * from "./NativeVoice";

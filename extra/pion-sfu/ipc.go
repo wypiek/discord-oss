@@ -41,6 +41,8 @@ type SignalMessage struct {
 	BlockVideo  bool   `json:"blockVideo,omitempty"`
 	Deaf        bool   `json:"deaf,omitempty"`
 	Remote      string `json:"remote,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	Key         []byte `json:"key,omitempty"`
 }
 
 func getListener(path string) (net.Listener, error) {
@@ -192,6 +194,8 @@ func (ipcConn *IpcConnection) processMessage(ctx context.Context, ipcMsg IpcMess
 			handleErr = fmt.Errorf("client %s not found (send 'join' first)", clientID)
 		} else {
 			switch msg.Type {
+			case "native":
+				handleErr = handleNative(p, msg, requestID)
 			case "offer":
 				handleErr = handleOffer(ctx, p, msg, requestID)
 			case "publish":

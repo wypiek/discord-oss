@@ -1,35 +1,42 @@
-# Native voice (work in progress)
+# Native voice
 
-The official Discord desktop apps use Discord's native voice engine, which speaks UDP to the voice server instead of WebRTC. The voice gateway in `src/webrtc` only accepts `protocol: "webrtc"` today, so `FosscordDesktop` forces the WebRTC engine in those apps. This page is the plan for stage 1, audio over the native protocol. Nothing below is implemented yet.
+The official Discord desktop apps (Stable, PTB, Canary, Development) use Discord's native voice engine, which talks to the voice server over UDP instead of WebRTC. With `NATIVE_VOICE=true` the voice gateway and the SFU speak that protocol for audio, and a native client and web clients hear each other in the same call. Camera video and Go Live over the native engine are stage 2 and not forwarded yet, so the setting is off by default.
 
-## Stage 1: audio
+## Turning it on
 
-### SFU (`extra/pion-sfu`)
+Set `NATIVE_VOICE=true` next to `PION_SFU_BIN` or `PION_SFU_IPC`. The server then:
 
-- The SFU keeps its single UDP port. A wrapper around the socket the ICE mux reads from hands two kinds of packets to a native handler and passes everything else to ICE:
-  - IP discovery requests: 74 bytes, type `0x0001`, length `70`. STUN can't match, because a STUN length is always a multiple of 4. The handler answers with type `0x0002`, the SSRC, the observed address as a null-terminated string in 64 bytes, and the observed port. It remembers the address for that SSRC.
-  - Any packet from an address that belongs to a registered native client.
-- A new IPC message `native` carries `clientId`, `ssrc`, `mode` and a base64 `key`. It marks the peer as native, closes its unused peer connection, sets `transport` to nil so no RTCP sinks are made, creates the audio `PublishedTrack` for the SSRC and sends the usual `connected` event.
-- Receiving: drop packets shorter than 12 bytes, packets that aren't RTP version 2, and RTCP (`b[1]` 200 to 204). The unencrypted part is the 12-byte header, the CSRCs and the 4-byte extension prefix when the X bit is set. The last 4 bytes are the nonce counter, written big-endian into the start of a 12-byte nonce for `aead_aes256_gcm_rtpsize` or a 24-byte nonce for `aead_xchacha20_poly1305_rtpsize`, with the header as AAD and a 16-byte tag. After decryption, skip the extension body (prefix length times 4 bytes) and any padding, then `ingest` the Opus payload into the audio track. Packets from other SSRCs (video) are dropped until stage 2.
-- Sending: `ingest` calls a per-subscriber `forward`. Web subscribers write to their multiplex track as today. Native subscribers get a 12-byte header with payload type 120, the publisher's SSRC, sequence and timestamp, no extensions, the payload sealed with their key and an incrementing 4-byte nonce appended.
-- `handlePublish` skips adding a transceiver for native peers. A ticker expires the loss tracker of native tracks, since nothing sends NACKs to native publishers.
-- Go tests: IP discovery round trip, both AEAD modes, and forwarding between two fake UDP clients.
+- sends `NATIVE_VOICE: true` in `GLOBAL_ENV`, and `FosscordDesktop` lets the official desktop app pick its native engine instead of forcing the browser one,
+- accepts `protocol: "udp"` in SELECT_PROTOCOL.
 
-### Voice gateway (`src/webrtc`)
+Without it, or without the Pion SFU, SELECT_PROTOCOL with `udp` is closed with code 4000 and the desktop app keeps the browser engine, as before. Browsers and the Discord OSS Electron app always use WebRTC.
 
-- READY offers only `aead_aes256_gcm_rtpsize` and `aead_xchacha20_poly1305_rtpsize`.
-- SELECT_PROTOCOL with `protocol: "udp"` checks the mode, makes a 32-byte key, sends `native` over IPC, then answers SESSION_DESCRIPTION with `mode`, `secret_key` as a number array, `audio_codec: "opus"`, `video_codec`, `media_session_id` and `dave_protocol_version`. It then publishes the audio track the way op 12 does, and shares the CLIENTS_CONNECT, CLIENT_FLAGS and CLIENT_PLATFORM code with the WebRTC branch.
-- Native subscribers get SPEAKING with each publisher's SSRC, so the client can map SSRCs to users.
+No new port is needed. Native clients use the same UDP port as WebRTC, `WRTC_PORT` in Docker or `WRTC_PORT_MIN` for a native install.
 
-### Client and config
+## Voice gateway (`src/webrtc`)
 
-- `NATIVE_VOICE=true` turns it on. GLOBAL_ENV gets `NATIVE_VOICE`, and `FosscordDesktop.allowEngine` lets the official app pick its native engine only then. It stays off by default, because camera video and Go Live over the native engine aren't forwarded until stage 2, and with the native engine on, the official app would stream nothing.
-- With the native engine active, the DAVE preload and clips wrapper patches are skipped. They only exist for the WebRTC engine inside the official app.
+- READY offers `aead_aes256_gcm_rtpsize` and `aead_xchacha20_poly1305_rtpsize`, with the SSRC, IP and port of the SFU.
+- SELECT_PROTOCOL `udp` reads the mode from `data.mode` or the top-level `mode` the desktop app also sends. An unknown mode closes the socket with 4016. The server makes a 32-byte key, registers the client with the SFU over the `native` IPC message and answers SESSION_DESCRIPTION with `mode`, `secret_key` as 32 numbers, `audio_codec: "opus"`, `video_codec`, `media_session_id` and `dave_protocol_version`. It then publishes the client's audio the way opcode 12 does.
+- CLIENTS_CONNECT, CLIENT_FLAGS, CLIENT_PLATFORM and the DAVE join are shared with the WebRTC path.
+- A native client gets SPEAKING with every other user's SSRC whenever it subscribes to them, so it can tell whose audio a packet is.
 
-### Testing
+## SFU (`extra/pion-sfu/native.go`)
 
-Point Discord PTB at a worktree dev server through `WEBAPP_ENDPOINT` and `API_ENDPOINT` in its `settings.json`, after backing that file up, and drive it over CDP next to a headless web client from `voice-probe.mjs`. Restore the file afterwards.
+- The socket the ICE mux reads from is wrapped. IP discovery requests, 74 bytes of type `0x0001` and length `70`, are answered with type `0x0002`, the SSRC, the observed address and the observed port. A STUN message can't match, because its length is a multiple of 4. Packets from an address that belongs to a native client, or that carry a native client's SSRC, go to that client. Everything else goes to ICE.
+- The `native` IPC message carries `clientId`, `ssrc`, `mode` and a base64 `key`. The peer's unused peer connection is closed, its audio track is created for the SSRC and the usual `connected` event is sent.
+- Receiving: the unencrypted part is the 12-byte header, the CSRCs and the 4-byte extension prefix. The last 4 bytes are a counter that starts the nonce, 12 bytes for AES-GCM and 24 for XChaCha20-Poly1305, with the header as AAD and a 16-byte tag. After decryption the extension body and any padding are dropped and the Opus payload enters the same audio track web publishers use. RTCP, keepalives and packets that don't decrypt are dropped. A packet that decrypts from a new address moves the client to it.
+- Sending: web and native subscribers share the fanout. A native subscriber gets a 12-byte header with payload type 120 and the publisher's SSRC, sequence and timestamp, the payload sealed with its own key and a 4-byte counter appended. Header extensions from web publishers are not sent.
+- Muting, deafening and moderation work as for web clients. The periodic stats log adds a `stats native=` line per native client with its address, packets, RTCP, foreign SSRCs, undecryptable packets and packets sent.
+
+DAVE frames pass through untouched. The desktop app and web clients encrypt and decrypt them end to end, and the SFU only forwards them.
+
+## Tests
+
+- `go test ./...` in `extra/pion-sfu` covers IP discovery, both AEAD modes against an independent implementation, an extension header and padding, RTCP and tampered packets, two native clients through a real UDP socket, a web publisher reaching a native subscriber, mute and deafen.
+- `scripts/dev/native-voice-probe.mjs` joins voice like the desktop app does: main gateway, voice gateway v8, IP discovery, SELECT_PROTOCOL `udp` and encrypted RTP. `--peer native` puts both test accounts on the native protocol and checks they hear each other. `--peer web` puts the friend in a headless browser and checks the browser decodes the native user. The probe speaks only `aead_aes256_gcm_rtpsize`, and it can't check the browser's audio reaching it because it has no DAVE.
+
+On 2026-11-13 Discord PTB on macOS was pointed at a dev server through `WEBAPP_ENDPOINT` and `API_ENDPOINT` in its `settings.json` and joined a voice channel with a web user. PTB chose `aead_aes256_gcm_rtpsize` with DAVE version 1. The web user decoded 1,233 packets from PTB. PTB's native stats showed an inbound Opus stream from the web user with 270 DAVE frames decrypted, no failures and its audio level, and both users showed as speaking.
 
 ## Stage 2
 
-Camera video and Go Live over the native protocol: op 12 video SSRCs, H264, VP8 and AV1 payloads, RTX, simulcast and the stream server connection.
+Camera video and Go Live over the native protocol: opcode 12 video SSRCs, H264, VP8 and AV1 payloads, RTX, simulcast and the stream server connection.

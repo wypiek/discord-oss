@@ -165,7 +165,7 @@ func (pt *PublishedTrack) ingest(pkt *rtp.Packet) {
 
 	for _, other := range sfu.Subscribers(pt.key) {
 		if pt.forwardsTo(other) {
-			_ = other.master(pt.kind).WriteRTP(pkt, pt.extensions)
+			other.forward(pt, pkt)
 		}
 	}
 }
@@ -525,5 +525,13 @@ func logStats(peers []*Peer) {
 		}
 		log.Printf("stats subscriber=%s nacks=%d retransmitted=%d not_cached=%d",
 			p.id, p.nacksReceived.Load(), p.retransmitted.Load(), p.notCached.Load())
+		if client := p.native.Load(); client != nil {
+			remote := "none"
+			if addr := client.addr.Load(); addr != nil {
+				remote = addr.String()
+			}
+			log.Printf("stats native=%s remote=%s packets=%d rtcp=%d foreign_ssrc=%d undecryptable=%d sent=%d",
+				p.id, remote, client.packets.Load(), client.rtcp.Load(), client.foreignSSRC.Load(), client.undecryptable.Load(), client.counter.Load())
+		}
 	}
 }

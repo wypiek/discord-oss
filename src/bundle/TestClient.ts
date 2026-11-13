@@ -40,6 +40,7 @@ import {
     requestOrigin,
     instanceIconDataUri,
     sendBrandImage,
+    nativeVoiceEnabled,
 } from "@spacebar/util";
 
 const ASSET_FOLDER_PATH = path.join(__dirname, "..", "..", "assets");
@@ -197,6 +198,7 @@ const buildHtml = () => {
         maxGroupDmRecipients: Config.get().limits.channel.maxGroupDmRecipients,
         emailRequired: Config.get().register.email.required === true,
         joinReason: joinReasonEnv(),
+        nativeVoice: nativeVoiceEnabled(),
     });
 
     const patches = fs.existsSync(PATCH_PATH)

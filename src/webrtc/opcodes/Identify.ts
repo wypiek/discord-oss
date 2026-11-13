@@ -2,6 +2,7 @@ import { Channel, GoLiveStreams, Member, Recipient, StreamSession, VoiceState } 
 import { CLOSECODES } from "@spacebar/gateway";
 import { ChannelType, validateSchema, VoiceIdentifySchema } from "@spacebar/schemas";
 import { getPermission, listenEvent } from "@spacebar/util";
+import { NATIVE_VOICE_MODES } from "@spacebar/util/util/NativeVoice";
 import { generateSsrc, mediaServer, Send, VoiceModeration, VoiceOPCodes, VoicePayload, WebRtcWebSocket } from "@spacebar/webrtc";
 import { SSRCs } from "@spacebarchat/spacebar-webrtc-types";
 import { subscribeToProducers } from "./Video";
@@ -149,15 +150,7 @@ export async function onIdentify(this: WebRtcWebSocket, data: VoicePayload) {
         d: {
             ssrc: generatedSsrc.audio_ssrc,
             port: mediaServer.port,
-            modes: [
-                "aead_aes256_gcm_rtpsize",
-                "aead_aes256_gcm",
-                "aead_xchacha20_poly1305_rtpsize",
-                "xsalsa20_poly1305_lite_rtpsize",
-                "xsalsa20_poly1305_lite",
-                "xsalsa20_poly1305_suffix",
-                "xsalsa20_poly1305",
-            ],
+            modes: [...NATIVE_VOICE_MODES],
             ip: mediaServer.ip,
             experiments: [],
             streams: streams?.map((x) => ({

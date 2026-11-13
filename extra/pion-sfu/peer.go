@@ -49,6 +49,8 @@ type Peer struct {
 	rembAt    time.Time
 	videoLoss map[uint32]lossReport
 
+	native atomic.Pointer[nativeClient]
+
 	blockAudio atomic.Bool
 	blockVideo atomic.Bool
 	deaf       atomic.Bool

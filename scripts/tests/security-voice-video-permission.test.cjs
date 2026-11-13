@@ -57,6 +57,7 @@ async function identify(granted) {
         "@spacebar/gateway": { CLOSECODES: { Authentication_failed: 4004 } },
         "@spacebar/schemas": { ChannelType: { GUILD_STAGE_VOICE: 13 }, validateSchema: (_, data) => data },
         "@spacebar/util": { getPermission: permissionsFor(granted), listenEvent: async () => async () => {} },
+        "@spacebar/util/util/NativeVoice": { NATIVE_VOICE_MODES: ["aead_aes256_gcm_rtpsize", "aead_xchacha20_poly1305_rtpsize"] },
         "@spacebar/webrtc": { generateSsrc: () => 1, mediaServer: { join: async () => client, port: 1, ip: "127.0.0.1" }, Send: async () => {}, VoiceOPCodes: { READY: 2 } },
         "./Video": { subscribeToProducers: async () => {} },
         "./Speaking": { relaySpeaking: async () => {} },

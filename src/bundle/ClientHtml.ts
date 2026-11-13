@@ -50,6 +50,7 @@ export interface ClientEnvSettings {
     maxGroupDmRecipients: number;
     emailRequired: boolean;
     joinReason: ClientJoinReason | null;
+    nativeVoice: boolean;
 }
 
 export const baseGlobalEnv = (parsed: Record<string, unknown>) => Object.fromEntries(Object.entries(parsed).filter(([key]) => !ENDPOINT_KEYS.includes(key)));
@@ -98,6 +99,7 @@ export const clientEnvScript = (base: Record<string, unknown>, settings: ClientE
         GROUP_DM_RECIPIENT_LIMIT: ${json(settings.maxGroupDmRecipients)},
         REGISTER_EMAIL_REQUIRED: ${json(settings.emailRequired === true)},
         REGISTER_JOIN_REASON: ${json(settings.joinReason)},
+        NATIVE_VOICE: ${json(settings.nativeVoice)},
     });
 })();
 </script>`;

@@ -45,6 +45,7 @@ Compose passes these from `.env` and refuses to start without the first three. `
 | `POSTGRES_PASSWORD` | Letters and digits only, for example from `openssl rand -hex 24`. Postgres reads it only when its volume is empty, so changing it later also needs `ALTER USER`. |
 | `WRTC_PUBLIC_IP` | Public IPv4 address or host name that clients send media to. Behind NAT, use the outside address and forward the voice port. A host name is resolved once at startup. |
 | `WRTC_PORT` | UDP port for all media, 50000 by default. |
+| `NATIVE_VOICE` | `true` lets the official Discord desktop apps use their native voice engine for audio on the same UDP port. Off by default, because their camera video and Go Live aren't forwarded yet. See [native-voice.md](../development/native-voice.md). |
 | `INSTANCE_NAME` | Name shown in the client, emails, developer portal and status page. It is applied on the first start and whenever you change it here, and otherwise a name set in the admin dashboard stays. |
 | `POSTGRES_USER`, `POSTGRES_DB`, `MEOWCORD_VOLUME_PREFIX` | `meowcord` in `.env.example`, and `fosscord` when absent, the names older installations use. |
 | `SERVER_PORT` | Port the server is published on, 32171 by default. |

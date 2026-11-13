@@ -6938,6 +6938,17 @@
                     }
                 ]
             },
+            "address": {
+                "maxLength": 64,
+                "type": "string"
+            },
+            "port": {
+                "type": "integer"
+            },
+            "mode": {
+                "maxLength": 64,
+                "type": "string"
+            },
             "sdp": {
                 "maxLength": 65536,
                 "type": "string"
@@ -6967,6 +6978,12 @@
                         },
                         "rtx_payload_type": {
                             "type": "integer"
+                        },
+                        "encode": {
+                            "type": "boolean"
+                        },
+                        "decode": {
+                            "type": "boolean"
                         }
                     },
                     "additionalProperties": false,

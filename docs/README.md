@@ -56,3 +56,4 @@ Read [CONTRIBUTING.MD](../CONTRIBUTING.MD) first.
 | [admin-api-coverage.md](development/admin-api-coverage.md) | Which API operations the admin dashboard covers. |
 | [instance-discovery.md](development/instance-discovery.md) | `/.well-known/discord-oss`, which tells clients an instance's name, icon, endpoints and signup rules. |
 | [e2ee-protocol.md](development/e2ee-protocol.md) | The encryption protocol byte by byte, for writing another client. |
+| [native-voice.md](development/native-voice.md) | Native UDP voice for the official Discord desktop apps, `NATIVE_VOICE`. |

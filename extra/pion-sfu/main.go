@@ -235,6 +235,9 @@ func handlePublish(p *Peer, msg SignalMessage) error {
 	}
 	existing := p.getPublishedTrack(trackType)
 	p.mu.Unlock()
+	if p.native.Load() != nil {
+		return nil
+	}
 	if existing != nil {
 		return fmt.Errorf("already publishing %s", trackType)
 	}
@@ -438,6 +441,7 @@ func setupOnTrack(p *Peer) {
 
 func cleanupPeer(p *Peer) {
 	sfu.RemovePeer(p.id)
+	p.leaveNative()
 
 	p.mu.Lock()
 	if p.audioPublished != nil {
@@ -457,7 +461,9 @@ func cleanupPeer(p *Peer) {
 		other.dropSinks(p)
 	}
 
-	p.pc.Close()
+	if p.pc != nil {
+		p.pc.Close()
+	}
 	log.Printf("Client %s disconnected", p.id)
 }
 
@@ -520,6 +526,7 @@ func main() {
 	if incomingDropPercent > 0 || outgoingDropPercent > 0 {
 		conn = &lossyConn{PacketConn: udpConn}
 	}
+	conn = native.attach(conn)
 
 	netTransport, err := stdnet.NewNet()
 	if err != nil {
