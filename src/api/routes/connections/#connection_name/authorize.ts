@@ -17,15 +17,16 @@ router.get("/", route({}), async (req: Request, res: Response) => {
             },
         });
 
-    if (!connection.settings.enabled)
+    if (!connection.isAvailable)
         throw FieldErrors({
             provider_id: {
                 message: "This connection has been disabled server-side.",
             },
         });
 
+    const handle = typeof req.query.handle === "string" ? req.query.handle.slice(0, 256) : undefined;
     res.json({
-        url: connection.getAuthorizationUrl(req.user_id),
+        url: await connection.getAuthorizationUrl(req.user_id, { handle }),
     });
 });
 

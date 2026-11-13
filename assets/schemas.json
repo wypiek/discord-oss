@@ -2105,18 +2105,25 @@
                 "maxLength": 512,
                 "type": "string"
             },
+            "iss": {
+                "maxLength": 512,
+                "type": "string"
+            },
             "insecure": {
                 "type": "boolean"
             },
             "friend_sync": {
                 "type": "boolean"
             },
-            "openid_params": {}
+            "openid_params": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "string"
+                }
+            }
         },
         "additionalProperties": false,
         "required": [
-            "friend_sync",
-            "insecure",
             "state"
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -4361,6 +4368,9 @@
             "icon": {
                 "type": "string"
             },
+            "unavailable": {
+                "type": "boolean"
+            },
             "channels": {
                 "type": "array",
                 "items": {
@@ -4507,9 +4517,6 @@
             },
             "premium_tier": {
                 "type": "integer"
-            },
-            "unavailable": {
-                "type": "boolean"
             },
             "welcome_screen": {
                 "$ref": "#/definitions/GuildWelcomeScreen",
@@ -27465,6 +27472,9 @@
             "connection": {
                 "$ref": "#/definitions/RateLimitOptions"
             },
+            "domainConnection": {
+                "$ref": "#/definitions/RateLimitOptions"
+            },
             "attachment": {
                 "$ref": "#/definitions/RateLimitOptions"
             },
@@ -27482,6 +27492,7 @@
             "auth",
             "channel",
             "connection",
+            "domainConnection",
             "expression",
             "guild",
             "guildCreate",

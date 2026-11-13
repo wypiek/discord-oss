@@ -19,7 +19,7 @@ interface BattleNetConnectionUser {
 export default class BattleNetConnection extends Connection {
     public readonly id = "battlenet";
     public readonly friendlyName = "Battle.net";
-    public readonly setupUrl = "(missing - contributions welcome)";
+    public readonly setupUrl = "https://develop.battle.net/access/clients";
     public readonly requiredScopes = [];
 
     public readonly authorizeUrl = "https://oauth.battle.net/authorize";
