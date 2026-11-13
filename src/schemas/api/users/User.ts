@@ -171,6 +171,8 @@ export enum PrivateUserEnum {
 export type PrivateUserKeys = keyof typeof PrivateUserEnum | PublicUserKeys;
 
 export const PublicUserProjection = Object.values(PublicUserEnum).filter((x) => typeof x === "string") as PublicUserKeys[];
+export const ProfileOnlyUserKeys: PublicUserKeys[] = ["bio", "pronouns"];
+export const PublicUserOutputKeys = PublicUserProjection.filter((x) => !ProfileOnlyUserKeys.includes(x));
 export const PrivateUserProjection = [...PublicUserProjection, ...Object.values(PrivateUserEnum).filter((x) => typeof x === "string")] as PrivateUserKeys[];
 
 // Private user data that should never get sent to the client

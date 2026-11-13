@@ -108,6 +108,8 @@ test("profile response keeps free feature entitlements and custom badges without
         "@spacebar/api/util/utility/badgeSettings": badgeSettings,
         "@spacebar/api/util/utility/profileBadges": profileBadges,
         "@spacebar/api/util/handlers/Application": {},
+        "@spacebar/api/util/utility/profilePrivacy": { viewerSeesFullProfile: async () => true },
+        "@spacebar/api/util/utility/profileVisibility": { limitedProfile: (profile) => ({ ...profile, private: true }) },
     });
     let result;
     await handlers.get({ user_id: "self", params: { user_id: "@me" }, query: {} }, { json: (x) => (result = x) });

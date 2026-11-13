@@ -8,6 +8,8 @@ import { PartialConnectedAccountResponse, PrivateUserProjection, PublicUserProje
 import { badgeSettings } from "@spacebar/api/util/utility/badgeSettings";
 import { arrangeProfileBadges, localProfileBadges, publicProfileBadges } from "@spacebar/api/util/utility/profileBadges";
 import { profileApplication } from "@spacebar/api/util/handlers/Application";
+import { viewerSeesFullProfile } from "@spacebar/api/util/utility/profilePrivacy";
+import { limitedProfile } from "@spacebar/api/util/utility/profileVisibility";
 
 const router: Router = Router({ mergeParams: true });
 
@@ -105,7 +107,7 @@ router.get("/", route({ responses: { 200: { body: "UserProfileResponse" } } }), 
             ...(x.metadata_visibility != 0 && x.metadata_ ? { metadata: x.metadata_ } : {}),
         }));
 
-    res.json({
+    const profile = {
         user: { ...user.toPartialUser(), bio: user.bio ?? "" },
         connected_accounts,
         premium_since: null,
@@ -131,7 +133,9 @@ router.get("/", route({ responses: { 200: { body: "UserProfileResponse" } } }), 
                   guild_member_profile: profileMetadata(guild_member),
               }
             : {}),
-    });
+    };
+
+    res.json((await viewerSeesFullProfile(user_id, req.user_id, req.rights)) ? profile : limitedProfile(profile));
 });
 
 router.patch("/", route({ requestBody: "UserProfileModifySchema" }), async (req: Request, res: Response) => {
