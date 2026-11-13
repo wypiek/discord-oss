@@ -77,6 +77,10 @@ The Overview page shows counts of accounts, servers, messages, people online and
 
 The Users page has tabs for accounts, IP addresses and IP bans, and can filter to suspended accounts, accounts waiting for approval and accounts with a join reason. The user drawer edits the account, its profile and cosmetics, rights, standing, violations, sessions, two-factor authentication, staff roles and invites, and each field needs the right listed above for it. The dashboard never shows password hashes, tokens, two-factor secrets, encryption keys or recovery codes.
 
+### Badges
+
+The user drawer's badge list gives and takes custom and preset badges. Its "Badge levels and rarity" card sets the Features badge, the levelled badges, per-badge rarity and The Void, a staff-only badge with 10 levels from Eclipse to Supernova. Pick a level to grant The Void or change its level, or "No Void badge" to take it away, then press Save badge levels or the drawer's Save. The card shows the current level's icon and the first grant date. Viewing the card needs `VIEW_USERS`, changing it needs `MANAGE_USERS`, and staff can't change an account at or above their own level. Each save writes a "Changed a profile customization" entry to the audit log, and a change to The Void lists the old and new level under `the_void`. See [badges.md](badges.md#the-void).
+
 ### Removing spam accounts
 
 Select rows, or select the whole page and then every account that matches the search, up to the newest 5,000. The bar above the list then disables or deletes them. Disabling signs the accounts out and can also delete their messages, which needs `MANAGE_MESSAGES`. Deleting needs `MANAGE_USERS`, removes their messages, DMs and memberships, and hands each owned server to the member with the highest role. Your own account and accounts at or above your level are skipped.

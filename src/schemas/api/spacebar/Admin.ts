@@ -420,6 +420,11 @@ export interface AdminBadgeOverridesSchema {
      */
     nitro_since?: string | null;
     /**
+     * A level of The Void, from "eclipse" to "supernova", that staff grant. Changing it keeps the first grant date. null takes The Void away.
+     * @maxLength 32
+     */
+    void_tier?: string | null;
+    /**
      * Rarity per badge id as the badge directory reports it: 1 common, 2 rare, 3 epic, 5 mythic. null goes back to the default.
      */
     rarity?: { [badge_id: string]: AdminBadgeRarity | null };

@@ -19,6 +19,15 @@ import {
     TIERED_BADGES,
     TieredBadgeDefinition,
     TieredBadgeTier,
+    currentVoidGrant,
+    VOID_BADGE_DESCRIPTION,
+    VOID_BADGE_ID,
+    VOID_BADGE_INSTRUCTIONS,
+    VOID_BADGE_NAME,
+    VOID_BADGE_TIERS,
+    VOID_CURRENT_TIER_TEXT,
+    VoidBadgeGrant,
+    voidBadgeIcon,
 } from "@spacebar/util";
 import { arrangeBadges, BadgeSettings, badgeSettings, isStaffBadge } from "./badgeSettings";
 import { isSubscriptionBadge } from "./profile";
@@ -59,6 +68,7 @@ const cdnBase = () => (Config.get().cdn.endpointPublic || Config.get().api.endpo
 const artUrl = (file: string | null) => (file ? `${cdnBase()}/content-assets/${file}` : null);
 const badgeIconUrl = (icon: string) => `${cdnBase()}/badge-icons/${icon}.png`;
 const branded = (text: string) => text.replaceAll("{instance}", instanceName());
+const voidArtUrl = (key: string, extension: "png" | "svg") => `${cdnBase()}/badge-icons/${voidBadgeIcon(key)}.${extension}`;
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -255,13 +265,66 @@ export async function localProfileBadges(user: BadgeOwner, progress?: Map<number
             if (legacy) return { ...row, id: legacy.key, description: branded(legacy.name), simple_icon_url: artUrl(legacy.simple)!, settings_id: String(legacy.id) };
             return { ...row, settings_id: row.id };
         });
-    const tiers = progress ?? (await tieredProgress(user));
+    const account = await ownerDetails(user);
+    const tiers = progress ?? (await tieredProgress({ ...user, created_at: account?.created_at ?? null, badge_overrides: account?.badge_overrides ?? null }));
     for (const badge of TIERED_BADGES) {
         const entry = tiers.get(badge.id);
         const profileBadge = entry ? tieredProfileBadge(badge, entry) : null;
         if (profileBadge) badges.push(profileBadge);
     }
+    const voidBadge = voidProfileBadge(account?.badge_overrides?.the_void);
+    if (voidBadge) badges.push(voidBadge);
     return badges;
+}
+
+export function voidProfileBadge(grant: VoidBadgeGrant | null | undefined): ProfileBadge | null {
+    const current = currentVoidGrant(grant);
+    if (!current) return null;
+    return {
+        id: VOID_BADGE_ID,
+        description: `${VOID_BADGE_NAME}: ${current.tier.name}`,
+        icon: voidBadgeIcon(current.tier.key),
+        simple_icon_url: voidArtUrl(current.tier.key, "svg"),
+        settings_id: VOID_BADGE_ID,
+    };
+}
+
+export function voidDirectoryBadge(grant: VoidBadgeGrant | null | undefined, hidden: boolean) {
+    const current = currentVoidGrant(grant);
+    if (!current) return null;
+    const art = (key: string) => ({
+        simple_icon_url: voidArtUrl(key, "svg"),
+        simple_icon_raster_url: voidArtUrl(key, "png"),
+        complex_icon_static_url: voidArtUrl(key, "svg"),
+    });
+    const reached = VOID_BADGE_TIERS.slice(0, current.index + 1);
+    return {
+        badge_id: VOID_BADGE_ID,
+        name: VOID_BADGE_NAME,
+        description: branded(VOID_BADGE_DESCRIPTION),
+        leveling_instructions: branded(VOID_BADGE_INSTRUCTIONS),
+        info_label: null,
+        rarity: current.tier.rarity,
+        ...art(current.tier.key),
+        link: null,
+        is_earnable: true,
+        owned: true,
+        hidden,
+        obtained_at: current.granted_at,
+        current_tier: current.tier.key,
+        next_tier: VOID_BADGE_TIERS[current.index + 1]?.key ?? null,
+        tier_obtained_at: Object.fromEntries(reached.map((tier) => [tier.key, tier === current.tier ? current.tier_set_at : current.granted_at])),
+        tiers: VOID_BADGE_TIERS.map((tier, index) => ({
+            key: tier.key,
+            name: tier.name,
+            rarity: tier.rarity,
+            ...art(tier.key),
+            requirements: [],
+            owned: index <= current.index,
+            milestone_text: index === current.index ? VOID_CURRENT_TIER_TEXT : null,
+        })),
+        progress: null,
+    };
 }
 
 export function normalizeBadgeSettings(settings: BadgeSettings, badges: ProfileBadge[]): BadgeSettings {
@@ -378,6 +441,10 @@ export async function badgeDirectory(user: BadgeOwner, self: boolean) {
         if (legacy) {
             const base = legacyEntry(legacy, id === DIRECTORY_STAFF_BADGE_ID ? badge.description : branded(legacy.name), badge.icon, badge.link, isHidden);
             return withRarity(badge.rarity ? { ...base, rarity: badge.rarity } : base, overrides);
+        }
+        if (badge.settings_id === VOID_BADGE_ID) {
+            const entry = voidDirectoryBadge(owner.badge_overrides?.the_void, isHidden);
+            if (entry) return withRarity(entry, overrides);
         }
         const tiered = TIERED_BY_ID.get(id);
         if (tiered && progress.has(id)) return withRarity(tieredDirectoryBadge(tiered, progress.get(id)!, isHidden, self), overrides);

@@ -11892,6 +11892,14 @@
                     "string"
                 ]
             },
+            "void_tier": {
+                "description": "A level of The Void, from \"eclipse\" to \"supernova\", that staff grant. Changing it keeps the first grant date. null takes The Void away.",
+                "maxLength": 32,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
             "rarity": {
                 "description": "Rarity per badge id as the badge directory reports it: 1 common, 2 rare, 3 epic, 5 mythic. null goes back to the default.",
                 "type": "object",
@@ -19795,9 +19803,33 @@
             },
             "rarity": {
                 "$ref": "#/definitions/Record%3Cstring%2Cnumber%3E"
+            },
+            "the_void": {
+                "$ref": "#/definitions/VoidBadgeGrant"
             }
         },
         "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "VoidBadgeGrant": {
+        "type": "object",
+        "properties": {
+            "tier": {
+                "type": "string"
+            },
+            "granted_at": {
+                "type": "string"
+            },
+            "tier_set_at": {
+                "type": "string"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "granted_at",
+            "tier",
+            "tier_set_at"
+        ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "UserGuildSettings": {

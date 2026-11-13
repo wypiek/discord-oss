@@ -16,7 +16,14 @@ export async function adminCustomizationTarget(req: Request, editing?: string) {
         throw new HTTPError(req.method === "GET" ? "You can't view staff at or above your own role" : "You can't edit staff at or above your own role", 403);
     return user;
 }
-export async function recordAdminCustomization(req: Request, target_id: string, section: string, fields: string[], manager?: EntityManager) {
+export async function recordAdminCustomization(
+    req: Request,
+    target_id: string,
+    section: string,
+    fields: string[],
+    manager?: EntityManager,
+    extra: { key: string; old_value?: unknown; new_value?: unknown }[] = [],
+) {
     const reason = req.headers["x-audit-log-reason"];
     if (req.res?.locals) req.res.locals.staffAudited = true;
     const entry = AuditLog.create({
@@ -24,7 +31,7 @@ export async function recordAdminCustomization(req: Request, target_id: string, 
         target_id,
         action_type: ADMIN_USER_CUSTOMIZATION_ACTION,
         options: { type: section, action: "user.customization", area: "users" } as AuditLog["options"],
-        changes: AuditLog.diff({}, { fields }, ["fields"]),
+        changes: [...AuditLog.diff({}, { fields }, ["fields"]), ...(extra as AuditLog["changes"])],
         reason: typeof reason === "string" ? reason.slice(0, 512) : undefined,
     });
     return manager ? manager.save(entry) : entry.save();

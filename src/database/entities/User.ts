@@ -1,5 +1,6 @@
 import { assertIdentityNameAllowed } from "@spacebar/util/util/IdentityModeration";
 import { assertMaxLength, UserFieldCaps } from "@spacebar/util/util/UserFieldCaps";
+import type { VoidBadgeGrant } from "@spacebar/util/util/VoidBadge";
 import { Request } from "express";
 import { AfterLoad, Column, Entity, FindOptionsWhere, ILike, Index, JoinColumn, ManyToOne, OneToMany, OneToOne } from "typeorm";
 import { Config, Email, FieldErrors, Snowflake } from "@spacebar/util";
@@ -41,6 +42,7 @@ export interface BadgeOverrides {
     progress_offsets?: Record<string, number>;
     levels_set_at?: Record<string, string>;
     rarity?: Record<string, number>;
+    the_void?: VoidBadgeGrant;
 }
 
 export interface AccountPreferences {
