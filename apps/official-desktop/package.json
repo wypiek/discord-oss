@@ -1,0 +1,17 @@
+{
+    "name": "discord-oss-official-desktop",
+    "version": "1.0.0",
+    "description": "Instance switcher for the official Discord desktop apps",
+    "license": "AGPL-3.0-only",
+    "private": true,
+    "scripts": {
+        "build": "bun build src/switcher.ts --outfile dist/switcher.js --target node --format cjs --external electron --banner 'var discordOssFolder = __dirname;' && bun build src/preload.ts --outfile dist/preload.js --target node --format cjs --external electron && cp src/switcher.html dist/switcher.html && cp dist/switcher.js dist/switcher-js.txt && cp dist/preload.js dist/preload-js.txt && cp dist/switcher.html dist/switcher-html.txt",
+        "typecheck": "tsc -p . --noEmit",
+        "installer": "bun run build && bun build src/install.ts --compile --outfile dist/discord-oss-switcher"
+    },
+    "devDependencies": {
+        "@types/bun": "^1.3.2",
+        "electron": "45.3.1",
+        "typescript": "^5.9.3"
+    }
+}
