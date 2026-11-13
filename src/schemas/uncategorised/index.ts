@@ -1,5 +1,6 @@
 export * from "./ActivitySchema";
 export * from "./ApplicationAuthorizeSchema";
+export * from "./ApplicationExternalAssetsSchema";
 export * from "./AutomodRuleSchema";
 export * from "./BackupCodesChallengeSchema";
 export * from "./BanCreateSchema";

@@ -1,4 +1,5 @@
 import { ConnectedAccount } from "../../database/entities";
+import { isTokenExpired } from "../connections/RefreshableConnection";
 
 export class ConnectedAccountDTO {
     id: string;
@@ -19,7 +20,7 @@ export class ConnectedAccountDTO {
     constructor(connectedAccount: ConnectedAccount, with_token: boolean = false) {
         this.id = connectedAccount.external_id;
         this.user_id = connectedAccount.user_id;
-        this.access_token = connectedAccount.token_data && with_token ? connectedAccount.token_data.access_token : undefined;
+        this.access_token = with_token && !isTokenExpired(connectedAccount.token_data) ? connectedAccount.token_data?.access_token : undefined;
         this.friend_sync = connectedAccount.friend_sync;
         this.name = connectedAccount.name;
         this.revoked = connectedAccount.revoked;
