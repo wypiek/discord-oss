@@ -17,6 +17,7 @@ import {
     listIps,
     normalizeIp,
     notifyStandingDrop,
+    syncModeratorAlumni,
     syncStaffBadge,
     withStaffDisabled,
 } from "@spacebar/api/util";
@@ -260,6 +261,7 @@ router.patch(
         }
 
         if (changed.size) await User.update({ id: user.id }, Object.fromEntries([...changed].map((key) => [key, user[key] ?? null])));
+        if (changed.has("badge_ids")) await syncModeratorAlumni([user.id], { notify: "none" });
 
         if (
             user.disabled ||

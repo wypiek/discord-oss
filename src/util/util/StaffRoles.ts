@@ -128,4 +128,29 @@ const STAFF_USER_FLAG = 1n;
 export const isInstanceStaff = (user: { id: string; rights: string | bigint | number | null | undefined; public_flags?: string | bigint | number | null }, snap = snapshot) =>
     (BigInt(user.public_flags ?? 0) & STAFF_USER_FLAG) === STAFF_USER_FLAG || isStaffAccount(user, snap);
 
-export const staffBadgeRole = (user_id: string, snap = snapshot) => rolesOf(user_id, snap).find((role) => role.show_badge) ?? null;
+export const MODERATION_RIGHTS = ["MODERATE_USERS", "MANAGE_MESSAGES"] as const;
+export const ADMINISTRATION_RIGHTS = [
+    "OPERATOR",
+    "MANAGE_USERS",
+    "MANAGE_GUILDS",
+    "MANAGE_STAFF",
+    "BYPASS_RATE_LIMITS",
+    "SEND_BACKDATED_EVENTS",
+    "CREATE_REGISTRATION_TOKENS",
+] as const;
+
+const rightsMask = (names: readonly (keyof typeof Rights.FLAGS)[]) => names.reduce((mask, name) => mask | Rights.FLAGS[name], 0n);
+
+export const isModeratorRole = (role: { rights: string | bigint | number | null | undefined }) => {
+    const rights = BigInt(role.rights ?? 0);
+    return (rights & rightsMask(MODERATION_RIGHTS)) !== 0n && (rights & rightsMask(ADMINISTRATION_RIGHTS)) === 0n;
+};
+
+export type StaffRoleBadge = "staff" | "moderator_alumni" | null;
+
+export const roleBadge = (role: { rights: string | bigint | number | null | undefined; show_badge: boolean }): StaffRoleBadge =>
+    role.show_badge ? (isModeratorRole(role) ? "moderator_alumni" : "staff") : null;
+
+export const staffBadgeRole = (user_id: string, snap = snapshot) => rolesOf(user_id, snap).find((role) => roleBadge(role) === "staff") ?? null;
+
+export const moderatorBadgeRole = (user_id: string, snap = snapshot) => rolesOf(user_id, snap).find((role) => roleBadge(role) === "moderator_alumni") ?? null;

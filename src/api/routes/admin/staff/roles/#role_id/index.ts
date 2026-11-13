@@ -4,10 +4,14 @@ import { route } from "@spacebar/api/middlewares";
 import { StaffRole, StaffRoleMember } from "@spacebar/database";
 import { loadStaffRoles } from "@spacebar/util";
 import { AdminStaffRoleModifySchema, AuditLogChange, AuditLogEvents } from "@spacebar/schemas";
-import { assertBelowActor, assertCanGrantRights, parseRoleRights, recordStaffAction, staffActor } from "@spacebar/api/util";
+import { assertBelowActor, assertCanGrantRights, parseRoleRights, recordStaffAction, staffActor, syncModeratorAlumni } from "@spacebar/api/util";
 import { refreshStaffRoles, serializeStaffRole } from "../index";
 
 const router = Router({ mergeParams: true });
+
+const roleMemberIds = async (role_id: string) => (await StaffRoleMember.find({ where: { role_id }, select: { user_id: true } })).map((member) => String(member.user_id));
+
+const syncRoleMembers = async (role_id: string, snap: Awaited<ReturnType<typeof refreshStaffRoles>>) => syncModeratorAlumni(await roleMemberIds(role_id), { notify: "all", snap });
 
 const findRole = async (req: Request) => {
     const role = await StaffRole.findOne({ where: { id: req.params.role_id as string } });
@@ -48,9 +52,10 @@ router.patch(
         }
         if (body.show_badge !== undefined) role.show_badge = body.show_badge;
         await StaffRole.update({ id: role.id }, { name: role.name, color: role.color ?? null, position: role.position, rights: role.rights, show_badge: role.show_badge });
-        await refreshStaffRoles();
+        const next = await refreshStaffRoles();
 
         const after = serializeStaffRole(role);
+        if ((["name", "position", "rights", "show_badge"] as const).some((key) => before[key] !== after[key])) await syncRoleMembers(String(role.id), next);
         const changes = (["name", "color", "position", "rights", "show_badge"] as const)
             .filter((key) => before[key] !== after[key])
             .map((key) => ({ key, old_value: before[key], new_value: after[key] })) as unknown as AuditLogChange[];
@@ -79,10 +84,10 @@ router.delete(
     async (req: Request, res: Response) => {
         const role = await findRole(req);
         assertBelowActor(staffActor(req), Number(role.position), await loadStaffRoles(true));
-        const members = await StaffRoleMember.count({ where: { role_id: String(role.id) } });
+        const members = await roleMemberIds(String(role.id));
         await StaffRoleMember.delete({ role_id: String(role.id) });
         await StaffRole.delete({ id: role.id });
-        await refreshStaffRoles();
+        await syncModeratorAlumni(members, { notify: "all", snap: await refreshStaffRoles() });
         res.locals.staffAudited = true;
         await recordStaffAction({
             actor_id: req.user_id,
@@ -90,7 +95,7 @@ router.delete(
             area: "staff",
             action_type: AuditLogEvents.ADMIN_STAFF_ROLE_DELETE,
             target_id: String(role.id),
-            options: { role_name: role.name, count: String(members) },
+            options: { role_name: role.name, count: String(members.length) },
             changes: [
                 { key: "name", old_value: role.name },
                 { key: "rights", old_value: String(role.rights) },

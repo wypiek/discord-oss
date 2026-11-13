@@ -68,7 +68,12 @@ test("profile response keeps free feature entitlements and custom badges without
         Relationship: {},
         UserActivityStats: { findOne: async () => null },
     };
-    const util = { loadStaffRoles: async () => ({ roles: new Map(), members: new Map() }), staffBadgeRole: () => null, instanceName: () => "Meowcord" };
+    const util = {
+        loadStaffRoles: async () => ({ roles: new Map(), members: new Map() }),
+        staffBadgeRole: () => null,
+        moderatorBadgeRole: () => null,
+        instanceName: () => "Meowcord",
+    };
     const badgeSettings = load("src/api/util/utility/badgeSettings.ts", { "@spacebar/util": {}, "./staffBadge": { STAFF_BADGE_ID: "1" } });
     const profileBadges = load("src/api/util/utility/profileBadges.ts", {
         typeorm: { In: (x) => x },
@@ -87,6 +92,7 @@ test("profile response keeps free feature entitlements and custom badges without
         "./badgeSettings": badgeSettings,
         "./profile": utilities(),
         "./staffBadge": { STAFF_BADGE_ID: "1", ensureStaffBadge: async () => ({ icon: "staff" }) },
+        "./moderatorBadge": { isModeratorAlumniBadge: () => false, moderatorRoleBadgeRow: () => null },
     });
     load("src/api/routes/users/#user_id/profile.ts", {
         express: {

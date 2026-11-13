@@ -146,7 +146,7 @@ const staffRolesRoute = async (stored = []) => {
     const { util } = modules;
     const writes = [];
     const audit = [];
-    const apiUtil = { ...modules.targets, ...modules.rules, recordStaffAction: async (entry) => audit.push(entry) };
+    const apiUtil = { ...modules.targets, ...modules.rules, recordStaffAction: async (entry) => audit.push(entry), syncModeratorAlumni: async () => [] };
     const routes = loadRoutes("src/api/routes/admin/users/#user_id/staff-roles.ts", {
         "lambert-server/HTTPError": { HTTPError: StubError },
         "@spacebar/database": {

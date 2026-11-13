@@ -13,6 +13,7 @@ import {
     NITRO_TIER_ICONS,
     tierIconName,
     loadStaffRoles,
+    moderatorBadgeRole,
     staffBadgeRole,
     STREAMING_BADGE,
     TIERED_BADGES,
@@ -22,6 +23,7 @@ import {
 import { arrangeBadges, BadgeSettings, badgeSettings, isStaffBadge } from "./badgeSettings";
 import { isSubscriptionBadge } from "./profile";
 import { ensureStaffBadge, STAFF_BADGE_ID } from "./staffBadge";
+import { isModeratorAlumniBadge, moderatorRoleBadgeRow } from "./moderatorBadge";
 
 export const DIRECTORY_STAFF_BADGE_ID = 22;
 export const NITRO_BADGE_ID = 1;
@@ -227,7 +229,10 @@ export async function localProfileBadges(user: BadgeOwner, progress?: Map<number
     const rows: { id: string; description: string; icon: string; link?: string; rarity?: number | null; details?: string | null }[] = ids.length
         ? await Badge.find({ where: { id: In(ids) } })
         : [];
-    const role = user.badge_ids?.includes(STAFF_BADGE_ID) ? null : staffBadgeRole(user.id, await loadStaffRoles());
+    const snap = await loadStaffRoles();
+    const moderatorRole = rows.some(isModeratorAlumniBadge) ? null : moderatorBadgeRole(user.id, snap);
+    if (moderatorRole) rows.unshift(moderatorRoleBadgeRow(moderatorRole));
+    const role = user.badge_ids?.includes(STAFF_BADGE_ID) ? null : staffBadgeRole(user.id, snap);
     if (role) {
         const staffBadge = await ensureStaffBadge();
         rows.unshift({ id: `staff-role-${role.id}`, description: `${instanceName()} ${role.name}`, icon: staffBadge.icon, link: staffBadge.link });

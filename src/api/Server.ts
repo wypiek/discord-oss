@@ -36,6 +36,7 @@ import {
     startMessagePurger,
     startScheduledMessageSender,
     startThreadArchiver,
+    syncAllModeratorAlumni,
 } from "./util";
 import { route } from "@spacebar/api/middlewares";
 import { startAnnouncementDeliveryWorker } from "./util/utility/announcementDelivery";
@@ -146,6 +147,7 @@ export class SpacebarServer extends Server {
 
         await this.mount();
         await recoverPendingPolls();
+        await syncAllModeratorAlumni().catch((error) => console.error("[Badges] Moderator Programs Alumni sync failed", error));
 
         await ConnectionLoader.loadConnections();
 

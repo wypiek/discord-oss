@@ -3,9 +3,9 @@ import { In } from "typeorm";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
 import { StaffRole, StaffRoleMember, User } from "@spacebar/database";
-import { actorLevel, invalidateStaffRoles, loadStaffRoles, OPERATOR_LEVEL, Rights, Snowflake } from "@spacebar/util";
+import { actorLevel, invalidateStaffRoles, loadStaffRoles, OPERATOR_LEVEL, Rights, roleBadge, Snowflake } from "@spacebar/util";
 import { AdminStaffRoleCreateSchema, AdminStaffRolePositionsSchema, AuditLogEvents } from "@spacebar/schemas";
-import { ASSIGNABLE_RIGHTS, assertBelowActor, assertCanGrantRights, parseRoleRights, recordStaffAction, staffActor } from "@spacebar/api/util";
+import { ASSIGNABLE_RIGHTS, assertBelowActor, assertCanGrantRights, parseRoleRights, recordStaffAction, staffActor, syncModeratorAlumni } from "@spacebar/api/util";
 
 const router = Router({ mergeParams: true });
 
@@ -18,6 +18,7 @@ export const serializeStaffRole = (role: StaffRole) => ({
     rights: String(role.rights ?? "0"),
     position: Number(role.position),
     show_badge: Boolean(role.show_badge),
+    badge: roleBadge({ rights: role.rights, show_badge: Boolean(role.show_badge) }),
     created_at: role.created_at,
 });
 
@@ -150,7 +151,12 @@ router.patch(
             assertBelowActor(actor, entry.position, snap);
         }
         for (const entry of changed) await StaffRole.update({ id: entry.id }, { position: entry.position });
-        await refreshStaffRoles();
+        const next = await refreshStaffRoles();
+        const moved = new Set(changed.map((entry) => entry.id));
+        await syncModeratorAlumni(
+            [...next.members].filter(([, role_ids]) => role_ids.some((id) => moved.has(id))).map(([user_id]) => user_id),
+            { notify: "all", snap: next },
+        );
         res.locals.staffAudited = true;
         for (const entry of changed) {
             const role = roles.find((item) => String(item.id) === entry.id)!;
