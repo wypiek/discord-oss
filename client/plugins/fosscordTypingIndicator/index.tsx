@@ -1,7 +1,22 @@
 import ErrorBoundary from "@components/ErrorBoundary";
 import { ModalCloseButton, ModalContent, ModalHeader, ModalRoot, ModalSize, openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
-import { FluxDispatcher, IconUtils, RelationshipStore, RestAPI, Text, TextInput, TypingStore, UserStore, useState, useStateFromStores } from "@webpack/common";
+import { findByPropsLazy, findComponentByCodeLazy } from "@webpack";
+import {
+    EmojiStore,
+    FluxDispatcher,
+    IconUtils,
+    Popout,
+    RelationshipStore,
+    RestAPI,
+    Text,
+    TextInput,
+    TypingStore,
+    UserStore,
+    useRef,
+    useState,
+    useStateFromStores,
+} from "@webpack/common";
 import type { ReactNode } from "react";
 
 import { FosscordAuthor } from "../fosscordCore/shared";
@@ -11,14 +26,25 @@ import managedStyle from "./style.css?managed";
 type StyleEmoji = { id?: string; name: string; animated?: boolean };
 type TypingStyle = { emojis: StyleEmoji[]; animation: number; typingSuggestion: number; customText?: string | null };
 type TypingProps = { channel?: { id: string }; typingUsers?: unknown[] };
+type PickedEmoji = { id?: string | null; name?: string | null; animated?: boolean; surrogates?: string; optionallyDiverseSequence?: string };
+type EmojiPickerProps = {
+    pickerIntention: number;
+    closePopout: () => void;
+    onNavigateAway?: () => void;
+    onSelectEmoji: (selection: { emoji: PickedEmoji | null; willClose: boolean }) => void;
+};
+
+const EmojiPicker = findComponentByCodeLazy<EmojiPickerProps>("hasTabWrapper:", "showOnlyUnicode:", "isViewingEmojiPacks:");
+const EmojiConstants: { EmojiIntention: Record<string, number> } = findByPropsLazy("EmojiIntention", "isExternalEmojiAllowedForIntention");
 
 export const SUGGESTIONS = ["is typing…", "is yapping…", "is venting…", "is oversharing…", "is barking…", "is babbling…", "is daydreaming…", "is meowing…"];
 export const ANIMATIONS = ["None", "Pulse", "Ring", "Wave"];
 const SURPRISE_EMOJIS = ["😈", "🤠", "🤪", "🐱", "🐶", "🔥", "✨", "💀", "🫠", "🥺", "😎", "🤖", "👻", "🌈", "🍕", "🎉", "💅", "🦄", "🐸", "🌸"];
 const CUSTOM = -1;
 const MAX_TEXT = 32;
+const MAX_EMOJIS = 3;
 
-const emojiUrl = (emoji: StyleEmoji) => IconUtils.getEmojiURL({ id: emoji.id, animated: !!emoji.animated, size: 48 });
+const emojiUrl = (emoji: StyleEmoji) => IconUtils.getEmojiURL({ id: emoji.id ?? "", animated: !!emoji.animated, size: 48 });
 
 const styleOf = (userId: string | undefined): TypingStyle | null => {
     if (!userId) return null;
@@ -44,13 +70,17 @@ export const typingTextFor = (style: TypingStyle | null) => {
 function Emojis({ style, size = 18 }: { style: TypingStyle; size?: number }) {
     return (
         <span className={`fosscord-typing-emojis fosscord-typing-animation-${style.animation}`} aria-hidden>
-            {style.emojis.slice(0, 3).map((emoji, index) => (
+            {style.emojis.slice(0, MAX_EMOJIS).map((emoji, index) => (
                 <span key={index} className="fosscord-typing-emoji" style={{ animationDelay: `${index * 0.18}s`, fontSize: size, width: size + 2, height: size + 2 }}>
-                    {emoji.id ? <img src={emojiUrl(emoji)} alt="" width={size} height={size} draggable={false} /> : emoji.name}
+                    <EmojiGlyph emoji={emoji} size={size} />
                 </span>
             ))}
         </span>
     );
+}
+
+function EmojiGlyph({ emoji, size }: { emoji: StyleEmoji; size: number }) {
+    return emoji.id ? <img src={emojiUrl(emoji)} alt="" width={size} height={size} draggable={false} /> : emoji.name;
 }
 
 function Dots() {
@@ -73,24 +103,92 @@ const parseEmoji = (value: string): StyleEmoji | null => {
     return /\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/u.test(first) ? { name: first } : null;
 };
 
-const emojiText = (emoji: StyleEmoji | undefined) => (!emoji ? "" : emoji.id ? `<${emoji.animated ? "a" : ""}:${emoji.name || "emoji"}:${emoji.id}>` : emoji.name);
+const fromPicker = (emoji: PickedEmoji | null): StyleEmoji | null => {
+    if (!emoji) return null;
+    if (emoji.id) return { id: emoji.id, name: emoji.name ?? "", animated: !!emoji.animated };
+    return parseEmoji(emoji.optionallyDiverseSequence || emoji.surrogates || "");
+};
+
+const emojiLabel = (emoji: StyleEmoji) => (emoji.id ? `:${emoji.name || EmojiStore.getCustomEmojiById(emoji.id)?.name || "custom emoji"}:` : emoji.name);
+
+const pickerIntention = () => EmojiConstants.EmojiIntention.TYPING_INDICATOR ?? EmojiConstants.EmojiIntention.STATUS;
+
+function EmojiPickerTile({
+    filled,
+    label,
+    onPick,
+    onNavigateAway,
+    children,
+}: {
+    filled: boolean;
+    label: string;
+    onPick: (emoji: StyleEmoji, first: boolean) => boolean;
+    onNavigateAway?: () => void;
+    children: ReactNode;
+}) {
+    const tileRef = useRef<HTMLButtonElement>(null);
+    const picks = useRef(0);
+    return (
+        <Popout
+            targetElementRef={tileRef}
+            position="bottom"
+            align="center"
+            renderPopout={({ closePopout }) => (
+                <ErrorBoundary noop>
+                    <EmojiPicker
+                        pickerIntention={pickerIntention()}
+                        closePopout={closePopout}
+                        onNavigateAway={() => {
+                            closePopout();
+                            onNavigateAway?.();
+                        }}
+                        onSelectEmoji={({ emoji, willClose }) => {
+                            const chosen = fromPicker(emoji);
+                            const roomLeft = chosen ? onPick(chosen, picks.current++ === 0) : true;
+                            if (willClose || !roomLeft) closePopout();
+                        }}
+                    />
+                </ErrorBoundary>
+            )}
+        >
+            {(popoutProps, { isShown }) => (
+                <button
+                    {...popoutProps}
+                    onClick={(event) => {
+                        if (!isShown) picks.current = 0;
+                        popoutProps.onClick(event);
+                    }}
+                    ref={tileRef}
+                    type="button"
+                    className={`fosscord-typing-slot${filled ? "" : " fosscord-typing-slot-add"}${isShown ? " fosscord-typing-slot-active" : ""}`}
+                    aria-label={label}
+                >
+                    {children}
+                </button>
+            )}
+        </Popout>
+    );
+}
 
 const pick = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
 
-function TypingIndicatorEditor() {
+function TypingIndicatorEditor({ onNavigateAway }: { onNavigateAway?: () => void }) {
     const me = UserStore.getCurrentUser();
     const saved = styleOf(me?.id);
-    const [slots, setSlots] = useState<string[]>(() => [0, 1, 2].map((index) => emojiText(saved?.emojis[index])));
+    const [emojis, setEmojisState] = useState<StyleEmoji[]>(() => (saved?.emojis ?? []).slice(0, MAX_EMOJIS));
+    const latestEmojis = useRef(emojis);
+    const [typed, setTyped] = useState("");
     const [animation, setAnimation] = useState(saved?.animation ?? 0);
     const [suggestion, setSuggestion] = useState(saved?.customText ? CUSTOM : (saved?.typingSuggestion ?? 0));
     const [customText, setCustomText] = useState(saved?.customText ?? "");
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<{ error: boolean; text: string } | null>(null);
 
-    const emojis = slots.map(parseEmoji).filter((emoji): emoji is StyleEmoji => !!emoji);
-    const invalid = slots.some((slot) => slot.trim() && !parseEmoji(slot));
+    const typedEmoji = parseEmoji(typed);
+    const invalid = !!typed.trim() && !typedEmoji;
+    const full = emojis.length >= MAX_EMOJIS;
     const draft: TypingStyle = {
-        emojis,
+        emojis: typedEmoji && !full ? [...emojis, typedEmoji] : emojis,
         animation,
         typingSuggestion: suggestion === CUSTOM ? 0 : suggestion,
         customText: suggestion === CUSTOM ? customText.trim().slice(0, MAX_TEXT) || null : null,
@@ -122,8 +220,36 @@ function TypingIndicatorEditor() {
         }
     };
 
+    const setEmojis = (next: StyleEmoji[]) => {
+        latestEmojis.current = next.slice(0, MAX_EMOJIS);
+        setEmojisState(latestEmojis.current);
+        return latestEmojis.current.length < MAX_EMOJIS;
+    };
+
+    const append = (emoji: StyleEmoji) => (latestEmojis.current.length < MAX_EMOJIS ? setEmojis([...latestEmojis.current, emoji]) : false);
+
+    const replaceAt = (index: number) => (emoji: StyleEmoji, first: boolean) => {
+        if (!first) return append(emoji);
+        setEmojis(latestEmojis.current.map((existing, i) => (i === index ? emoji : existing)));
+        return true;
+    };
+
+    const removeAt = (index: number) => setEmojis(latestEmojis.current.filter((_, i) => i !== index));
+
+    const addTyped = () => {
+        if (!typedEmoji || full) return;
+        append(typedEmoji);
+        setTyped("");
+    };
+
+    const saveDraft = () => {
+        addTyped();
+        save(draft);
+    };
+
     const reset = () => {
-        setSlots(["", "", ""]);
+        setEmojis([]);
+        setTyped("");
         setAnimation(0);
         setSuggestion(0);
         setCustomText("");
@@ -132,8 +258,8 @@ function TypingIndicatorEditor() {
 
     const surprise = () => {
         const chosen = new Set<string>();
-        while (chosen.size < 3) chosen.add(pick(SURPRISE_EMOJIS));
-        setSlots([...chosen]);
+        while (chosen.size < MAX_EMOJIS) chosen.add(pick(SURPRISE_EMOJIS));
+        setEmojis([...chosen].map((name) => ({ name })));
         setAnimation(1 + Math.floor(Math.random() * 3));
         setSuggestion(1 + Math.floor(Math.random() * (SUGGESTIONS.length - 1)));
     };
@@ -150,20 +276,47 @@ function TypingIndicatorEditor() {
 
             <Text variant="text-sm/medium">Emojis</Text>
             <div className="fosscord-typing-slots">
-                {slots.map((slot, index) => (
-                    <TextInput
-                        key={index}
-                        value={slot}
-                        placeholder="Add emoji"
-                        aria-label={`Emoji ${index + 1}`}
-                        onChange={(value: string) => setSlots(slots.map((current, i) => (i === index ? value : current)))}
-                    />
+                {emojis.map((emoji, index) => (
+                    <div key={index} className="fosscord-typing-slot-wrap">
+                        <EmojiPickerTile filled label={`Change emoji ${index + 1}, ${emojiLabel(emoji)}`} onPick={replaceAt(index)} onNavigateAway={onNavigateAway}>
+                            <EmojiGlyph emoji={emoji} size={32} />
+                        </EmojiPickerTile>
+                        <button type="button" className="fosscord-typing-slot-remove" aria-label={`Remove emoji ${index + 1}`} onClick={() => removeAt(index)}>
+                            <svg viewBox="0 0 24 24" width={12} height={12} aria-hidden>
+                                <path
+                                    fill="currentColor"
+                                    d="M17.3 18.7a1 1 0 0 0 1.4-1.4L13.42 12l5.3-5.3a1 1 0 0 0-1.42-1.4L12 10.58l-5.3-5.3a1 1 0 0 0-1.4 1.42L10.58 12l-5.3 5.3a1 1 0 1 0 1.42 1.4L12 13.42l5.3 5.3Z"
+                                />
+                            </svg>
+                        </button>
+                    </div>
                 ))}
+                {!full && (
+                    <EmojiPickerTile filled={false} label="Add emoji" onPick={append} onNavigateAway={onNavigateAway}>
+                        <svg viewBox="0 0 24 24" width={20} height={20} aria-hidden>
+                            <path fill="currentColor" d="M13 5a1 1 0 1 0-2 0v6H5a1 1 0 1 0 0 2h6v6a1 1 0 1 0 2 0v-6h6a1 1 0 1 0 0-2h-6V5Z" />
+                        </svg>
+                        <span>Add emoji</span>
+                    </EmojiPickerTile>
+                )}
+            </div>
+            <div className="fosscord-typing-typed">
+                <TextInput
+                    value={typed}
+                    disabled={full}
+                    placeholder={full ? "Remove an emoji to add another" : "Or paste an emoji, or <:name:id>"}
+                    aria-label="Paste an emoji"
+                    onChange={(value: string) => setTyped(value)}
+                    onKeyDown={(event: { key: string }) => event.key === "Enter" && addTyped()}
+                />
+                <Button variant="secondary" disabled={full || !typedEmoji} onClick={addTyped}>
+                    Add
+                </Button>
             </div>
             <Text variant="text-xs/normal" color={invalid ? "text-danger" : "text-muted"}>
                 {invalid
-                    ? "Each box takes one emoji, or a custom emoji written as <:name:id>."
-                    : "Paste or type an emoji in each box, or a custom emoji as <:name:id>. Leave them empty to keep the dots."}
+                    ? "That isn't an emoji. Paste one emoji, or a custom emoji written as <:name:id>."
+                    : `Pick up to ${MAX_EMOJIS} emojis, your servers' emojis included. Shift-click in the picker to add several at once. With no emojis, others see the dots.`}
             </Text>
 
             <Text variant="text-sm/medium">Animation</Text>
@@ -191,7 +344,7 @@ function TypingIndicatorEditor() {
                 </Text>
             )}
             <div className="fosscord-typing-actions">
-                <Button disabled={busy || invalid} onClick={() => save(draft)}>
+                <Button disabled={busy || invalid} onClick={saveDraft}>
                     Save
                 </Button>
                 <Button variant="secondary" disabled={busy} onClick={surprise}>
@@ -215,7 +368,7 @@ function openEditor() {
                 <ModalCloseButton onClick={props.onClose} />
             </ModalHeader>
             <ModalContent className="fosscord-typing-modal">
-                <TypingIndicatorEditor />
+                <TypingIndicatorEditor onNavigateAway={props.onClose} />
             </ModalContent>
         </ModalRoot>
     ));
