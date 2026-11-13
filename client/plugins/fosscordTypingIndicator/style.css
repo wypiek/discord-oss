@@ -18,14 +18,82 @@
 }
 
 .fosscord-typing-slots {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
-.fosscord-typing-slots input {
-    text-align: center;
-    font-size: 20px;
+.fosscord-typing-slot-wrap {
+    position: relative;
+}
+
+.fosscord-typing-slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 56px;
+    height: 56px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle, transparent);
+    background: var(--background-mod-subtle, var(--background-secondary-alt));
+    color: var(--text-default, var(--text-normal));
+    font-size: 32px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.fosscord-typing-slot:hover,
+.fosscord-typing-slot-active {
+    border-color: var(--brand-500, #5865f2);
+}
+
+.fosscord-typing-slot img {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+}
+
+.fosscord-typing-slot-add {
+    border-style: dashed;
+    border-color: var(--border-strong, var(--interactive-muted));
+    color: var(--text-muted, var(--interactive-normal));
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.fosscord-typing-slot-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--background-mod-strong, var(--background-tertiary));
+    color: var(--text-default, var(--text-normal));
+    box-shadow: 0 0 0 2px var(--modal-background, var(--background-primary));
+    cursor: pointer;
+}
+
+.fosscord-typing-slot-remove:hover {
+    background: var(--status-danger, #da373c);
+    color: var(--white, #fff);
+}
+
+.fosscord-typing-typed {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fosscord-typing-typed > :first-child {
+    flex: 1;
 }
 
 .fosscord-typing-choices {
@@ -199,8 +267,4 @@
 
 .fosscord-typing-modal .fosscord-ui-section-heading h3 {
     display: none;
-}
-
-.fosscord-typing-slots input::placeholder {
-    font-size: 14px;
 }
