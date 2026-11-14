@@ -1,7 +1,7 @@
 import { route } from "@spacebar/api/middlewares";
 import { AuditLog, Guild } from "@spacebar/database";
 import { DiscordApiErrors, handleFile } from "@spacebar/util";
-import { applyGuildTag, syncTagAdopters } from "@spacebar/api/util";
+import { applyGuildTag, syncTagAdopters, updatedImageHash } from "@spacebar/api/util";
 import { Request, Response, Router } from "express";
 import { AuditLogEvents, GuildProfileModifySchema } from "@spacebar/schemas";
 
@@ -41,13 +41,15 @@ router.patch(
         const body = req.body as GuildProfileModifySchema;
         const guild = await Guild.findOneOrFail({ where: { id: guild_id } });
         const profile = { ...(guild.profile ?? {}) };
-        const auditKeys = ["name", "description", "icon"];
-        const auditBefore = { name: guild.name, description: guild.description, icon: guild.icon };
+        const auditKeys = ["name", "description", "icon", "discovery_splash"];
+        const auditBefore = { name: guild.name, description: guild.description, icon: guild.icon, discovery_splash: guild.discovery_splash };
 
         if (body.name != null) guild.name = body.name;
         if (body.description !== undefined) guild.description = body.description ?? undefined;
-        if (body.icon !== undefined) guild.icon = body.icon ? await handleFile(`/icons/${guild_id}`, body.icon) : undefined;
-        if (body.custom_banner !== undefined) profile.custom_banner_hash = body.custom_banner ? await handleFile(`/guild-space/${guild_id}/banner`, body.custom_banner) : null;
+        Object.assign(guild, {
+            icon: await updatedImageHash(guild.icon, body.icon, (image) => handleFile(`/icons/${guild_id}`, image)),
+            discovery_splash: await updatedImageHash(guild.discovery_splash, body.custom_banner, (image) => handleFile(`/discovery-splashes/${guild_id}`, image)),
+        });
         if (body.visibility != null) profile.visibility = body.visibility;
         if (body.brand_color_primary !== undefined) profile.brand_color_primary = body.brand_color_primary;
         if (body.game_application_ids) profile.game_application_ids = body.game_application_ids;

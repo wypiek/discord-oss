@@ -741,7 +741,7 @@ export class Guild extends BaseClass {
             })),
             features: this.features,
             visibility: profile.visibility ?? GuildVisibilityLevel.PUBLIC,
-            custom_banner_hash: profile.custom_banner_hash ?? null,
+            custom_banner_hash: this.discovery_splash ?? null,
             premium_subscription_count: this.premium_subscription_count ?? 0,
             premium_tier: this.premium_tier ?? GuildPremiumTier.NONE,
             banner_hash: null,
