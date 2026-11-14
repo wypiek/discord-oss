@@ -1,5 +1,7 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import zlib from "node:zlib";
 import { ASSETS_FOLDER, Config } from "@spacebar/util";
 import { CustomGame } from "@spacebar/database";
 
@@ -27,6 +29,30 @@ const TTL = 6 * 3_600_000;
 const SUGGESTED = ["Minecraft", "Fortnite", "League of Legends", "VALORANT", "Roblox", "Counter-Strike 2", "Genshin Impact", "Overwatch 2", "Apex Legends", "Grand Theft Auto V"];
 
 type GameIndex = { games: DetectableGame[]; byId: Map<string, DetectableGame>; expires: number };
+
+export type ExecutablePlatform = "darwin" | "win32" | "linux";
+export type ExecutableList = { etag: string; body: Buffer; gzip: Buffer };
+
+const EXECUTABLE_OSES: Record<ExecutablePlatform, string[]> = { darwin: ["darwin"], win32: ["win32"], linux: ["linux", "win32"] };
+const PLATFORM_IDS: Record<string, number> = { win32: 0, linux: 6, darwin: 7 };
+const executableLists = new WeakMap<GameIndex, Map<ExecutablePlatform, ExecutableList>>();
+
+export function compactExecutables(games: DetectableGame[], platform: ExecutablePlatform) {
+    const oses = EXECUTABLE_OSES[platform];
+    return games.map((game) => {
+        const executables = (Array.isArray(game.executables) ? game.executables : []).flatMap((executable) => {
+            const entry = executable as { name?: unknown; os?: unknown; arguments?: unknown; is_launcher?: unknown };
+            if (typeof entry?.name !== "string" || entry.is_launcher === true || (typeof entry.os === "string" && !oses.includes(entry.os))) return [];
+            return [typeof entry.arguments === "string" && entry.arguments ? { name: entry.name, arguments: entry.arguments } : { name: entry.name }];
+        });
+        return {
+            id: game.id,
+            name: game.name,
+            ...(game.aliases?.length && { aliases: game.aliases }),
+            ...(executables.length && { executables }),
+        };
+    });
+}
 
 let loaded: GameIndex | undefined;
 let pending: Promise<GameIndex> | undefined;
@@ -131,6 +157,19 @@ export const DetectableGames = {
         return pending;
     },
 
+    async executables(platform: ExecutablePlatform): Promise<ExecutableList> {
+        const loaded = await this.load();
+        let lists = executableLists.get(loaded);
+        if (!lists) executableLists.set(loaded, (lists = new Map()));
+        let list = lists.get(platform);
+        if (!list) {
+            const body = Buffer.from(JSON.stringify(compactExecutables(loaded.games, platform)));
+            list = { etag: `"${crypto.createHash("sha1").update(body).digest("base64url")}"`, body, gzip: zlib.gzipSync(body) };
+            lists.set(platform, list);
+        }
+        return list;
+    },
+
     async search(query: string, limit = 10) {
         const q = query.trim().toLowerCase();
         if (!q) return [];
@@ -152,7 +191,26 @@ export const DetectableGames = {
         return SUGGESTED.map((name) => games.find((x) => x.name === name)?.id).filter((x): x is string => !!x);
     },
 
+    similar(id: string, games: DetectableGame[], limit = 6) {
+        const game = games.find((x) => x.id === id);
+        const themes = new Set(game?.themes ?? []);
+        if (themes.size < 2) return [];
+        const scored: { id: string; score: number }[] = [];
+        for (const other of games) {
+            if (other.id === id || !other.icon_hash || !other.themes?.length) continue;
+            const shared = other.themes.filter((theme) => themes.has(theme)).length;
+            if (shared >= 2) scored.push({ id: other.id, score: shared / (themes.size + other.themes.length - shared) });
+        }
+        return scored
+            .sort((a, b) => b.score - a.score)
+            .slice(0, limit)
+            .map((x) => x.id);
+    },
+
     toGame(game: DetectableGame) {
+        const cdn = (Config.get().cdn.endpointPublic ?? "").replace(/\/$/, "");
+        const image = (hash: string | null | undefined) => (hash ? { type: "url", value: `${cdn}/app-icons/${game.id}/${hash}.png?size=1024` } : undefined);
+        const platforms = [...new Set((game.executables ?? []).map((executable) => PLATFORM_IDS[(executable as { os?: string })?.os ?? ""]).filter((x) => x !== undefined))];
         return {
             id: game.id,
             name: game.name,
@@ -164,16 +222,17 @@ export const DetectableGames = {
             overlay_compatibility_hook: game.overlay_compatibility_hook ?? false,
             overlay_methods: game.overlay_methods ?? 0,
             hook: game.hook ?? true,
-            third_party_skus: game.third_party_skus ?? [],
+            third_party_skus: [],
             themes: game.themes ?? [],
             genres: [],
-            platforms: [],
+            platforms,
             platform_availability: [],
             websites: [],
             companies: [],
+            linked_applications: [],
             media: {
-                icon: game.icon_hash ? { type: "hash", value: game.icon_hash } : undefined,
-                cover: game.cover_image_hash ? { type: "hash", value: game.cover_image_hash } : undefined,
+                icon: image(game.icon_hash),
+                cover: image(game.cover_image_hash),
             },
             game_flags: 0,
             content_classification: game.content_classification,

@@ -2,6 +2,7 @@ import { createPrivateKey, generateKeyPairSync, randomBytes, sign } from "node:c
 import { ILike, In, Not, IsNull } from "typeorm";
 import { Application, ApplicationCommand, EmbeddedActivity, Member } from "@spacebar/database";
 import { withApplicationOutbound } from "@spacebar/api/util/utility/applicationOutbound";
+import { DetectableGames, type DetectableGame } from "@spacebar/api/util/utility/games";
 import { serializeCommand } from "./ApplicationCommands";
 import { fetchPublicUrl, Snowflake } from "@spacebar/util";
 
@@ -146,13 +147,45 @@ export function activityConfig(activity: EmbeddedActivity) {
     };
 }
 
+export const GAME_APPLICATION_TYPE = 5;
+
+export function detectableGameApplication(game: DetectableGame) {
+    return {
+        id: game.id,
+        name: game.name,
+        icon: game.icon_hash ?? null,
+        description: "",
+        summary: "",
+        type: GAME_APPLICATION_TYPE,
+        cover_image: game.cover_image_hash ?? undefined,
+        flags: 0,
+        hook: game.hook ?? true,
+        aliases: game.aliases ?? [],
+        executables: game.executables ?? [],
+        third_party_skus: game.third_party_skus ?? [],
+        overlay: game.overlay ?? false,
+        overlay_warn: game.overlay_warn ?? false,
+        overlay_compatibility_hook: game.overlay_compatibility_hook ?? false,
+        overlay_methods: game.overlay_methods ?? 0,
+        themes: game.themes ?? [],
+        verify_key: "",
+        tags: [],
+        integration_types_config: {},
+        is_monetized: false,
+        is_verified: false,
+        is_discoverable: false,
+        storefront_available: false,
+        ...(game.content_classification !== undefined && { content_classification: game.content_classification }),
+    };
+}
+
 export async function findPublicApplications(ids: string[]) {
     if (!ids.length) return [];
     const apps = await Application.find({ where: { id: In(ids) }, relations: { bot: true } });
     const activities = await EmbeddedActivity.find({
         where: { application_id: In(apps.map((a) => a.id)) },
     });
-    return apps.map((app) => {
+    const local = apps.map((app) => {
         const activity = activities.find((a) => a.application_id === app.id);
         return {
             ...toPublicApplication(app),
@@ -162,6 +195,10 @@ export async function findPublicApplications(ids: string[]) {
             }),
         };
     });
+    const missing = ids.filter((id) => !apps.some((app) => app.id === id));
+    if (!missing.length) return local;
+    const { byId } = await DetectableGames.load();
+    return [...local, ...missing.flatMap((id) => (byId.has(id) ? [detectableGameApplication(byId.get(id)!)] : []))];
 }
 
 export const isDirectoryApplication = async (app: Application) =>

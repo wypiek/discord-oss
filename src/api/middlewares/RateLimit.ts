@@ -355,6 +355,7 @@ export const anonymousRouteLimits: RouteLimit[] = [
     { paths: ["/science", "/track"], count: 30, window: 30 },
     { paths: ["/gateway", "/download", "/updates", "/incidents", "/scheduled-maintenances", "/status", "/policies"], count: 30, window: 30 },
     { paths: ["/connections"], method: "get", count: 30, window: 30 },
+    { paths: ["/games/detectable/executables"], method: "get", bucket: "games/detectable/executables", onlyIp: true, count: 10, window: 60 },
 ];
 
 export const topLevelRouteLimits: RouteLimit[] = [

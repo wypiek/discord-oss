@@ -29,6 +29,7 @@
 | [markdown-attachments.md](features/markdown-attachments.md) | The preview of Markdown file attachments and the LaTeX math it typesets. |
 | [activities.md](features/activities.md) | Embedded activities. |
 | [music-presence.md](features/music-presence.md) | Spotify and SoundCloud Listening activities, the Spotify connection, the desktop app's music readers and external activity images. |
+| [game-activity.md](features/game-activity.md) | Game detection in the desktop app, Playing activities, Registered Games and game profiles. |
 | [profile-widgets.md](features/profile-widgets.md) | Application profile widgets. |
 | [connections.md](features/connections.md) | Connected accounts, domain verification and setting up Steam, Bluesky, Roblox, Bungie.net and the OAuth providers. |
 | [profile-privacy.md](features/profile-privacy.md) | The Private profile setting and what people who aren't friends see. |

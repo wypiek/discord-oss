@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame } from "electron";
+import type { GamesUpdate, GamesWatch } from "./game-types";
 import type { MusicTrack, MusicWatch } from "./music-types";
 
 if (location.protocol === "file:") {
@@ -28,6 +29,17 @@ if (location.protocol === "file:") {
                 };
             },
             openSoundCloud: () => ipcRenderer.send("music:open-soundcloud"),
+        },
+        games: {
+            watch: (options: GamesWatch | null) =>
+                ipcRenderer.send("games:watch", options ? { overrides: Array.isArray(options.overrides) ? options.overrides : [], candidates: options.candidates === true } : null),
+            onUpdate: (listener: (update: GamesUpdate) => void) => {
+                const handler = (_event: Electron.IpcRendererEvent, update: GamesUpdate) => listener(update);
+                ipcRenderer.on("games:update", handler);
+                return () => {
+                    ipcRenderer.off("games:update", handler);
+                };
+            },
         },
     });
     webFrame.executeJavaScript(
