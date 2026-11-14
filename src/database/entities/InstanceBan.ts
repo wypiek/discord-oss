@@ -2,6 +2,8 @@ import { Column, CreateDateColumn, Entity, FindOptionsWhere, Index, JoinColumn, 
 import { BaseClass } from "./BaseClass";
 import { isPrivateAddress } from "../../util/util/networking/PublicNetwork";
 import { isCloudflareAddress } from "../../util/util/networking/Cloudflare";
+import { hashIp, ipFingerprint } from "../../util/util/IpHash";
+import { spreadReasonFor } from "../IpHashBackfill";
 
 type BanLookup = { userId?: string; ipAddress?: string; fingerprint?: string };
 
@@ -46,20 +48,21 @@ export class InstanceBan extends BaseClass {
     @ManyToOne(() => InstanceBan, { nullable: true, onDelete: "SET NULL" })
     origin_instance_ban?: InstanceBan;
 
-    static sharedAddress(ipAddress?: string) {
+    static sharedAddress(ipAddress?: string | null) {
         return !!ipAddress && (isPrivateAddress(ipAddress) || isCloudflareAddress(ipAddress));
     }
 
     private static matching(opts: BanLookup) {
         const optionalChecks: FindOptionsWhere<InstanceBan>[] = [];
         if (opts?.userId) optionalChecks.push({ user_id: opts.userId });
-        if (opts?.ipAddress && !InstanceBan.sharedAddress(opts.ipAddress)) optionalChecks.push({ ip_address: opts.ipAddress });
+        const ipHash = InstanceBan.sharedAddress(opts?.ipAddress) ? null : hashIp(opts?.ipAddress);
+        if (ipHash) optionalChecks.push({ ip_address: ipHash });
         if (opts?.fingerprint) optionalChecks.push({ fingerprint: opts.fingerprint });
         return optionalChecks;
     }
 
     static spreadReason(origin: InstanceBan) {
-        if (origin.ip_address) return `Used the banned address ${origin.ip_address}, ban ${origin.id}`;
+        if (origin.ip_address) return spreadReasonFor(ipFingerprint(origin.ip_address), origin.id);
         if (origin.user_id) return `Shared an address or browser with the banned account ${origin.user_id}, ban ${origin.id}`;
         return `Used a browser that a banned account used, ban ${origin.id}`;
     }
@@ -84,10 +87,11 @@ export class InstanceBan extends BaseClass {
         const instanceBans = where.length ? await InstanceBan.find({ where }) : [];
         const active = instanceBans.filter((ban) => InstanceBan.live(ban));
 
+        const ipHash = hashIp(opts?.ipAddress);
         const banReasons = [];
         for (const ban of active) {
             if (opts?.fingerprint && ban.fingerprint === opts.fingerprint) banReasons.push("fingerprint");
-            if (opts?.ipAddress && ban.ip_address === opts.ipAddress) banReasons.push("ipAddress");
+            if (ipHash && ban.ip_address === ipHash) banReasons.push("ipAddress");
             if (opts?.userId && ban.user_id === opts?.userId) banReasons.push("userId");
         }
 

@@ -79,6 +79,7 @@ import {
 } from "@spacebar/schemas";
 import { check } from "./instanceOf";
 import { clampText, UserFieldCaps } from "@spacebar/util/util/UserFieldCaps";
+import { ipLabel } from "@spacebar/util/util/IpHash";
 import { openConnections } from "../events/Connection";
 import { botIntentsAllowed } from "../util/GatewayIntents";
 
@@ -123,7 +124,7 @@ export async function onIdentify(this: WebSocket, data: Payload) {
 
     const user = tokenData.user;
     if (!user) {
-        console.log(`[Gateway/${this.ipAddress}] Failed to identify user`);
+        console.log(`[Gateway/${ipLabel(this.ipAddress)}] Failed to identify user`);
         return this.close(CLOSECODES.Authentication_failed);
     }
 
@@ -223,10 +224,7 @@ export async function onIdentify(this: WebSocket, data: Payload) {
     );
     this.session.client_info.os = clampText(identify.properties?.os || identify.properties?.$os, UserFieldCaps.clientInfo);
 
-    if (this.ipAddress && this.ipAddress !== this.session.last_seen_ip) {
-        this.session.last_seen_ip = this.ipAddress;
-        await this.session.updateIpInfo();
-    }
+    if (this.ipAddress && this.session.seenFrom(this.ipAddress)) await this.session.updateIpInfo(this.ipAddress);
 
     const createSessionTime = taskSw.getElapsedAndReset();
 

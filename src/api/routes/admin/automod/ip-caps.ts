@@ -5,7 +5,8 @@ import { route } from "@spacebar/api/middlewares";
 import { User } from "@spacebar/database";
 import { Config } from "@spacebar/util";
 import { ipGroup } from "@spacebar/util/util/IpGroups";
-import { accountsRegisteredFrom, accountsSignedInFrom, isIpCapExempt } from "@spacebar/api/util";
+import { accountsRegisteredFrom, accountsSignedInFrom, groupHash, isIpCapExempt } from "@spacebar/api/util";
+import { ipFingerprint } from "@spacebar/util/util/IpHash";
 
 const router = Router({ mergeParams: true });
 
@@ -15,7 +16,7 @@ router.get(
         right: "VIEW_USERS",
         spacebarOnly: true,
         description:
-            "Who counts toward the accounts per address caps for one address. IPv4 addresses count on their own and IPv6 addresses count per /64. Operators and deleted or disabled accounts don't count.",
+            "Who counts toward the accounts per address caps for one address. IPv4 addresses count on their own and IPv6 addresses count per /64. Accounts are found by the hash of the address's group, and `fingerprint` is the start of that hash. Operators and deleted or disabled accounts don't count.",
         query: { ip: { type: "string", required: true } },
     }),
     async (req: Request, res: Response) => {
@@ -35,6 +36,7 @@ router.get(
         res.json({
             ip: group.ip,
             group: group.key,
+            fingerprint: ipFingerprint(groupHash(group)),
             exempt: isIpCapExempt(group.ip),
             registration: { cap: registration.maxAccountsPerIp, count: registered.length, users: registered.slice(0, 200).map(describe) },
             login: { cap: login.maxAccountsPerIp, active_days: login.sessionActiveDays, count: signedIn.length, users: signedIn.slice(0, 200).map(describe) },

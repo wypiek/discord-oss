@@ -12,7 +12,7 @@ router.post(
         spacebarOnly: true,
         requestBody: "AdminIpBanLiftSchema",
         description:
-            "Lift up to 100 IP bans at once, each together with the bans it spread. The response lists the lifted bans with their addresses and reasons, the ids that matched no address ban and how many spread bans went with them.",
+            "Lift up to 100 IP bans at once, each together with the bans it spread. The response lists the lifted bans with their address hashes, fingerprints and reasons, the ids that matched no address ban and how many spread bans went with them.",
     }),
     async (req: Request, res: Response) => {
         const body = req.body as AdminIpBanLiftSchema;

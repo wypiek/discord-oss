@@ -1,8 +1,8 @@
-import { In, Like, MoreThan } from "typeorm";
-import { Session, User } from "@spacebar/database";
+import { In, MoreThan } from "typeorm";
+import { capTermFor, Session, User } from "@spacebar/database";
 import { Config, FieldErrors, isCloudflareAddress, isPrivateAddress, isStaffAccount, loadStaffRoles } from "@spacebar/util";
 import { IpGroup, ipGroup, ipRangeMatcher } from "@spacebar/util/util/IpGroups";
-import { ipVariants } from "./accountIps";
+import { hashIpKey, ipFingerprint } from "@spacebar/util/util/IpHash";
 import { recordAutomodAction } from "./instanceAutomod";
 import { logRestrictionOnce } from "./spamGuard";
 import { exemptionFrom, rulePolicy } from "./automodPolicy";
@@ -20,30 +20,30 @@ export function isIpCapExempt(ip: unknown) {
     return allowCache.matches(ip);
 }
 
-const ipWhere = (group: IpGroup) => (group.family === 4 ? In(ipVariants(group.ip)) : Like(group.pattern));
-const inGroup = (group: IpGroup, value: string | null | undefined) => ipGroup(value)?.key === group.key;
+export const groupHash = (group: IpGroup) => hashIpKey(group.key);
 
 export async function accountsRegisteredFrom(group: IpGroup) {
     const users = await User.find({
-        where: { registration_ip: ipWhere(group), deleted: false, disabled: false },
-        select: { id: true, rights: true, registration_ip: true },
+        where: { registration_ip_group: groupHash(group), deleted: false, disabled: false },
+        select: { id: true, rights: true },
         take: CANDIDATE_LIMIT,
     });
     const snap = await loadStaffRoles();
-    return users.filter((user) => inGroup(group, user.registration_ip) && !isStaffAccount(user, snap)).map((user) => user.id);
+    return users.filter((user) => !isStaffAccount(user, snap)).map((user) => user.id);
 }
 
 export async function accountsSignedInFrom(group: IpGroup, activeDays: number) {
     const since = new Date(Date.now() - Math.max(1, activeDays) * DAY);
+    const hash = groupHash(group);
     const sessions = await Session.find({
         where: [
-            { last_seen_ip: ipWhere(group), last_seen: MoreThan(since) },
-            { last_seen_ip: ipWhere(group), created_at: MoreThan(since) },
+            { last_seen_ip_group: hash, last_seen: MoreThan(since) },
+            { last_seen_ip_group: hash, created_at: MoreThan(since) },
         ],
-        select: { session_id: true, user_id: true, last_seen_ip: true },
+        select: { session_id: true, user_id: true },
         take: CANDIDATE_LIMIT,
     });
-    const ids = [...new Set(sessions.filter((session) => inGroup(group, session.last_seen_ip)).map((session) => session.user_id))];
+    const ids = [...new Set(sessions.map((session) => session.user_id))];
     if (!ids.length) return [];
     const users = await User.find({ where: { id: In(ids), deleted: false, disabled: false }, select: { id: true, rights: true } });
     const snap = await loadStaffRoles();
@@ -52,12 +52,13 @@ export async function accountsSignedInFrom(group: IpGroup, activeDays: number) {
 
 async function logRefusal(kind: "registration" | "login", group: IpGroup, count: number, max: number, user?: { id?: string; username?: string | null }) {
     const dryRun = rulePolicy("ipAccountLimit").dryRun;
-    if (!logRestrictionOnce(`ip-cap:${kind}:${group.key}:${user?.id ?? user?.username ?? ""}`, 10 * 60 * 1000)) return dryRun;
+    const hash = groupHash(group);
+    if (!logRestrictionOnce(`ip-cap:${kind}:${hash}:${user?.id ?? user?.username ?? ""}`, 10 * 60 * 1000)) return dryRun;
     await recordAutomodAction({
         user_id: user?.id ?? null,
         username: user?.username?.slice(0, 64) ?? null,
         rule: "ip_account_limit",
-        term: `${count} account${count === 1 ? "" : "s"} on ${group.key}, limit ${max}`,
+        term: capTermFor(`${count} account${count === 1 ? "" : "s"}`, ipFingerprint(hash), max),
         source: kind,
         action: dryRun ? "log" : "block",
         would_action: dryRun ? "block" : null,

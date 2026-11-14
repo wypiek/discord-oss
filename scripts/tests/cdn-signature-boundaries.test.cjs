@@ -12,6 +12,7 @@ const imports = {
     ms: require("ms"),
     "./util/ConsoleUtils": { ConsoleUtils: {} },
     "./util/ColorUtils": { ColorUtils: {} },
+    "./util/IpHash": require("./helpers/ip-hash.cjs"),
 };
 const loaded = { exports: {} };
 vm.runInNewContext(

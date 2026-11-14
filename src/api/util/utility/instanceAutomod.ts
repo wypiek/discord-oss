@@ -1,4 +1,3 @@
-import { In } from "typeorm";
 import { AutomodAction, AutomodActionRule, AutomodActionSource, AutomodActionTaken, Member, Message, RateLimit, Session, User, UserViolation } from "@spacebar/database";
 import { ApiError, Config, emitEvent, Event, FieldErrors, MessageDeleteBulkEvent } from "@spacebar/util";
 import { AppealStatusValue, ClassificationActionType, ClassificationType, UserFlags } from "@spacebar/schemas";
@@ -9,7 +8,7 @@ import { exemptionFrom, rulePolicy } from "./automodPolicy";
 import type { AutomodSpamAction } from "@spacebar/util/config/types/AutomodConfiguration";
 import { getSystemAccount } from "./systemAccounts";
 import { addressBucket } from "../../middlewares/RateLimit";
-import { ipVariants, normalizeIp } from "./accountIps";
+import { hashIp, hashIpKey } from "@spacebar/util/util/IpHash";
 
 const DAY = 24 * 60 * 60 * 1000;
 const WIPE_BATCH = 500;
@@ -296,7 +295,7 @@ export async function reverseAutomodAction(entry: AutomodAction, staff_id: strin
     await AutomodAction.update({ id: entry.id }, { reversed: true, reversed_at: new Date(), reversed_by: staff_id, reversal });
 }
 
-const loginKey = (user_id: string, ip?: string | null) => (ip ? `automod-login:${user_id}:${addressBucket(normalizeIp(ip) ?? undefined)}` : `automod-login:${user_id}`);
+const loginKey = (user_id: string, ip?: string | null) => (ip ? `automod-login:${user_id}:${hashIpKey(addressBucket(ip))}` : `automod-login:${user_id}`);
 const ACCOUNT_WIDE_FACTOR = 10;
 
 const lockedRow = async (key: string, max: number) => {
@@ -305,9 +304,9 @@ const lockedRow = async (key: string, max: number) => {
 };
 
 async function knownAddress(user_id: string, ip: string | null | undefined) {
-    const variants = ip ? ipVariants(ip) : [];
-    if (!variants.length) return false;
-    return (await Session.exists({ where: { user_id, last_seen_ip: In(variants) } })) || (await User.exists({ where: { id: user_id, registration_ip: In(variants) } }));
+    const hash = hashIp(ip);
+    if (!hash) return false;
+    return (await Session.exists({ where: { user_id, last_seen_ip: hash } })) || (await User.exists({ where: { id: user_id, registration_ip: hash } }));
 }
 
 export async function assertLoginNotLocked(user_id: string, ip?: string | null) {
@@ -338,7 +337,8 @@ export async function recordFailedLogin(user_id: string, ip?: string | null) {
 
 export const clearFailedLogins = (user_id: string, ip?: string | null) => RateLimit.delete({ id: loginKey(user_id, ip) }).catch(() => undefined);
 
-const registerKey = (ip: string) => `automod-register:${ip}`;
+const addressKey = (ip: string) => hashIp(ip) ?? hashIpKey(ip);
+const registerKey = (ip: string) => `automod-register:${addressKey(ip)}`;
 
 export async function assertRegistrationAllowedForIp(ip: string, username?: string) {
     const max = Config.get().automod.registration.maxAccountsPerIpPerDay;
@@ -366,5 +366,5 @@ export async function recordRegistrationForIp(ip: string) {
     if (!max) return;
     const { isIpCapExempt } = await import("./ipAccountCaps.js");
     if (isIpCapExempt(ip)) return;
-    await RateLimit.hit(registerKey(ip), ip, max, 24 * 60 * 60).catch(() => undefined);
+    await RateLimit.hit(registerKey(ip), addressKey(ip), max, 24 * 60 * 60).catch(() => undefined);
 }

@@ -31,6 +31,7 @@ function gateway() {
             require: (name) => {
                 const imports = {
                     picocolors: { bgRedBright: (text) => text },
+                    "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
                     "@spacebar/database": {
                         Channel: { find: async () => channels },
                         ThreadMember: { find: async () => [] },

@@ -1,9 +1,9 @@
 import { Router } from "express";
 import path from "node:path";
-import { createHash } from "node:crypto";
 import { RateLimit } from "@spacebar/database";
 import { route } from "@spacebar/api/middlewares";
 import { createRegistrationChallenge, isCapContext, redeemRegistrationChallenge } from "@spacebar/api/util/utility/localCap";
+import { hashIp } from "@spacebar/util/util/IpHash";
 
 const router = Router();
 const widgetRoot = path.dirname(require.resolve("@cap.js/widget"));
@@ -27,9 +27,7 @@ for (const action of ["challenge", "redeem"] as const) {
     router.post([`/${action}`, `/:context/${action}`], route({ authentication: "never" }), async (req, res) => {
         const context = req.params.context ?? "register";
         if (!isCapContext(context)) return res.status(404).json({ success: false, reason: "unknown_context" });
-        const ipKey = createHash("sha256")
-            .update(req.ip || "unknown")
-            .digest("hex");
+        const ipKey = hashIp(req.ip) ?? "unknown";
         const limit = await RateLimit.hit(`cap-request:${action}:${ipKey}`, "cap", 30, 60);
         if (limit.hits > 30) {
             res.setHeader("Retry-After", Math.max(1, Math.ceil((limit.expires_at.getTime() - Date.now()) / 1000)));

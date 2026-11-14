@@ -15,6 +15,7 @@ import { ProcessLifecycle } from "@spacebar/util/util/ProcessLifecycle";
 import { Monitoring } from "../../util/monitoring/Monitoring";
 import { Gauge } from "prom-client";
 import { admitPendingConnection, settlePendingConnection } from "../util/PendingConnections";
+import { ipLabel } from "@spacebar/util/util/IpHash";
 
 // TODO: check rate limit
 // TODO: specify rate limit in config
@@ -97,9 +98,9 @@ export async function Connection(this: WS.Server, socket: WebSocket, request: In
         // @ts-ignore
         socket.on("message", Message);
 
-        socket.on("error", (err) => console.error(`[Gateway/${socket.user_id ?? socket.ipAddress}]`, err));
+        socket.on("error", (err) => console.error(`[Gateway/${socket.user_id ?? ipLabel(socket.ipAddress)}]`, err));
 
-        console.log(`[Gateway] New connection from ${ipAddress}, total ${this.clients.size}`);
+        console.log(`[Gateway] New connection from ${ipLabel(ipAddress)}, total ${this.clients.size}`);
 
         if (process.env.WS_LOGEVENTS)
             [
@@ -119,13 +120,13 @@ export async function Connection(this: WS.Server, socket: WebSocket, request: In
         // @ts-ignore
         socket.encoding = searchParams.get("encoding") || "json";
         if (!["json", "etf"].includes(socket.encoding)) {
-            console.error(`[Gateway/${socket.ipAddress}] Unknown encoding: ${socket.encoding}`);
+            console.error(`[Gateway/${ipLabel(socket.ipAddress)}] Unknown encoding: ${socket.encoding}`);
             return socket.close(CLOSECODES.Decode_error);
         }
 
         socket.version = Number(searchParams.get("v") ?? searchParams.get("version") ?? "8");
         if (![8, 9, 10].includes(socket.version)) {
-            console.error(`[Gateway/${socket.ipAddress}] Invalid API version: ${socket.version}`);
+            console.error(`[Gateway/${ipLabel(socket.ipAddress)}] Invalid API version: ${socket.version}`);
             return socket.close(CLOSECODES.Invalid_API_version);
         }
 

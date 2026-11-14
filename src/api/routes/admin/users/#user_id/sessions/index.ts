@@ -6,6 +6,7 @@ import { Session, User } from "@spacebar/database";
 import { emitEvent, Event } from "@spacebar/util";
 import { AdminSessionsRevokeSchema } from "@spacebar/schemas";
 import { assertCanManage } from "../../index";
+import { ipFingerprint } from "@spacebar/util/util/IpHash";
 
 const router = Router({ mergeParams: true });
 
@@ -37,6 +38,7 @@ router.get(
                     created_at: s.created_at ?? null,
                     last_seen: s.last_seen ?? null,
                     last_seen_ip: s.last_seen_ip ?? null,
+                    last_seen_ip_fingerprint: ipFingerprint(s.last_seen_ip),
                     last_seen_location: s.last_seen_location ?? null,
                     nickname: s.session_nickname ?? null,
                 }))

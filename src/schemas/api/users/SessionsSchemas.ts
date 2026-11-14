@@ -27,6 +27,5 @@ export type DeviceInfo = {
         location: string;
     };
     last_seen?: Date;
-    last_seen_ip?: string;
     last_seen_location?: string;
 };

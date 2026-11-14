@@ -2,6 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const { loadModule } = require("./helpers/route-harness.cjs");
+const ipHash = require("./helpers/ip-hash.cjs");
 
 function lockoutFixture({ sessions = [], max = 10 } = {}) {
     const rows = new Map();
@@ -16,10 +17,9 @@ function lockoutFixture({ sessions = [], max = 10 } = {}) {
         delete: async ({ id }) => rows.delete(id),
     };
     const automod = loadModule("src/api/util/utility/instanceAutomod.ts", {
-        typeorm: { In: (values) => ({ in: values }) },
         "@spacebar/database": {
             RateLimit,
-            Session: { exists: async ({ where }) => sessions.some((session) => session.user_id === where.user_id && where.last_seen_ip.in.includes(session.ip)) },
+            Session: { exists: async ({ where }) => sessions.some((session) => session.user_id === where.user_id && where.last_seen_ip === ipHash.hashIp(session.ip)) },
             User: { exists: async () => false },
         },
         "@spacebar/util": {
@@ -33,7 +33,7 @@ function lockoutFixture({ sessions = [], max = 10 } = {}) {
         "./automodPolicy": {},
         "./systemAccounts": {},
         "../../middlewares/RateLimit": { addressBucket: (address) => address },
-        "./accountIps": { ipVariants: (ip) => [ip], normalizeIp: (ip) => ip },
+        "@spacebar/util/util/IpHash": ipHash,
     });
     return { automod, rows };
 }
@@ -63,9 +63,13 @@ test("a correct password clears only its own address", async () => {
     await automod.recordFailedLogin("victim", "203.0.113.9");
     await automod.recordFailedLogin("victim", "198.51.100.4");
     await automod.clearFailedLogins("victim", "198.51.100.4");
-    assert.ok(rows.has("automod-login:victim:203.0.113.9"));
-    assert.ok(!rows.has("automod-login:victim:198.51.100.4"));
+    assert.ok(rows.has(`automod-login:victim:${ipHash.hashIpKey("203.0.113.9")}`));
+    assert.ok(!rows.has(`automod-login:victim:${ipHash.hashIpKey("198.51.100.4")}`));
     assert.ok(rows.has("automod-login:victim"));
+    assert.ok(
+        [...rows.keys()].every((key) => !key.includes("203.0.113.9")),
+        "lockout keys never hold a raw address",
+    );
 });
 
 test("the appeal page asks for a second factor before it shows anything", () => {

@@ -51,6 +51,7 @@ function userRoutes(user = { id: "mod", rights: "0", username: "mod", discrimina
     const tagged = [];
     const routes = loadRoutes("src/api/routes/admin/users/#user_id/index.ts", {
         "@spacebar/util/util/IdentityModeration": { assertIdentityNameAllowed: () => undefined },
+        "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
         "lambert-server/HTTPError": { HTTPError: StubError },
         "@spacebar/database": {
             Badge: {},

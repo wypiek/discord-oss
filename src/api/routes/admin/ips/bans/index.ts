@@ -1,9 +1,10 @@
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
-import { FindOptionsWhere, In, IsNull, Like, Not } from "typeorm";
+import { FindOptionsWhere, In, IsNull, Not } from "typeorm";
 import { route } from "@spacebar/api/middlewares";
 import { InstanceBan, User } from "@spacebar/database";
-import { ipVariants, listOffset, normalizeIp, parseIp } from "@spacebar/api/util";
+import { addressQuery, listOffset } from "@spacebar/api/util";
+import { hashIp, ipFingerprint, isIpHash } from "@spacebar/util/util/IpHash";
 import { AdminIpBanCreateSchema } from "@spacebar/schemas";
 import { paginationQuery, scalarQuery } from "../../users/index";
 
@@ -17,7 +18,8 @@ const summarizeUser = (user?: User) =>
 
 export const serializeBan = (ban: InstanceBan) => ({
     id: ban.id,
-    ip: normalizeIp(ban.ip_address),
+    ip: ban.ip_address ?? null,
+    fingerprint: ipFingerprint(ban.ip_address),
     reason: ban.reason,
     created_at: ban.created_at,
     propagated: ban.is_from_other_instance_ban,
@@ -25,19 +27,18 @@ export const serializeBan = (ban: InstanceBan) => ({
     origin_ban_id: ban.origin_instance_ban_id ?? null,
 });
 
-export const ipBanFilter = (kindValue: unknown, prefixValue: unknown) => {
+export const ipBanFilter = (kindValue: unknown, addressValue: unknown) => {
     const kind = scalarQuery(kindValue, "kind", "all") as IpBanKind;
     if (!IP_BAN_KINDS.includes(kind)) throw new HTTPError("kind must be all, explicit or spread", 400);
-    const prefix = scalarQuery(prefixValue, "q", "").trim().toLowerCase();
-    if (prefix.length > 64 || !/^[0-9a-f.:]*$/.test(prefix)) throw new HTTPError("q must be the start of an IP address", 400);
-    const base: FindOptionsWhere<InstanceBan> = {
+    const address = scalarQuery(addressValue, "q", "").trim();
+    const hash = address ? addressQuery(address) : null;
+    if (address && !hash) throw new HTTPError("q must be a full IPv4 or IPv6 address or an address hash", 400);
+    const where: FindOptionsWhere<InstanceBan> = {
         is_allowlisted: false,
         ...(kind === "explicit" ? { is_from_other_instance_ban: false } : kind === "spread" ? { is_from_other_instance_ban: true } : {}),
+        ip_address: hash ?? Not(IsNull()),
     };
-    const where: FindOptionsWhere<InstanceBan>[] = prefix
-        ? [`${prefix}%`, `::ffff:${prefix}%`].map((pattern) => ({ ...base, ip_address: Like(pattern) }))
-        : [{ ...base, ip_address: Not(IsNull()) }];
-    return { kind, prefix, where };
+    return { kind, hash, where };
 };
 
 export async function liftIpBans(ids: string[]) {
@@ -55,10 +56,10 @@ router.get(
         right: "VIEW_MODERATION",
         spacebarOnly: true,
         description:
-            "Instance bans on IP addresses, newest first. `kind` is all, explicit for bans staff or a raid action made, or spread for bans that spread from another ban. `q` matches the start of an address. Each ban names the ban it spread from, the account it belongs to and how many bans it spread to.",
+            "Instance bans on hashed IP addresses, newest first. `kind` is all, explicit for bans staff or a raid action made, or spread for bans that spread from another ban. `q` is a full address or address hash and finds the bans on exactly that address. Each ban gives its address hash as `ip` and the hash's first 10 characters as `fingerprint`, and names the ban it spread from, the account it belongs to and how many bans it spread to.",
         query: {
             kind: { type: "string", required: false, description: "all | explicit | spread" },
-            q: { type: "string", required: false, description: "The start of an address" },
+            q: { type: "string", required: false, description: "A full IPv4 or IPv6 address, or an address hash" },
             limit: { type: "number", required: false },
             offset: { type: "number", required: false },
         },
@@ -99,7 +100,9 @@ router.get(
                 return {
                     ...serializeBan(ban),
                     user: ban.user_id ? (summarizeUser(userById.get(String(ban.user_id))) ?? { id: String(ban.user_id) }) : null,
-                    origin: origin ? { id: origin.id, ip: normalizeIp(origin.ip_address) ?? null, user_id: origin.user_id ?? null, reason: origin.reason } : null,
+                    origin: origin
+                        ? { id: origin.id, ip: origin.ip_address ?? null, fingerprint: ipFingerprint(origin.ip_address), user_id: origin.user_id ?? null, reason: origin.reason }
+                        : null,
                     spread_count: spreadById.get(String(ban.id)) ?? 0,
                 };
             }),
@@ -114,25 +117,25 @@ router.post(
         spacebarOnly: true,
         requestBody: "AdminIpBanCreateSchema",
         description:
-            "Ban an IP address. Registration and sign-in from it are refused, and existing tokens used from it stop working. An account that uses a token from a banned address gets an instance ban of its own.",
+            "Ban an IP address, given as a full address or as an address hash from the IP addresses list. Only its hash is stored. Registration and sign-in from it are refused, and existing tokens used from it stop working. An account that uses a token from a banned address gets an instance ban of its own.",
     }),
     async (req: Request, res: Response) => {
         const body = req.body as AdminIpBanCreateSchema;
-        const ip = parseIp(body.ip);
-        if (!ip) throw new HTTPError("ip must be an IPv4 or IPv6 address", 400);
-        if (ipVariants(ip).includes(normalizeIp(req.ip) ?? "")) throw new HTTPError("You can't ban the address you are using", 400);
-        if (InstanceBan.sharedAddress(ip))
+        const ip = addressQuery(body.ip);
+        if (!ip) throw new HTTPError("ip must be a full IPv4 or IPv6 address or an address hash", 400);
+        if (ip === hashIp(req.ip)) throw new HTTPError("You can't ban the address you are using", 400);
+        if (!isIpHash(body.ip.trim()) && InstanceBan.sharedAddress(body.ip.trim()))
             throw new HTTPError(
                 "Private, loopback, Cloudflare and other shared addresses can't be banned, because a reverse proxy, Cloudflare or a container network can make many people share them. If every account shows this address, set security.trustedProxies so the server sees real addresses.",
                 400,
             );
-        const existing = await InstanceBan.findOne({ where: ipVariants(ip).map((variant) => ({ ip_address: variant, is_allowlisted: false })) });
+        const existing = await InstanceBan.findOne({ where: { ip_address: ip, is_allowlisted: false } });
         if (existing) return res.json(serializeBan(existing));
         const ban = await InstanceBan.create({
             ip_address: ip,
             reason: body.reason?.trim() || `Banned from the admin dashboard by ${req.user?.username ?? req.user_id}`,
         }).save();
-        console.log(`[Admin] User ${req.user_id} banned IP ${ip}`);
+        console.log(`[Admin] User ${req.user_id} banned the address with fingerprint ${ipFingerprint(ip)}`);
         res.status(201).json(serializeBan(ban));
     },
 );

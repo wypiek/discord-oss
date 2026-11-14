@@ -15,13 +15,13 @@ import {
     endUserSessions,
     hasAdminPanelAccess,
     listIps,
-    normalizeIp,
     notifyStandingDrop,
     syncModeratorAlumni,
     syncStaffBadge,
     withStaffDisabled,
 } from "@spacebar/api/util";
 import { ADMIN_USER_COLUMNS, applyUserTag, assertCanManage, pickAdminUser, userTag } from "../index";
+import { ipFingerprint, isIpHash } from "@spacebar/util/util/IpHash";
 
 const router = Router({ mergeParams: true });
 
@@ -80,14 +80,15 @@ router.get(
             InstanceBan.find({ where: { user_id: user.id } }),
             User.findOne({ where: { id: user.id }, select: { id: true, registration_ip: true } }),
         ]);
-        const registrationIp = normalizeIp(registration?.registration_ip);
-        const seen = new Map<string, { ip: string; sessions: number; last_seen: Date | null; registration: boolean }>();
-        if (registrationIp) seen.set(registrationIp, { ip: registrationIp, sessions: 0, last_seen: user.created_at ?? null, registration: true });
+        const registrationIp = isIpHash(registration?.registration_ip) ? registration.registration_ip : null;
+        const seen = new Map<string, { ip: string; fingerprint: string | null; sessions: number; last_seen: Date | null; registration: boolean }>();
+        if (registrationIp)
+            seen.set(registrationIp, { ip: registrationIp, fingerprint: ipFingerprint(registrationIp), sessions: 0, last_seen: user.created_at ?? null, registration: true });
         for (const session of sessions) {
-            const ip = normalizeIp(session.last_seen_ip);
-            if (!ip) continue;
+            const ip = session.last_seen_ip;
+            if (!isIpHash(ip)) continue;
             const at = session.last_seen ?? session.created_at ?? null;
-            const entry = seen.get(ip) ?? { ip, sessions: 0, last_seen: null, registration: false };
+            const entry = seen.get(ip) ?? { ip, fingerprint: ipFingerprint(ip), sessions: 0, last_seen: null, registration: false };
             entry.sessions++;
             if (at && (!entry.last_seen || at > entry.last_seen)) entry.last_seen = at;
             seen.set(ip, entry);
@@ -115,6 +116,7 @@ router.get(
             })),
             session_count: sessions.length,
             registration_ip: registrationIp,
+            registration_ip_fingerprint: ipFingerprint(registrationIp),
             ips: [...seen.values()]
                 .sort((a, b) => (b.last_seen?.getTime() ?? 0) - (a.last_seen?.getTime() ?? 0))
                 .map((entry) => ({
@@ -122,7 +124,14 @@ router.get(
                     accounts: byIp.get(entry.ip)?.accounts ?? 1,
                     ban_id: byIp.get(entry.ip)?.ban_id ?? null,
                 })),
-            instance_bans: bans.map((b) => ({ id: b.id, reason: b.reason, created_at: b.created_at, spread: b.is_from_other_instance_ban, ip: b.ip_address ?? null })),
+            instance_bans: bans.map((b) => ({
+                id: b.id,
+                reason: b.reason,
+                created_at: b.created_at,
+                spread: b.is_from_other_instance_ban,
+                ip: b.ip_address ?? null,
+                fingerprint: ipFingerprint(b.ip_address),
+            })),
         });
     },
 );

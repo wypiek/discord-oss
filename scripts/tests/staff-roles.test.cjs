@@ -193,6 +193,7 @@ test("the admin user editor checks the right for each field before loading the a
     const modules = await staff();
     const routes = loadRoutes("src/api/routes/admin/users/#user_id/index.ts", {
         "@spacebar/util/util/IdentityModeration": { assertIdentityNameAllowed: () => undefined },
+        "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
         "lambert-server/HTTPError": { HTTPError: StubError },
         "@spacebar/database": {
             User: {
@@ -275,8 +276,14 @@ test("the staff audit summary keeps field names, redacts secrets and names the r
         "@spacebar/database": {},
         "@spacebar/schemas": { AuditLogEvents: {} },
         "@spacebar/util": { trackBackground: (work) => work },
+        "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
         "./adminTargets": {},
     });
+    const { hashIp } = require("./helpers/ip-hash.cjs");
+    assert.deepEqual(JSON.parse(JSON.stringify(audit.summarizeBody({ ip: "::ffff:203.0.113.7", ipAllowList: ["198.51.100.4", "10.0.0.0/8"] }))), [
+        { key: "ip", new_value: `address ${hashIp("203.0.113.7").slice(5, 15)}` },
+        { key: "ipAllowList", new_value: [`address ${hashIp("198.51.100.4").slice(5, 15)}`, "10.0.0.0/8"] },
+    ]);
     const changes = audit.summarizeBody({ disabled: true, password: "hunter2", bio: "secret", reason: "spam", user_ids: ["1", "2"], nested: { a: 1 } });
     assert.deepEqual(JSON.parse(JSON.stringify(changes)), [
         { key: "disabled", new_value: true },

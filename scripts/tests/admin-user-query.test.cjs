@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const ts = require("typescript");
+const ipHash = require("./helpers/ip-hash.cjs");
 const accountIps = (() => {
     const module = { exports: {} };
     vm.runInNewContext(
@@ -12,7 +13,7 @@ const accountIps = (() => {
             module,
             exports: module.exports,
             require: (name) =>
-                ({ typeorm: { In: (value) => value }, "lambert-server/HTTPError": { HTTPError: Error }, "@spacebar/database": {}, "@spacebar/database/Sql": {} })[name] ??
+                ({ typeorm: { In: (value) => value }, "lambert-server/HTTPError": { HTTPError: Error }, "@spacebar/database": {}, "@spacebar/util/util/IpHash": ipHash })[name] ??
                 require(name),
         },
     );
@@ -190,15 +191,16 @@ test("ordinary admin user projection excludes security material even when an ent
     }
 });
 
-test("an address in q or ip finds accounts by registration and session address in both IPv4 spellings", async () => {
-    for (const parameters of [{ q: " 203.0.113.7 " }, { ip: "::ffff:203.0.113.7" }]) {
+test("an address or address hash in q or ip finds accounts by the hash of their registration and session address in both IPv4 spellings", async () => {
+    const hash = ipHash.hashIp("203.0.113.7");
+    for (const parameters of [{ q: " 203.0.113.7 " }, { ip: "::ffff:203.0.113.7" }, { ip: hash }, { q: hash }]) {
         const h = harness();
         await h.run(parameters);
         const clauses = h.calls.filter(([name]) => name === "where" || name === "orWhere");
         assert.equal(clauses.length, 2);
-        assert.equal(clauses[0][1], "user.registration_ip IN (:...ips)");
-        assert.match(clauses[1][1], /SELECT s\.user_id FROM sessions s WHERE s\.last_seen_ip IN \(:\.\.\.ips\)/);
-        for (const clause of clauses) assert.deepEqual([...clause[2].ips], ["203.0.113.7", "::ffff:203.0.113.7"]);
+        assert.equal(clauses[0][1], "user.registration_ip = :ip");
+        assert.match(clauses[1][1], /SELECT s\.user_id FROM sessions s WHERE s\.last_seen_ip = :ip/);
+        for (const clause of clauses) assert.equal(clause[2].ip, hash);
     }
 });
 

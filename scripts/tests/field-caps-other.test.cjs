@@ -24,6 +24,7 @@ function loadStaffAudit() {
                 if (name === "@spacebar/database") return { AuditLog: class {} };
                 if (name === "@spacebar/schemas") return { AuditLogEvents: new Proxy({}, { get: () => 0 }) };
                 if (name === "./adminTargets") return { assertCanActOnUser() {} };
+                if (name === "@spacebar/util/util/IpHash") return require("./helpers/ip-hash.cjs");
                 if (name === "@spacebar/util") return { SNOWFLAKE: /^\d{1,20}$/ };
                 return {};
             },

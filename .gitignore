@@ -51,6 +51,8 @@ scripts/dev/.perf-fixture.json
 
 .e2ee-recovery.key*
 
+.ip-hash.key*
+
 .e2ee-system/
 .announcement-spool/
 

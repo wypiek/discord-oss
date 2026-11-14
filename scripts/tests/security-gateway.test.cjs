@@ -28,6 +28,7 @@ function gateway(handlers) {
         "../opcodes/instanceOf": { check: () => undefined },
         "@spacebar/schemas": { PayloadSchema: {} },
         "lambert-server": { HTTPError: class extends Error {} },
+        "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
     });
     const socket = {
         encoding: "json",
@@ -99,6 +100,7 @@ test("binary json frames are parsed as text and never decompressed", async () =>
         "../opcodes/instanceOf": { check: () => undefined },
         "@spacebar/schemas": { PayloadSchema: {} },
         "lambert-server": { HTTPError: class extends Error {} },
+        "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
     });
     await Message.call(socket, Buffer.from(JSON.stringify({ op: 1, d: null })));
     assert.deepEqual([...calls], [1]);

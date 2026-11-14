@@ -93,6 +93,7 @@ function middleware(StoredRateLimit, opts) {
     const limiter = load("src/api/middlewares/RateLimit.ts", {
         "@spacebar/util": {},
         "@spacebar/util/util/ProcessLifecycle": {},
+        "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
         "@spacebar/database": { RateLimit: Tracked },
         express: {},
         typeorm: {},

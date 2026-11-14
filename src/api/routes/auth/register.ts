@@ -12,7 +12,6 @@ import {
     claimInvite,
     findUsableInvite,
     instanceAutomodMatch,
-    normalizeIp,
     onGuildMemberJoin,
     recordAutomodAction,
     recordInvitedUser,
@@ -29,6 +28,7 @@ import { Config, FieldErrors, generateToken, IpDataClient, AbuseIpDbClient } fro
 import { RegisterSchema } from "@spacebar/schemas";
 import { BcryptWorkerPool } from "@spacebar/util/util/workers/bcrypt/BcryptWorkerPool";
 import { Stopwatch, TimeSpan, trimSpecial } from "@spacebar/extensions";
+import { ipLabel } from "@spacebar/util/util/IpHash";
 
 const router: Router = Router({ mergeParams: true });
 
@@ -186,7 +186,7 @@ router.post(
                     hits: 0,
                     reason,
                 };
-                console.log(`[Register] ${ip} blocked from registration:`, reason);
+                console.log(`[Register] ${ipLabel(ip)} blocked from registration:`, reason);
             };
 
             if (!regTokenUsed && recentlyBlockedIps[ip]) {
@@ -195,7 +195,7 @@ router.post(
                     recentlyBlockedIps[ip].lastHit = new Date();
                     recentlyBlockedIps[ip].hits++;
                     console.log(
-                        `[Register] ${ip} blocked from registration: blocked since ${recentlyBlockedIps[ip].firstHit} with ${recentlyBlockedIps[ip].hits} hits and reason:`,
+                        `[Register] ${ipLabel(ip)} blocked from registration: blocked since ${recentlyBlockedIps[ip].firstHit} with ${recentlyBlockedIps[ip].hits} hits and reason:`,
                         recentlyBlockedIps[ip].reason,
                     );
                     throw new HTTPError("Your IP is blocked from registration");
@@ -356,7 +356,7 @@ router.post(
                 },
             })) >= limits.absoluteRate.register.limit
         ) {
-            console.log(`Global register ratelimit exceeded for ${req.ip}, ${req.body.username}, ${req.body.invite || "No invite given"}`);
+            console.log(`Global register ratelimit exceeded for ${ipLabel(req.ip)}, ${req.body.username}, ${req.body.invite || "No invite given"}`);
             throw FieldErrors({
                 username: {
                     code: "TOO_MANY_REGISTRATIONS",
@@ -413,7 +413,7 @@ router.post(
 
         let user: User;
         try {
-            user = await User.register({ ...body, username: body.username, req, registration_ip: normalizeIp(ip) });
+            user = await User.register({ ...body, username: body.username, req, registration_ip: ip });
         } catch (error) {
             if (claimedInvite) await releaseInvite(claimedInvite.code);
             throw error;
