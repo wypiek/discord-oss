@@ -1,4 +1,5 @@
 export * from "./utility/ipAddress";
+export * from "./utility/imageField";
 export * from "./handlers/Message";
 export * from "./handlers/DirectMessage";
 export * from "./utility/passwordStrength";
