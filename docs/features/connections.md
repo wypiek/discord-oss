@@ -91,12 +91,20 @@ The connection stores the Bungie.net membership ID and is named after the Bungie
 
 Discord's own client has no Discord entry in its list of connection platforms, so the `FosscordConnections` plugin adds one at the front of the list. The entry uses the instance icon from `/favicon.svg`, and a connected account links to `https://discord.com/users/<id>`. `assets/client_patches/71-connections.js` still hides it when the server reports Discord as off. The client's callback page only runs for types in its own platform enum, so the plugin also lets it accept the types the plugin adds. Without that, `/connections/discord/callback` stays blank and never calls the server. A linked account is named by its username, with `#<discriminator>` only for legacy accounts that still have one.
 
+### GitHub
+
+1. Open [github.com/settings/developers](https://github.com/settings/developers) and create an OAuth app.
+2. Set the authorization callback URL to the callback URL from the dashboard.
+3. Paste the client ID and a client secret into the dashboard and turn GitHub on.
+
+The server exchanges the code with the secret in the request body, never in the URL. When GitHub refuses the code it logs GitHub's error code, such as `bad_verification_code` or `redirect_uri_mismatch`, and the popup shows the error page. The connection stores the GitHub user ID and is named after the login.
+
 ## How the client completes a sign in
 
 1. `GET /api/v9/connections/<provider>/authorize` returns the provider's sign in URL and the client opens it in a popup.
 2. The provider sends the popup to `/connections/<provider>/callback` on the instance.
 3. The callback page first tries `POST /api/v9/connections/<provider>/callback/session-handoff`, which answers 404 with code 10020 because the instance doesn't hand sessions between browsers. The page then sends the code, the state, Steam's `openid.*` fields and Bluesky's `iss` to `POST /api/v9/connections/<provider>/callback`.
-4. The server creates the connection, sends `USER_CONNECTIONS_UPDATE` and answers 204.
+4. The server creates the connection with Display on profile turned on, sends `USER_CONNECTIONS_UPDATE` and answers 204.
 
 Each sign in state can be used once and expires after 15 minutes.
 

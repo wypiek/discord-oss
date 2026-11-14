@@ -74,8 +74,8 @@ export default class FacebookConnection extends Connection {
             })
             .get()
             .json<ConnectedAccountCommonOAuthTokenResponse>()
-            .catch((e) => {
-                console.error(e);
+            .catch((error) => {
+                console.error(`[Facebook connection] token exchange failed with status ${error?.status ?? "unknown"}`);
                 throw DiscordApiErrors.GENERAL_ERROR;
             });
     }
