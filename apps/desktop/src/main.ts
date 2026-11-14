@@ -134,7 +134,8 @@ function openDeepLink(link: string) {
     }
     const requested = url.searchParams.get("instance");
     const path = url.host === "open" || url.host === "" ? url.searchParams.get("path") || "/channels/@me" : `/${url.host}${url.pathname}`;
-    const safePath = path.startsWith("/") && !path.startsWith("//") ? path : "/channels/@me";
+    // a backslash counts as a slash in an http URL: "/\host" would leave the instance
+    const safePath = path.startsWith("/") && !path.startsWith("//") && !path.includes("\\") ? path : "/channels/@me";
     if (requested) {
         let origin: string;
         try {

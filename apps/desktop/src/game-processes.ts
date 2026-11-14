@@ -100,11 +100,15 @@ while ($true) {
     Start-Sleep -Seconds SCAN_SECONDS
 }`;
 
+// The names come from the instance's game list, so they are untrusted. PowerShell
+// closes a single-quoted string on ' and on the typographic quotes U+2018-201B
+// alike, so only characters known to be inert inside one are let through.
+const SAFE_PROCESS_NAME = /^[\p{L}\p{N} ._+\-()[\]&!@#%,=~]{1,128}$/u;
+
 export const windowsScript = (argumentNames: Set<string>, parentPid: number) =>
-    WINDOWS_SCRIPT.replace(
-        "ARGUMENT_NAMES",
+    WINDOWS_SCRIPT.replace("ARGUMENT_NAMES", () =>
         [...argumentNames]
-            .filter((name) => /^[^'\r\n]{1,128}$/.test(name))
+            .filter((name) => SAFE_PROCESS_NAME.test(name))
             .map((name) => `'${name}'`)
             .join(","),
     )
