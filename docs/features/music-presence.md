@@ -1,6 +1,6 @@
-# Spotify and SoundCloud presence
+# Spotify and Last.fm presence
 
-When you listen on Spotify or SoundCloud, your profile and the member list show it as a Listening activity, like Discord's own Spotify presence. Spotify works in two ways: through a connected Spotify account, which the stock client handles, and through the desktop app reading the Spotify app. SoundCloud works through the desktop app.
+When you listen to music, your profile and the member list show it as a Listening activity, like Discord's own Spotify presence. Spotify works in two ways: through a connected Spotify account, which the stock client handles, and through the desktop app reading the Spotify app. Last.fm works through a connected Last.fm account in any client.
 
 ## Spotify through a connected account
 
@@ -25,36 +25,54 @@ A Spotify app in development mode only works for the accounts listed under its U
 
 The stock client asks Spotify for the player state once when it connects, then waits for track changes on Spotify's dealer websocket. Those changes only arrive after a `PUT /me/notifications/player` call that Spotify allows for Discord's partner app alone, so with an instance's own Spotify app the activity would stay on the first track and disappear when it ends. The FosscordMusicPresence plugin calls the client's own player state function for every connected Spotify account every 15 seconds, so the activity follows track changes, pauses and skips. The client then handles the response exactly as it handles Spotify's push messages. The Check a connected Spotify account's player every 15 seconds setting turns this off.
 
+## Last.fm through a connected account
+
+Last.fm records what you play in almost any player, so linking it shows your music as a Listening activity in the browser, the desktop app and the Android app, with no player of our own.
+
+### Operator setup
+
+1. Create an API account at [last.fm/api/account/create](https://www.last.fm/api/account/create). The callback URL there doesn't matter, because the server sends its own.
+2. In the admin dashboard, Site settings, Connected accounts, paste the API key and the shared secret into Last.fm and turn it on.
+
+### Linking
+
+1. The person picks Last.fm under Connections. Discord's client has no Last.fm entry, so the FosscordConnections plugin adds one with an icon from `/assets/connections/lastfm.svg` and a profile link to `https://www.last.fm/user/<name>`.
+2. `GET /api/v9/connections/lastfm/authorize` returns `https://www.last.fm/api/auth/` with the API key and a `cb` of `<origin>/connections/lastfm/callback?state=<state>`.
+3. After the person allows access, Last.fm sends the popup to the callback with `&token=<token>`. The client's callback page only reads `code`, so the plugin makes it fall back to `token`.
+4. The server calls `auth.getSession` with the token and an `api_sig`, the MD5 of the sorted parameters followed by the shared secret. It stores the Last.fm username as the connection's id and name with Display on profile turned on, and keeps no session key.
+
+### The activity
+
+`GET /users/@me/connections/lastfm/<name>/now-playing` answers `{ "track": null }` or a track with `title`, `artist`, `album`, `url`, `artwork_url`, `duration_ms` when Last.fm knows it, `since` and `elapsed_ms`. The server reads `user.getRecentTracks` with `limit=1` and only counts the first track when Last.fm marks it `nowplaying`. It reads the length once per track from `track.getInfo`. Answers are cached for 10 seconds per user, so several tabs cost one Last.fm call. `since` is when the server first saw the track playing for that user, because Last.fm doesn't report the position. Artwork is kept only from Last.fm's image hosts and without Last.fm's blank placeholder. Failures answer no track and log only the HTTP status.
+
+FosscordMusicPresence polls this every 15 seconds while the account has a Last.fm connection and shows the track as a Listening activity named Last.fm. A Spotify activity, from a connected account or the desktop app, wins over Last.fm, since Last.fm usually scrobbles the same track.
+
 ## The desktop app
 
-The [desktop app](desktop.md) reads what plays in SoundCloud and Spotify and hands it to the FosscordMusicPresence plugin through `window.DiscordOSS.music`. It only reads while the plugin asks for a source, so with both sources off it runs nothing.
+The [desktop app](desktop.md) reads what plays in the Spotify app and hands it to the FosscordMusicPresence plugin through `window.DiscordOSS.music`. It only reads while the plugin asks for Spotify, so with that setting off it runs nothing.
 
-| Source | macOS | Windows | Linux |
-| --- | --- | --- | --- |
-| SoundCloud | The SoundCloud window | The SoundCloud window | The SoundCloud window, and any MPRIS player whose `xesam:url` is on soundcloud.com |
-| Spotify | The Spotify app through AppleScript | The Spotify app through Windows media sessions | The Spotify app through MPRIS |
-
-- The SoundCloud window opens from File > Open SoundCloud, the tray menu, or the Open SoundCloud button in the plugin's settings. It loads soundcloud.com in its own sandboxed session, `persist:soundcloud`, so its login stays separate from the instance. A preload script reads the player bar once a second: the title, artist, track link, artwork, elapsed time, length and the play button's state, with the page's media session as a fallback for title, artist and artwork. It sends an update when the track or the play state changes, when the position jumps by more than 3 seconds, and every 30 seconds otherwise. The window grants no permissions except fullscreen, and links that leave soundcloud.com or its Google, Apple and Facebook sign-in pages open in the browser. Closing the window stops the music and clears the activity. SoundCloud Go+ tracks that need DRM only play their preview, because the app has no Widevine.
-- macOS: every 5 seconds the app checks for a process named Spotify with `pgrep`, and only then asks Spotify for its state with `osascript`. The first time, macOS asks whether the app may control Spotify. If that is denied, the app stops asking until it restarts. macOS 15.4 and later don't let other apps read the system's Now Playing information, so SoundCloud playing in a browser can't be seen.
+- macOS: every 5 seconds the app checks for a process named Spotify with `pgrep`, and only then asks Spotify for its state with `osascript`. The first time, macOS asks whether the app may control Spotify. If that is denied, the app stops asking until it restarts.
 - Windows: one hidden PowerShell process reads the system media sessions every 3 seconds and reports sessions whose app id contains Spotify. It exits when the app does. Windows doesn't expose the track link or an artwork URL, so this activity has no album art and no button.
-- Linux: every 5 seconds the app lists the MPRIS players on the session bus with `busctl` and reads up to 8 of them. Spotify always reports position 0 over MPRIS, so the activity starts from the moment the track was first seen.
+- Linux: every 5 seconds the app lists the MPRIS players on the session bus with `busctl` and reads up to 8 Spotify players. Spotify always reports position 0 over MPRIS, so the activity starts from the moment the track was first seen.
 
 ## The activity
 
-The plugin turns a playing track into a Listening activity. When SoundCloud and Spotify both play, SoundCloud wins. A paused track clears the activity.
+The plugin turns a playing track into a Listening activity. A paused track clears the activity.
 
-| Field | SoundCloud | Spotify from the desktop app |
+| Field | Last.fm | Spotify from the desktop app |
 | --- | --- | --- |
-| `name` | SoundCloud | Spotify |
-| `application_id` | `1440106212185735168` | `1440106212185735169` |
+| `name` | Last.fm | Spotify |
+| `application_id` | `1440106212185735170` | `1440106212185735169` |
 | `details` and `state` | Track title and artist | Track title and artists |
 | `assets.large_image` | `mp:external/...` from the artwork URL | `spotify:<image id>` |
-| `timestamps` | Start and end from the position and length | Same |
-| Button | Listen on SoundCloud, to the track | Play on Spotify, to the track |
+| `timestamps` | Start from when the track was first seen, and an end when the length is known | Start and end from the position and length |
+| Button | View on Last.fm, to the track | Play on Spotify, to the track |
 
-The Spotify source only runs when the account has no Spotify connection and the stock Spotify activity is absent, so a connected account's activity, its Display Spotify as your status setting and Listen Along stay in charge. Without the desktop app, in a browser, the plugin's desktop sources do nothing.
+The desktop Spotify source only runs when the account has no Spotify connection and the stock Spotify activity is absent, so a connected account's activity, its Display Spotify as your status setting and Listen Along stay in charge.
 
-The client only publishes a Listening activity that has an `application_id` when Share your activity is on, and not while you are invisible. The plugin's settings have one switch per source, SoundCloud and Spotify, both on.
+The client only publishes a Listening activity that has an `application_id` when Share your activity is on, and not while you are invisible. The plugin's settings have one switch per source, Last.fm and Spotify, both on.
+
+READY includes the account's connected accounts, the same list `GET /users/@me/connections` returns, so the Spotify integration and the Last.fm source start right after the client loads.
 
 ## External images
 

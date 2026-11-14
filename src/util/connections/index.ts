@@ -5,3 +5,4 @@ export * from "./ConnectionLoader";
 export * from "./ConnectionStore";
 export * from "./DomainVerification";
 export * from "./RefreshableConnection";
+export * from "./LastFm";

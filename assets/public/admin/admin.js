@@ -1173,7 +1173,7 @@ const setPath = (obj, path, value) => {
   keys.reduce((o, k) => (o[k] ??= {}), obj)[last] = value;
 };
 
-const CONNECTION_FIELD_LABELS = { clientId: "Client ID", clientSecret: "Client secret", apiKey: "API key" };
+const CONNECTION_FIELD_LABELS = { clientId: "Client ID", clientSecret: "Client secret", apiKey: "API key", sharedSecret: "Shared secret" };
 const CONNECTION_ORIGIN_SOURCES = {
   apiEndpoint: "the public API endpoint",
   serverName: "the server name",

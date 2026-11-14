@@ -80,10 +80,8 @@ const dbusString = (value: DBusValue | undefined) => (typeof value?.data === "st
 const dbusNumber = (value: DBusValue | undefined) => finite(typeof value?.data === "number" ? value.data : Number(value?.data));
 const dbusStrings = (value: DBusValue | undefined) => (Array.isArray(value?.data) ? value.data.filter((x): x is string => typeof x === "string") : []);
 
-export function mprisSource(busName: string, url: string | undefined): MusicSource | null {
-    if (/^org\.mpris\.MediaPlayer2\.spotify(\.|$)/i.test(busName)) return "spotify";
-    if (url && /^https:\/\/(?:[a-z0-9-]+\.)*soundcloud\.com\//i.test(url)) return "soundcloud";
-    return null;
+export function mprisSource(busName: string): MusicSource | null {
+    return /^org\.mpris\.MediaPlayer2\.spotify(\.|$)/i.test(busName) ? "spotify" : null;
 }
 
 export function parseMprisPlayer(busName: string, output: string, now = Date.now()): MusicTrack | null {
@@ -104,7 +102,7 @@ export function parseMprisPlayer(busName: string, output: string, now = Date.now
     const title = dbusString(metadata["xesam:title"]);
     if (!title) return null;
     const url = dbusString(metadata["xesam:url"]);
-    const source = mprisSource(busName, url);
+    const source = mprisSource(busName);
     if (!source) return null;
     const art = dbusString(metadata["mpris:artUrl"]);
     const length = dbusNumber(metadata["mpris:length"]);

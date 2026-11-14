@@ -6,7 +6,6 @@ import { discoverInstance, normalizeInstanceUrl } from "./discovery";
 import { registerGames } from "./games";
 import { registerMusic } from "./music";
 import { registerScreenshare, screenshareFeatureFlags } from "./screenshare";
-import { createSoundCloudWindow, soundCloudSession } from "./soundcloud";
 import { forgetInstance, rememberInstance, saveSettings, settings, type WindowState } from "./store";
 
 const PROTOCOL = "discord-oss";
@@ -33,7 +32,6 @@ let tray: Tray | null = null;
 let quitting = false;
 let pendingDeepLink: string | null = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`)) ?? null;
 let lastMentionCount = 0;
-let openSoundCloud = () => {};
 let stopMusic = () => {};
 let stopGames = () => {};
 
@@ -320,7 +318,6 @@ function updateTrayMenu() {
             { label: `Open ${APP_NAME}`, click: showWindow },
             { type: "separator" },
             { label: "Switch Instance", submenu: instanceMenuItems() },
-            { label: "Open SoundCloud", click: () => openSoundCloud() },
             { type: "separator" },
             {
                 label: "Start at Login",
@@ -353,7 +350,6 @@ function updateAppMenu() {
                 label: "File",
                 submenu: [
                     { label: "Switch Instance", submenu: instanceMenuItems() },
-                    { label: "Open SoundCloud", click: () => openSoundCloud() },
                     { type: "separator" },
                     mac ? { role: "close" } : { label: `Quit ${APP_NAME}`, click: () => app.quit() },
                 ],
@@ -450,10 +446,8 @@ function registerPermissions() {
 function start() {
     registerIpc();
     registerPermissions();
-    const music = registerMusic({ allowed: isInstanceUrl, openSoundCloud: () => openSoundCloud() });
-    stopMusic = music.stop;
+    stopMusic = registerMusic({ allowed: isInstanceUrl }).stop;
     stopGames = registerGames({ allowed: isInstanceUrl }).stop;
-    openSoundCloud = createSoundCloudWindow({ icon: resource("icon.png"), onTrack: music.setSoundCloudTrack });
     if (settings().openAtLogin) setOpenAtLogin(true);
     tray = new Tray(trayImage());
     tray.setToolTip(APP_NAME);
@@ -467,7 +461,7 @@ function start() {
     }
     app.on("activate", showWindow);
     app.on("web-contents-created", (_event, contents) => {
-        if (contents.getType() === "window" && contents !== mainWindow?.webContents && contents.session !== soundCloudSession()) secureContents(contents);
+        if (contents.getType() === "window" && contents !== mainWindow?.webContents) secureContents(contents);
     });
 }
 

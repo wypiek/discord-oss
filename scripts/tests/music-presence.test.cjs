@@ -153,7 +153,7 @@ test("the desktop app reads Spotify from AppleScript output", () => {
     assert.equal(spotifyWebUrl("spotify:local:a:b:c:1"), undefined);
 });
 
-test("the desktop app reads Spotify and SoundCloud players from MPRIS", () => {
+test("the desktop app reads only Spotify players from MPRIS", () => {
     const { parseMprisPlayer } = require("../../apps/desktop/src/media-session.ts");
     const metadata = (fields) => JSON.stringify({ type: "a{sv}", data: fields });
     const spotify = [
@@ -179,8 +179,7 @@ test("the desktop app reads Spotify and SoundCloud players from MPRIS", () => {
         JSON.stringify({ type: "s", data: "Playing" }),
         JSON.stringify({ type: "x", data: 30000000 }),
     ].join("\n");
-    assert.equal(parseMprisPlayer("org.mpris.MediaPlayer2.firefox.instance_1_2", browser, 5).source, "soundcloud");
-    assert.equal(parseMprisPlayer("org.mpris.MediaPlayer2.firefox.instance_1_2", browser.replace("soundcloud.com", "youtube.com"), 5), null);
+    assert.equal(parseMprisPlayer("org.mpris.MediaPlayer2.firefox.instance_1_2", browser, 5), null);
 });
 
 test("the desktop app reads Spotify from Windows media sessions", () => {
@@ -196,29 +195,9 @@ test("the desktop app reads Spotify from Windows media sessions", () => {
     assert.deepEqual(parseSmtcLine("not json", 1000), []);
 });
 
-test("SoundCloud window state is cleaned before it reaches the web client", () => {
-    const { soundCloudTrack, trackChanged } = require("../../apps/desktop/src/music-tracks.ts");
-    const track = soundCloudTrack(
-        {
-            title: "  Mix  ",
-            artist: "DJ",
-            url: "https://soundcloud.com/dj/mix",
-            artworkUrl: "https://i1.sndcdn.com/artworks-1-t500x500.jpg",
-            duration: 300000,
-            position: 1000,
-            paused: false,
-        },
-        50,
-    );
-    assert.equal(track.title, "Mix");
-    assert.equal(track.url, "https://soundcloud.com/dj/mix");
-    assert.equal(track.artworkUrl, "https://i1.sndcdn.com/artworks-1-t500x500.jpg");
-    const hostile = soundCloudTrack({ title: "x", url: "https://evil.example/dj", artworkUrl: "javascript:alert(1)", duration: -5, paused: "no" }, 50);
-    assert.equal(hostile.url, undefined);
-    assert.equal(hostile.artworkUrl, undefined);
-    assert.equal(hostile.duration, undefined);
-    assert.equal(hostile.paused, true);
-    assert.equal(soundCloudTrack({ title: "" }), null);
+test("desktop track changes ignore small position drift", () => {
+    const { trackChanged } = require("../../apps/desktop/src/music-tracks.ts");
+    const track = { source: "spotify", title: "Song", artist: "Artist", duration: 300000, position: 1000, paused: false, updatedAt: 50 };
     assert.equal(trackChanged(track, { ...track, updatedAt: 2050, position: 3000 }), false);
     assert.equal(trackChanged(track, { ...track, updatedAt: 2050, position: 60000 }), true);
     assert.equal(trackChanged(track, { ...track, paused: true }), true);
