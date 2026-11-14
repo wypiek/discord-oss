@@ -87,12 +87,17 @@ Select rows, or select the whole page and then every account that matches the se
 
 ## IP addresses and bans
 
+IP addresses are stored only as keyed hashes, see [ip-hashing.md](../security/ip-hashing.md). The dashboard shows each address as a fingerprint, the first 10 characters of its hash, and the same fingerprint means the same address. The admin API returns the full hash as `ip` and the fingerprint as `fingerprint`.
+
 The user drawer lists the address an account registered from and the last address of each session, with how many accounts share each one. The IP addresses tab lists addresses with the most accounts first, and opening one can remove all its accounts and ban the address. The IP bans tab lists and lifts bans.
+
+- Searching finds one address exactly. Type it in full, such as `203.0.113.7` or `2001:db8::1`, or paste its hash. The server hashes what you type and looks for that hash, so the start of an address can't be searched. Command+K finds an address the same way.
+- Ban an address by typing it in full in the IP bans tab, or from an opened address. Only its hash is stored.
 
 - Registration from a banned address gets HTTP 403. Sign-in checks the address after the password, so staff can still sign in from it.
 - A banned account that signs in from a new browser bans that browser one step further, and a spread ban expires after 7 days. Lifting a ban lifts the bans it spread.
 - Address and browser bans never catch staff.
-- Private, loopback and Cloudflare addresses, and your own address, can't be banned.
+- Private, loopback and Cloudflare addresses typed in, and your own address, can't be banned. A ban that a raid action or an opened address sets on such an address never matches anyone, because the live address is checked before its hash.
 
 ## Reports
 

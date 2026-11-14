@@ -1,6 +1,7 @@
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
+import { ipFingerprint } from "@spacebar/util/util/IpHash";
 import { liftIpBans } from "./index";
 
 const router = Router({ mergeParams: true });
@@ -18,7 +19,7 @@ router.delete(
         if (!/^\d{1,20}$/.test(id)) throw new HTTPError("Unknown IP ban", 404);
         const { bans, spread } = await liftIpBans([id]);
         if (!bans.length) throw new HTTPError("Unknown IP ban", 404);
-        console.log(`[Admin] User ${req.user_id} lifted the ban on IP ${bans[0].ip_address} and ${spread} ban(s) it propagated`);
+        console.log(`[Admin] User ${req.user_id} lifted the ban on the address with fingerprint ${ipFingerprint(bans[0].ip_address)} and ${spread} ban(s) it propagated`);
         res.sendStatus(204);
     },
 );

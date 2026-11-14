@@ -77,6 +77,7 @@ function tokenFixture() {
             OrmUtils: { keysToObject: (keys) => Object.fromEntries(keys.map((key) => [key, true])) },
         },
         "@spacebar/util/util/ProcessLifecycle": { ProcessLifecycle: {} },
+        "./IpHash": require("./helpers/ip-hash.cjs"),
         "./StaffRoles": { isStaffAccount: () => false, loadStaffRoles: async () => ({}) },
     });
     const token = jwt.sign({ id: user.id, iat: Math.floor(Date.now() / 1000) }, "isolated-regression-secret");
@@ -158,6 +159,7 @@ test("admin suspension deletes only target sessions and emits invalidation befor
         "./staffDisable": { staffDisableColumns: () => ({ disabled: true }) },
     });
     const util = load("src/api/routes/admin/users/#user_id/index.ts", {
+        "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
         "@spacebar/util/util/IdentityModeration": load("src/util/util/IdentityModeration.ts", {
             "./Config": { Config: { get: () => ({ user: {} }) } },
             "./SlurMatcher": require("../../src/util/util/SlurMatcher.ts"),
@@ -220,6 +222,7 @@ test("admin suspension deletes only target sessions and emits invalidation befor
 test("existing gateway session-remove listener closes active socket with invalid-session opcode", async () => {
     const sent = [];
     const gateway = load("src/gateway/listener/listener.ts", {
+        "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
         picocolors: {},
         "@spacebar/database": {},
         "@spacebar/schemas": { ChannelType: {} },

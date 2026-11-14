@@ -5,6 +5,7 @@ import { DataSource, MigrationExecutor, type QueryRunner } from "typeorm";
 import { ProcessLifecycle } from "../util/util/ProcessLifecycle";
 import { SqliteDataSource } from "./SqliteDataSource";
 import { databaseBackend, sqlitePath } from "./Sql";
+import { runIpHashBackfill } from "./IpHashBackfill";
 
 // UUID extension option is only supported with postgres
 // We want to generate all id's with Snowflakes that's why we have our own BaseEntity class
@@ -161,6 +162,7 @@ async function initializeDatabase(): Promise<DataSource> {
                 await new MigrationExecutor(dbConnection, qr).executePendingMigrations();
                 await qr.commitTransaction();
             } else await dbConnection.runMigrations();
+            await runIpHashBackfill(qr);
         } finally {
             try {
                 if (qr.isTransactionActive) await qr.rollbackTransaction();

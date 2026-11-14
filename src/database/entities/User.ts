@@ -1,5 +1,6 @@
 import { assertIdentityNameAllowed } from "@spacebar/util/util/IdentityModeration";
 import { assertMaxLength, UserFieldCaps } from "@spacebar/util/util/UserFieldCaps";
+import { hashIp, hashIpGroup } from "@spacebar/util/util/IpHash";
 import type { VoidBadgeGrant } from "@spacebar/util/util/VoidBadge";
 import { Request } from "express";
 import { AfterLoad, Column, Entity, FindOptionsWhere, ILike, Index, JoinColumn, ManyToOne, OneToMany, OneToOne } from "typeorm";
@@ -245,6 +246,10 @@ export class User extends BaseClass {
     @Index("IDX_users_registration_ip")
     @Column({ type: String, nullable: true, select: false })
     registration_ip?: string | null;
+
+    @Index("IDX_users_registration_ip_group")
+    @Column({ type: String, nullable: true, select: false })
+    registration_ip_group?: string | null;
 
     @OneToOne(() => UserSettings, {
         cascade: true,
@@ -621,7 +626,8 @@ export class User extends BaseClass {
             created_at: new Date(),
             bot: !!bot,
             pride_badges: [...new Set(pride_badges ?? [])],
-            registration_ip: registration_ip ?? null,
+            registration_ip: hashIp(registration_ip),
+            registration_ip_group: hashIpGroup(registration_ip),
         });
 
         user.validate();

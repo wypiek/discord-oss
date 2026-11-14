@@ -13,6 +13,7 @@ import { OrmUtils } from "@spacebar/util";
 import { clearInterval, setInterval } from "node:timers";
 import { ProcessLifecycle } from "@spacebar/util/util/ProcessLifecycle";
 import { isStaffAccount, loadStaffRoles } from "./StaffRoles";
+import { hashIp, hashIpGroup } from "./IpHash";
 
 /// Change history:
 /// 1 - Initial version with HS256
@@ -140,9 +141,10 @@ export const checkToken = (
 
             const now = new Date();
             if (session && (session.last_seen?.getTime() ?? 0) <= now.getTime() - 15_000) {
+                const ipHash = hashIp(opts?.ipAddress);
                 const activity = {
                     last_seen: now,
-                    ...(opts?.ipAddress ? { last_seen_ip: opts.ipAddress } : {}),
+                    ...(ipHash ? { last_seen_ip: ipHash, last_seen_ip_group: hashIpGroup(opts?.ipAddress) ?? undefined } : {}),
                 };
                 await Session.createQueryBuilder()
                     .update(Session)

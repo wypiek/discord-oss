@@ -834,7 +834,10 @@ function filterNavigation() {
 $("#nav-search").addEventListener("input", filterNavigation);
 
 const jump = { controller: null, options: [], active: -1, generation: 0 };
-const looksLikeIp = (text) => /^[0-9a-f:.]+$/i.test(text) && (/^\d{1,3}(\.\d{1,3}){3}$/.test(text) || (text.includes(":") && text.length > 2));
+const isAddressHash = (text) => /^iph1_[A-Za-z0-9_-]{43}$/.test(text ?? "");
+const looksLikeIp = (text) => isAddressHash(text) || (/^[0-9a-f:.]+$/i.test(text) && (/^\d{1,3}(\.\d{1,3}){3}$/.test(text) || (text.includes(":") && text.length > 2)));
+const addressLabel = (value) => (isAddressHash(value) ? value.slice(5, 15) : value);
+const addressCode = (value) => html`<code title="Address fingerprint, the start of the address's hash">${addressLabel(value)}</code>`;
 
 function setJumpActive(index) {
   const input = $("#nav-search");
@@ -912,7 +915,7 @@ const runJump = debounce(async (query) => {
   if (ip)
     groups.push({
       label: "Address",
-      items: [{ open: () => openIp(query), render: html`<span class="jump-main"><code>${query}</code><span class="muted">Open this address</span></span>` }],
+      items: [{ open: () => openIp(query), render: html`<span class="jump-main">${addressCode(query)}<span class="muted">Open this address</span></span>` }],
     });
   if (users?.users?.length)
     groups.push({
@@ -2138,7 +2141,7 @@ const liftIpBansWithUndo = async (button, bans) => {
   if (button && label) button.textContent = label;
   if (!result) return false;
   const spread = total.spread ? ` and ${plural(total.spread, "ban")} that spread from them` : "";
-  toast(`Lifted ${lifted.length === 1 ? `the ban on ${lifted[0].ip}` : plural(lifted.length, "address ban")}${spread}`, "ok", {
+  toast(`Lifted ${lifted.length === 1 ? `the ban on ${addressLabel(lifted[0].ip)}` : plural(lifted.length, "address ban")}${spread}`, "ok", {
     action: lifted.length ? { label: "Undo", run: () => restoreIpBans(lifted).then(() => ipBansState.reload?.()) } : undefined,
   });
   return true;
@@ -2152,14 +2155,14 @@ async function renderIps(view, tabs) {
         <div>
           <h1>Users</h1>
           <p class="muted">
-            Addresses accounts registered on or signed in from, with the most accounts first. Session addresses go away when a session ends, registration addresses stay.
+            Addresses accounts registered on or signed in from, with the most accounts first. Addresses are stored as keyed hashes, so each one shows as a fingerprint, the first 10 characters of its hash. Type a full address to find it. Session addresses go away when a session ends, registration addresses stay.
           </p>
         </div>
       </div>
       ${tabs}
       <div class="row" style="margin-bottom:12px">
         <label class="grow list-search"
-          >Find addresses<input id="ip-search" type="search" inputmode="text" placeholder="Start of an address, like 203.0.113." value="${ipsState.q}" aria-controls="ip-results"
+          >Find an address<input id="ip-search" type="search" inputmode="text" spellcheck="false" placeholder="A full address, like 203.0.113.7" value="${ipsState.q}" aria-controls="ip-results"
         /></label>
       </div>
       <div class="list-status muted" id="ip-status" role="status" aria-live="polite" hidden></div>
@@ -2169,6 +2172,17 @@ async function renderIps(view, tabs) {
   const results = $("#ip-results", view);
   const requests = latestList(view, results, $("#ip-status", view));
   const load = async () => {
+    if (ipsState.q && !looksLikeIp(ipsState.q)) {
+      requests.cancel();
+      mount(results, emptyCard("Type a full address, like 203.0.113.7 or 2001:db8::1. Addresses are stored as hashes, so the start of an address can't be searched.", "Clear search"));
+      $("[data-empty-action]", results)?.addEventListener("click", () => {
+        ipsState.q = "";
+        $("#ip-search", view).value = "";
+        load();
+        $("#ip-search", view).focus();
+      });
+      return;
+    }
     const params = new URLSearchParams({ q: ipsState.q, limit: ipsState.limit, offset: ipsState.offset });
     await requests.load(
       `/admin/ips?${params}`,
@@ -2190,7 +2204,7 @@ async function renderIps(view, tabs) {
                     <tbody>
                       ${ips.map(
                         (row) => html`<tr data-ip="${row.ip}">
-                          <td><code>${row.ip}</code></td>
+                          <td>${addressCode(row.ip)}</td>
                           <td class="num">${fmtNumber(row.accounts)}</td>
                           <td class="hide-sm num">${fmtNumber(row.registrations)}</td>
                           <td class="hide-sm">${fmtDate(row.last_seen)}</td>
@@ -2202,7 +2216,7 @@ async function renderIps(view, tabs) {
                 </div>
                 ${pager(total, ipsState)}`
             : ipsState.q
-              ? emptyCard("No addresses match. Search for the start of an address, like 203.0.113.", "Clear search")
+              ? emptyCard("No account registered on or signed in from this address.", "Clear search")
               : emptyCard("No addresses recorded yet. They appear when people register or sign in.", "Show accounts"),
         );
         $("[data-empty-action]", results)?.addEventListener("click", () => {
@@ -2241,7 +2255,7 @@ async function renderIpBans(view, tabs) {
         <div>
           <h1>Users</h1>
           <p class="muted">
-            Addresses that can't register or sign in. Staff set bans here, from an address or through a raid action. A spread ban came from another ban, names it and is lifted together with it. Staff accounts are never caught, and private, loopback and shared addresses can't be banned.
+            Addresses that can't register or sign in. Staff set bans here, from an address or through a raid action. Only a keyed hash of each address is stored, so bans show a fingerprint, the first 10 characters of that hash. A spread ban came from another ban, names it and is lifted together with it. Staff accounts are never caught, and bans on private, loopback and shared addresses never match anyone.
           </p>
         </div>
       </div>
@@ -2257,7 +2271,7 @@ async function renderIpBans(view, tabs) {
       }
       <div class="row list-controls">
         <label class="grow list-search"
-          >Find banned addresses<input id="ip-ban-search" type="search" inputmode="text" spellcheck="false" placeholder="Start of an address, like 203.0.113." value="${ipBansState.q}" aria-controls="ip-ban-results"
+          >Find a banned address<input id="ip-ban-search" type="search" inputmode="text" spellcheck="false" placeholder="A full address, like 203.0.113.7" value="${ipBansState.q}" aria-controls="ip-ban-results"
         /></label>
         <label class="list-filter">Show<select id="ip-ban-kind">${options(IP_BAN_KINDS, ipBansState.kind)}</select></label>
       </div>
@@ -2297,7 +2311,7 @@ async function renderIpBans(view, tabs) {
     if (!ban.origin_ban_id) return html`<span class="muted">None</span>`;
     if (!ban.origin) return html`<span class="muted">Lifted ban ${ban.origin_ban_id}</span>`;
     return ban.origin.ip
-      ? html`<button class="link-button" type="button" data-open-ip="${ban.origin.ip}"><code>${ban.origin.ip}</code></button>`
+      ? html`<button class="link-button" type="button" data-open-ip="${ban.origin.ip}">${addressCode(ban.origin.ip)}</button>`
       : ban.origin.user_id
         ? html`<button class="link-button" type="button" data-open-user="${ban.origin.user_id}">Account ban</button>`
         : html`<span class="muted">${ban.origin.reason}</span>`;
@@ -2311,6 +2325,18 @@ async function renderIpBans(view, tabs) {
           ? html`<span class="muted">Spread to ${plural(ban.spread_count, "ban")}</span>`
           : html`<span class="muted">None</span>`;
   const load = async () => {
+    if (ipBansState.q && !looksLikeIp(ipBansState.q)) {
+      requests.cancel();
+      shown = [];
+      mount(results, emptyCard("Type a full address, like 203.0.113.7 or 2001:db8::1. Addresses are stored as hashes, so the start of an address can't be searched.", "Clear search"));
+      $("[data-empty-action]", results)?.addEventListener("click", () => {
+        ipBansState.q = "";
+        $("#ip-ban-search", view).value = "";
+        load();
+        $("#ip-ban-search", view).focus();
+      });
+      return;
+    }
     const params = new URLSearchParams({ kind: ipBansState.kind, q: ipBansState.q, limit: ipBansState.limit, offset: ipBansState.offset });
     await requests.load(
       `/admin/ips/bans?${params}`,
@@ -2341,9 +2367,9 @@ async function renderIpBans(view, tabs) {
                     <tbody>
                       ${bans.map(
                         (ban) => html`<tr data-ban="${ban.id}">
-                          ${moderate ? html`<td data-select><input type="checkbox" data-select-ban="${ban.id}" aria-label="Select the ban on ${ban.ip}" /></td>` : ""}
+                          ${moderate ? html`<td data-select><input type="checkbox" data-select-ban="${ban.id}" aria-label="Select the ban on ${addressLabel(ban.ip)}" /></td>` : ""}
                           <td>
-                            <button class="link-button" type="button" data-open-ip="${ban.ip}"><code>${ban.ip}</code></button>
+                            <button class="link-button" type="button" data-open-ip="${ban.ip}">${addressCode(ban.ip)}</button>
                             <div class="muted ip-ban-reason">${ban.reason}</div>
                           </td>
                           <td>${kindBadge(ban)}</td>
@@ -2395,7 +2421,7 @@ async function renderIpBans(view, tabs) {
         for (const button of $$("[data-lift-ban]", results))
           button.addEventListener("click", async () => {
             const ban = shown.find((entry) => entry.id === button.dataset.liftBan);
-            if (!(await confirmDialog({ title: `Lift the ban on ${ban.ip}?`, message: IP_LIFT_EFFECT, confirm: "Lift ban" }))) return;
+            if (!(await confirmDialog({ title: `Lift the ban on ${addressLabel(ban.ip)}?`, message: IP_LIFT_EFFECT, confirm: "Lift ban" }))) return;
             if (!(await liftIpBansWithUndo(button, [ban]))) return;
             ipBansState.selected.delete(ban.id);
             load();
@@ -2413,7 +2439,7 @@ async function renderIpBans(view, tabs) {
     const ip = form.ip.value.trim();
     const reason = form.reason.value.trim();
     if (!(await confirmDialog({ title: `Ban ${ip}?`, message: IP_BAN_EFFECT, confirm: "Ban address" }))) return;
-    const done = await act($("button[type=submit]", form), () => api("/admin/ips/bans", { method: "POST", body: { ip, ...(reason ? { reason } : {}) } }), `${ip} is banned`);
+    const done = await act($("button[type=submit]", form), () => api("/admin/ips/bans", { method: "POST", body: { ip, ...(reason ? { reason } : {}) } }), `${addressLabel(ip)} is banned. Only its hash is stored.`);
     if (!done) return;
     form.reset();
     load();
@@ -2458,7 +2484,7 @@ async function renderIpBans(view, tabs) {
 
 async function openIp(ip, reload) {
   const body = openDrawer(
-    ip,
+    addressLabel(ip),
     html`
       <div class="spinner">Loading…</div>
     `,
@@ -2478,14 +2504,15 @@ async function openIp(ip, reload) {
     return mount(body, html`<p class="form-error">${e.message}</p>`);
   }
   if (!body.isConnected || $("#drawer").hidden) return;
-  const row = info.ips.find((entry) => entry.ip === ip);
+  const row = info.ips[0];
+  const label = addressLabel(row?.ip ?? ip);
   const total = accounts.total;
   mount(
     body,
     html`
       <div class="card">
         <div class="list">
-          <div class="list-item"><span class="grow muted">Address</span><code>${ip}</code></div>
+          <div class="list-item"><span class="grow muted">${row || isAddressHash(ip) ? "Fingerprint" : "Address"}</span><code title="The first 10 characters of the address's keyed hash">${label}</code></div>
           <div class="list-item"><span class="grow muted">Accounts seen here</span><span class="num">${fmtNumber(total)}</span></div>
           <div class="list-item"><span class="grow muted">Registered here</span><span class="num">${fmtNumber(row?.registrations ?? 0)}</span></div>
           <div class="list-item"><span class="grow muted">Last seen</span><span>${fmtDate(row?.last_seen)}</span></div>
@@ -2566,7 +2593,7 @@ async function openIp(ip, reload) {
       const ids = selection.ids.filter((id) => id !== state.me.id);
       const skippedSelf = ids.length < selection.ids.length ? " Your own account is on this address and is skipped." : "";
       if (!ids.length && !banIp) return toast("Only your own account is on this address.", "error");
-      if (!await confirmDialog({ title: removalTitle(choice, ids.length), message: `${describeRemoval(choice)}${banIp ? ` ${ip} is banned too.` : ""}${skippedSelf}`, confirm: removalLabel(choice, ids.length) })) return;
+      if (!await confirmDialog({ title: removalTitle(choice, ids.length), message: `${describeRemoval(choice)}${banIp ? ` ${label} is banned too.` : ""}${skippedSelf}`, confirm: removalLabel(choice, ids.length) })) return;
       const label = button.textContent;
       const totals = await act(button, async () => {
         if (banIp) await api("/admin/ips/bans", { method: "POST", body: { ip } });
@@ -2578,17 +2605,17 @@ async function openIp(ip, reload) {
       });
       button.textContent = label;
       if (!totals) return;
-      toast(`${removalSummary(choice.action, totals)}${banIp ? `, ${ip} banned` : ""}`);
+      toast(`${removalSummary(choice.action, totals)}${banIp ? `, ${label} banned` : ""}`);
       reopen();
     });
   }
   $("#ip-ban", body)?.addEventListener("click", async (event) => {
-    if (!(await confirmDialog({ title: `Ban ${ip}?`, message: IP_BAN_EFFECT, confirm: "Ban address" }))) return;
-    const done = await act(event.currentTarget, () => api("/admin/ips/bans", { method: "POST", body: { ip } }), `${ip} is banned`);
+    if (!(await confirmDialog({ title: `Ban ${label}?`, message: IP_BAN_EFFECT, confirm: "Ban address" }))) return;
+    const done = await act(event.currentTarget, () => api("/admin/ips/bans", { method: "POST", body: { ip } }), `${label} is banned`);
     if (done) reopen();
   });
   $("#ip-lift", body)?.addEventListener("click", async (event) => {
-    if (!(await confirmDialog({ title: `Lift the ban on ${ip}?`, message: IP_LIFT_EFFECT, confirm: "Lift ban" }))) return;
+    if (!(await confirmDialog({ title: `Lift the ban on ${label}?`, message: IP_LIFT_EFFECT, confirm: "Lift ban" }))) return;
     if (await liftIpBansWithUndo(event.currentTarget, [{ id: row.ban_id }])) reopen();
   });
 }
@@ -2786,18 +2813,19 @@ async function openUser(id, reload) {
                     <div class="list-item"><span class="grow muted">Email</span><span>${u.email || "—"}</span></div>
                     <div class="list-item"><span class="grow muted">Registered</span><span>${fmtDate(u.created_at)}</span></div>
                     <div class="list-item"><span class="grow muted">Active sessions</span><span>${fmtNumber(u.session_count)}</span></div>
-                    <div class="list-item"><span class="grow muted">Registration IP</span>${u.registration_ip ? html`<code>${u.registration_ip}</code>` : html`<span class="muted">Not recorded</span>`}</div>
+                    <div class="list-item"><span class="grow muted">Registration address</span>${u.registration_ip ? addressCode(u.registration_ip) : html`<span class="muted">Not recorded</span>`}</div>
                 </div>
             </div>
             <section class="card stack" id="ips-card">
                 <h3>IP addresses (${fmtNumber(u.ips?.length ?? 0)})</h3>
+                <p class="muted" style="margin:0">Each address shows as a fingerprint, the first 10 characters of its keyed hash. The same fingerprint means the same address.</p>
                 ${
                   u.ips?.length
                     ? html`<div class="list">
                           ${u.ips.map(
                             (entry) => html`<div class="list-item">
                                 <div class="grow">
-                                    <code>${entry.ip}</code>
+                                    ${addressCode(entry.ip)}
                                     ${entry.ban_id ? html` <span class="badge danger">Banned</span>` : ""}
                                     <div class="muted">
                                         ${[
@@ -4078,7 +4106,7 @@ async function renderUserSessions(u) {
                                               Last active
                                               ${fmtDate(s.last_seen ?? s.created_at)}${s.last_seen_location ? html` · ${s.last_seen_location}` : ""}${
                                                 s.last_seen_ip
-                                                  ? html` · <code>${s.last_seen_ip}</code>`
+                                                  ? html` · ${addressCode(s.last_seen_ip)}`
                                                   : ""
                                               }
                                               · signed in ${fmtDay(s.created_at)}

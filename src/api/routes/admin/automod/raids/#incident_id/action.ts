@@ -4,7 +4,8 @@ import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
 import { InstanceBan, RaidIncident, Session, User } from "@spacebar/database";
 import { AdminRaidIncidentActionSchema } from "@spacebar/schemas";
-import { applySpamAction, canActOn, deleteAuthoredMessages, endUserSessions, ipVariants, normalizeIp, recordAutomodAction } from "@spacebar/api/util";
+import { applySpamAction, canActOn, deleteAuthoredMessages, endUserSessions, recordAutomodAction } from "@spacebar/api/util";
+import { hashIp, isIpHash } from "@spacebar/util/util/IpHash";
 import { serializeIncidents } from "../index";
 import { findIncident } from "./index";
 
@@ -43,7 +44,7 @@ router.post(
 
         let messages_deleted = 0;
         const ips_banned: string[] = [];
-        const ips_skipped: { ip: string; reason: "self" | "already_banned" | "shared" }[] = [];
+        const ips_skipped: { ip: string; reason: "self" | "already_banned" }[] = [];
         const ids = targets.map((user) => user.id);
         for (let start = 0; start < ids.length; start += BATCH) {
             const batch = targets.slice(start, start + BATCH);
@@ -69,22 +70,14 @@ router.post(
                 continue;
             }
             const sessions = batch.length ? await Session.find({ where: { user_id: In(batch.map((user) => user.id)) }, select: { session_id: true, last_seen_ip: true } }) : [];
-            const own = normalizeIp(req.ip);
-            const ips = [
-                ...new Set(
-                    [...batch.map((user) => normalizeIp(user.registration_ip)), ...sessions.map((session) => normalizeIp(session.last_seen_ip))].filter((ip): ip is string => !!ip),
-                ),
-            ];
+            const own = hashIp(req.ip);
+            const ips = [...new Set([...batch.map((user) => user.registration_ip), ...sessions.map((session) => session.last_seen_ip)].filter(isIpHash))];
             for (const ip of ips) {
-                if (own && ipVariants(ip).includes(own)) {
+                if (ip === own) {
                     ips_skipped.push({ ip, reason: "self" });
                     continue;
                 }
-                if (InstanceBan.sharedAddress(ip)) {
-                    ips_skipped.push({ ip, reason: "shared" });
-                    continue;
-                }
-                if (await InstanceBan.exists({ where: ipVariants(ip).map((variant) => ({ ip_address: variant, is_allowlisted: false })) })) {
+                if (await InstanceBan.exists({ where: { ip_address: ip, is_allowlisted: false } })) {
                     ips_skipped.push({ ip, reason: "already_banned" });
                     continue;
                 }

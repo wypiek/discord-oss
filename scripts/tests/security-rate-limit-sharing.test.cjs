@@ -14,6 +14,7 @@ const limiterModule = (store = {}, config = () => ({})) =>
         {
             "@spacebar/util": { Config: { get: config }, listenEvent: async () => undefined, RabbitMQ: new EventEmitter() },
             "@spacebar/util/util/ProcessLifecycle": { ProcessLifecycle: { eventEmitter: new EventEmitter() } },
+            "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
             "@spacebar/database": { RateLimit: store },
             typeorm: { LessThanOrEqual: (value) => value },
             express: {},

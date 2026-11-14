@@ -51,6 +51,7 @@ function fixture(files = new Map(), hooks = {}) {
             clearInterval: (timer) => cleared.push(timer),
         },
         "@spacebar/util/util/ProcessLifecycle": { ProcessLifecycle: lifecycle },
+        "./IpHash": require("./helpers/ip-hash.cjs"),
     };
     vm.runInNewContext(
         ts.transpileModule(fs.readFileSync("src/util/util/Token.ts", "utf8"), {

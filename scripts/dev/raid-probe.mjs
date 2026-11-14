@@ -23,6 +23,8 @@ assert.equal(
 
 const require = createRequire(import.meta.url);
 const { Client } = require("pg");
+for (const key of ["CONFIG_PATH", "IP_HASH_SECRET", "IP_HASH_SECRET_FILE"]) if (env[key] && !process.env[key]) process.env[key] = env[key];
+const { hashIp } = require("../../dist/util/util/IpHash.js");
 const { chromium } = createRequire(path.join(homedir(), ".cache/fosscord-tools/package.json"))("playwright-core");
 
 const db = new Client({ connectionString: database });
@@ -303,14 +305,15 @@ await step("the admin dashboard lists the incidents and acts on everyone in one"
     assert.equal((await db.query("SELECT disabled FROM users WHERE id = $1", [r6.id])).rows[0].disabled, true);
 
     const wave = await incidentOf("everyone_spam");
-    await db.query("UPDATE users SET registration_ip = $2 WHERE id = $1", [r3.id, "203.0.113.77"]);
+    const raider = hashIp("203.0.113.77");
+    await db.query("UPDATE users SET registration_ip = $2, registration_ip_group = $2 WHERE id = $1", [r3.id, raider]);
     const banned = ok(await call("POST", `/admin/automod/raids/${wave.id}/action`, admin.token, { action: "ban_ip" }), "ban the wave's IPs");
-    assert.ok(banned.ips_banned.includes("203.0.113.77"), "the raider's registration address is banned");
+    assert.ok(banned.ips_banned.includes(raider), "the raider's registration address hash is banned");
     assert.ok(
         banned.ips_skipped.some((entry) => entry.reason === "self"),
         "the admin's own address is skipped",
     );
-    const ban = ok(await call("GET", "/admin/ips/bans", admin.token), "IP bans").bans.find((entry) => entry.ip === "203.0.113.77");
+    const ban = ok(await call("GET", "/admin/ips/bans", admin.token), "IP bans").bans.find((entry) => entry.ip === raider);
     assert.ok(ban, "the IP ban is listed");
     ok(await call("DELETE", `/admin/ips/bans/${ban.id}`, admin.token), "lift the probe's IP ban");
 

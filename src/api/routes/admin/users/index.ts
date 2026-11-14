@@ -5,7 +5,7 @@ import { HTTPError } from "lambert-server/HTTPError";
 import { route } from "@spacebar/api/middlewares";
 import { User } from "@spacebar/database";
 import { AdminUserTag, UserFlags } from "@spacebar/schemas";
-import { cursorPage, decodeCursor, encodeCursor, ipVariants, isProtectedStaffTarget, keysetClause, listOffset, parseIp } from "@spacebar/api/util";
+import { addressQuery, cursorPage, decodeCursor, encodeCursor, isProtectedStaffTarget, keysetClause, listOffset } from "@spacebar/api/util";
 import { Rights, STAFF_RIGHTS, effectiveRightsSync, loadStaffRoles } from "@spacebar/util";
 
 const router = Router({ mergeParams: true });
@@ -121,8 +121,8 @@ export const userSearchQuery = (req: Request) => {
     if (!(USER_FILTERS as readonly string[]).includes(filter))
         throw new HTTPError("filter must be all, disabled, suspended, pending, with_reason, bots, verified or unverified", 400);
     const ipText = scalarQuery(req.query.ip, "ip", "").trim();
-    const ip = ipText ? parseIp(ipText) : parseIp(q);
-    if (ipText && !ip) throw new HTTPError("ip must be an IPv4 or IPv6 address", 400);
+    const ip = ipText ? addressQuery(ipText) : addressQuery(q);
+    if (ipText && !ip) throw new HTTPError("ip must be a full IPv4 or IPv6 address or an address hash", 400);
     const sort = scalarQuery(req.query.sort, "sort", "newest");
     if (!Object.hasOwn(USER_SORTS, sort)) throw new HTTPError("sort must be newest, oldest or name", 400);
     const exactId = !ip && /^\d{15,20}$/.test(q);
@@ -134,11 +134,8 @@ export const userSearchQuery = (req: Request) => {
     for (const [column, order] of tieBreaks) query.addOrderBy(column, order);
 
     if (ip) {
-        const ips = ipVariants(ip);
         query.where(
-            new Brackets((qb) =>
-                qb.where("user.registration_ip IN (:...ips)", { ips }).orWhere("user.id IN (SELECT s.user_id FROM sessions s WHERE s.last_seen_ip IN (:...ips))", { ips }),
-            ),
+            new Brackets((qb) => qb.where("user.registration_ip = :ip", { ip }).orWhere("user.id IN (SELECT s.user_id FROM sessions s WHERE s.last_seen_ip = :ip)", { ip })),
         );
         if (ipText && q)
             query.andWhere(
@@ -194,10 +191,10 @@ router.get(
         right: "VIEW_USERS",
         spacebarOnly: true,
         description:
-            "Search users on this instance. `q` matches an exact id, an IP address, a handle such as `@name` or `name#1234`, or part of a username, display name or email. `ip` lists the accounts that registered on or signed in from an address.",
+            "Search users on this instance. `q` matches an exact id, a full IP address or address hash, a handle such as `@name` or `name#1234`, or part of a username, display name or email. `ip` lists the accounts that registered on or signed in from an address, found by hashing it.",
         query: {
             q: { type: "string", required: false },
-            ip: { type: "string", required: false, description: "An IPv4 or IPv6 address" },
+            ip: { type: "string", required: false, description: "A full IPv4 or IPv6 address, or an address hash" },
             filter: {
                 type: "string",
                 required: false,

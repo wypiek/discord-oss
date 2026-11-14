@@ -4,6 +4,7 @@ import ms, { StringValue } from "ms";
 import { TextDecoder } from "node:util";
 import { ConsoleUtils } from "./util/ConsoleUtils";
 import { ColorUtils } from "./util/ColorUtils";
+import { ipLabel } from "./util/IpHash";
 
 export class NewUrlUserSignatureData {
     ip?: string;
@@ -131,7 +132,7 @@ function calculateHash(request: UrlSignatureData): UrlSignResult {
                 "[Signing] CDN Signature IP is enabled but we couldn't find the IP field in the request. This may cause issues with signature validation. Please report this to the Spacebar team!",
             );
         else {
-            if (process.env["LOG_CDN_SIGNATURES"]) console.log("[Signing] CDN Signature IP is enabled, adding IP to hash:", request.ip);
+            if (process.env["LOG_CDN_SIGNATURES"]) console.log("[Signing] CDN Signature IP is enabled, adding IP to hash:", ipLabel(request.ip));
             data.update(request.ip!);
             ipData = new Int8Array(new TextEncoder().encode(request.ip!));
         }
@@ -178,7 +179,7 @@ function calculateHash(request: UrlSignatureData): UrlSignResult {
                 path: request.path,
                 validity: request.issuedAt + " .. " + request.expiresAt,
                 ua: Config.get().security.cdnSignatureIncludeUserAgent ? request.userAgent : "[disabled]",
-                ip: Config.get().security.cdnSignatureIncludeIp ? request.ip : "[disabled]",
+                ip: Config.get().security.cdnSignatureIncludeIp ? ipLabel(request.ip) : "[disabled]",
             },
             "->",
             result,

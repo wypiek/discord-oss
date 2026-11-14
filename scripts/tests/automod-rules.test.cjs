@@ -394,15 +394,17 @@ function load(file, imports) {
 function ipCapFixture({ users = [], sessions = [], registration = 0, login = 0, allow = [], staff = [], policy = {} } = {}) {
     const ipPolicy = { enabled: true, dryRun: false, exemptUserIds: [], ...policy };
     const logs = [];
-    const ipMatches = (value, condition) => (condition.in ? condition.in.includes(value) : value?.startsWith(condition.like.replace(/%$/, "")));
+    const ipHash = require("./helpers/ip-hash.cjs");
+    const inGroup = (value, hash) => !!value && ipHash.hashIpGroup(value) === hash;
     const caps = load("src/api/util/utility/ipAccountCaps.ts", {
         typeorm: { In: (values) => ({ in: values }), Like: (value) => ({ like: value }), MoreThan: (value) => ({ moreThan: value }) },
         "@spacebar/database": {
+            capTermFor: require("../../dist/database/IpHashBackfill").capTermFor,
             User: {
                 find: async ({ where }) =>
                     users.filter(
                         (user) =>
-                            (where.registration_ip ? ipMatches(user.registration_ip, where.registration_ip) : where.id.in.includes(user.id)) &&
+                            (where.registration_ip_group ? inGroup(user.registration_ip, where.registration_ip_group) : where.id.in.includes(user.id)) &&
                             !user.deleted === !where.deleted &&
                             !user.disabled === !where.disabled,
                     ),
@@ -410,7 +412,7 @@ function ipCapFixture({ users = [], sessions = [], registration = 0, login = 0, 
             Session: {
                 find: async ({ where }) =>
                     sessions.filter((session) =>
-                        where.some((clause) => ipMatches(session.last_seen_ip, clause.last_seen_ip) && (session.last_seen ?? 0) > clause.last_seen?.moreThan),
+                        where.some((clause) => inGroup(session.last_seen_ip, clause.last_seen_ip_group) && (session.last_seen ?? 0) > clause.last_seen?.moreThan),
                     ),
             },
         },
@@ -425,7 +427,7 @@ function ipCapFixture({ users = [], sessions = [], registration = 0, login = 0, 
             isStaffAccount: (user, snap) => (BigInt(user.rights ?? 0) & 1n) === 1n || snap.staff.has(user.id),
         },
         "@spacebar/util/util/IpGroups": require("../../src/util/util/IpGroups.ts"),
-        "./accountIps": { ipVariants: (ip) => (ip.includes(":") ? [ip] : [ip, `::ffff:${ip}`]) },
+        "@spacebar/util/util/IpHash": ipHash,
         "./instanceAutomod": { recordAutomodAction: async (entry) => logs.push(entry) },
         "./spamGuard": { logRestrictionOnce: () => true },
         "./automodPolicy": {
@@ -454,7 +456,8 @@ test("the registration cap counts live accounts per address and per IPv6 /64", a
     assert.equal(fieldCode(refused, "username"), "TOO_MANY_ACCOUNTS_ON_IP");
     assert.equal(logs[0].rule, "ip_account_limit");
     assert.equal(logs[0].source, "registration");
-    assert.match(logs[0].term, /2 accounts on 203\.0\.113\.7, limit 2/);
+    assert.match(logs[0].term, /^2 accounts from the network with fingerprint [A-Za-z0-9_-]{10}, limit 2$/);
+    assert.doesNotMatch(logs[0].term, /203\.0\.113/);
     await caps.assertRegistrationIpCap("203.0.113.8", "new");
     await caps.assertRegistrationIpCap("2001:db8:1:2::77", "new");
     const v6 = ipCapFixture({ users: [...users, { id: "7", rights: "0", registration_ip: "2001:db8:1:2::6" }], registration: 2 });

@@ -64,7 +64,7 @@ These limits add to the route rate limits, which allow 2 successful registration
 | `login.sessionActiveDays`             | 30      | How recently a session must have been used to count.                                     |
 | `ipAllowList`                         | `[]`    | Up to 500 addresses and CIDR ranges, such as `192.0.2.0/24`, that the address caps skip. |
 
-After 10 times the failed attempt limit from all addresses together, the account also locks for every address it has never used. Staff never count toward the address caps, and the caps skip Cloudflare, private and allow-listed addresses. The Automod page has a lookup that lists who counts toward both caps for one address.
+After 10 times the failed attempt limit from all addresses together, the account also locks for every address it has never used. Staff never count toward the address caps, and the caps skip Cloudflare, private and allow-listed addresses. The caps compare hashes of each address's group, an IPv4 address or an IPv6 /64, stored with the account and each session, see [ip-hashing.md](../security/ip-hashing.md). The Automod page has a lookup that lists who counts toward both caps for one address and shows the group's fingerprint, and a refusal in the log names the fingerprint instead of the address.
 
 ## Spam rules
 

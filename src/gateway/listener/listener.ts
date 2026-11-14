@@ -7,6 +7,7 @@ import { ChannelType, PublicMember, RelationshipType } from "@spacebar/schemas";
 import { In, Not } from "typeorm";
 import { CLOSECODES, holdForResume, OPCODES, resolveSocket, Send } from "../util";
 import { markMemberListsStale, resyncMemberList } from "../opcodes/LazyRequest";
+import { hashIp } from "@spacebar/util/util/IpHash";
 
 // TODO: close connection on Invalidated Token
 // TODO: check intent
@@ -538,7 +539,7 @@ async function consumeEvent(this: WebSocket, opts: EventOpts): Promise<void> {
                 });
 
                 if (ban) {
-                    ban.ip = this.ipAddress || undefined;
+                    ban.ip = hashIp(this.ipAddress) ?? undefined;
                     await ban.save();
                 }
             }

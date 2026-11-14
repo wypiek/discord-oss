@@ -3,6 +3,7 @@ import { route } from "@spacebar/api/middlewares";
 import { RateLimit, HelpArticle } from "@spacebar/database";
 import { SEARCH_QUERY_MAX, SitePage, supportArticlePage, supportCategoryPage, supportHomePage, supportSearchPage } from "@spacebar/api/util";
 import { isSlug } from "@spacebar/util";
+import { hashIp } from "@spacebar/util/util/IpHash";
 
 const router = Router({ mergeParams: true });
 
@@ -49,7 +50,8 @@ router.post("/articles/:slug/vote", options, async (req: Request, res: Response)
     const voted = votedArticles(req.headers.cookie);
     const helpful = req.query.helpful === "yes" ? true : req.query.helpful === "no" ? false : null;
     if (helpful !== null && !voted.has(article.id)) {
-        const { admitted } = await RateLimit.reserve(`help-vote:${req.ip ?? "unknown"}`, req.ip ?? "unknown", VOTES_PER_HOUR, 3600);
+        const voter = hashIp(req.ip) ?? "unknown";
+        const { admitted } = await RateLimit.reserve(`help-vote:${voter}`, voter, VOTES_PER_HOUR, 3600);
         if (admitted) await HelpArticle.increment({ id: article.id }, helpful ? "helpful_yes" : "helpful_no", 1);
         voted.add(article.id);
         res.cookie(VOTE_COOKIE, [...voted].slice(-100).join("."), { path: "/support", maxAge: 365 * 24 * 3600 * 1000, httpOnly: true, sameSite: "lax" });

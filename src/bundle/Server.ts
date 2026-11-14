@@ -18,6 +18,7 @@ import { Monitoring } from "../util/monitoring/Monitoring";
 import TestClient, { TestClientAssets } from "./TestClient";
 import { installShutdownSignals } from "./Shutdown";
 import { ActivityHost } from "@spacebar/api/activities/ActivityHost";
+import { ipLabel } from "@spacebar/util/util/IpHash";
 
 const app = express();
 const server = http.createServer();
@@ -62,6 +63,7 @@ async function main() {
     await Config.init();
 
     const logRequests = process.env["LOG_REQUESTS"] != undefined;
+    morgan.token("remote-addr", (req: { ip?: string; socket?: { remoteAddress?: string } }) => ipLabel(req.ip ?? req.socket?.remoteAddress));
     if (logRequests) {
         app.use(
             morgan("combined", {

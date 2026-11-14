@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { AuditLog } from "@spacebar/database";
 import { AuditLogChange, AuditLogEvents } from "@spacebar/schemas";
 import { trackBackground } from "@spacebar/util";
+import { redactAddress } from "@spacebar/util/util/IpHash";
 import { assertCanActOnUser } from "./adminTargets";
 
 export const STAFF_AUDIT_ACTIONS = [
@@ -60,12 +61,12 @@ export function summarizeBody(body: unknown): AuditLogChange[] {
             const key = rawKey.slice(0, 64);
             if (SECRET_KEY.test(rawKey)) return { key, new_value: "[redacted]" };
             if (value === null || typeof value === "boolean" || typeof value === "number") return { key, new_value: value };
-            if (typeof value === "string") return { key, new_value: value.length > 200 ? `${value.slice(0, 200)}…` : value };
+            if (typeof value === "string") return { key, new_value: value.length > 200 ? `${value.slice(0, 200)}…` : redactAddress(value) };
             if (Array.isArray(value) && value.every((item) => typeof item === "string" || typeof item === "number"))
                 return {
                     key,
                     new_value: [
-                        ...value.slice(0, 100).map((item) => (typeof item === "string" && item.length > 200 ? `${item.slice(0, 200)}…` : item)),
+                        ...value.slice(0, 100).map((item) => (typeof item === "string" && item.length > 200 ? `${item.slice(0, 200)}…` : redactAddress(item))),
                         ...(value.length > 100 ? [`+${value.length - 100}`] : []),
                     ],
                 };

@@ -23,6 +23,7 @@ function harness(remove) {
             console: { log() {}, error: (...args) => errors.push(args) },
             require: (name) => {
                 if (name.endsWith("/ProcessLifecycle")) return { ProcessLifecycle: lifecycle };
+                if (name.endsWith("/IpHash")) return require("./helpers/ip-hash.cjs");
                 if (name === "@spacebar/util")
                     return {
                         ProcessLifecycle: lifecycle,

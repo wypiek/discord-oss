@@ -35,6 +35,7 @@ function loadToken(user) {
         "./Config": { Config: { get: () => ({ security: {} }) } },
         "@spacebar/util": { OrmUtils: {} },
         "@spacebar/util/util/ProcessLifecycle": { ProcessLifecycle: { onShutdown: () => undefined } },
+        "./IpHash": require("./helpers/ip-hash.cjs"),
         "./StaffRoles": { isStaffAccount: () => false, loadStaffRoles: async () => ({}) },
         "./JwtKeypairManager": { JwtKeypairManager: {} },
     });

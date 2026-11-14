@@ -2,6 +2,7 @@ import "reflect-metadata";
 
 export * from "./Database";
 export * from "./JobLease";
+export * from "./IpHashBackfill";
 export * from "./entities/index";
 
 export * from "./voice/PrivateCalls";

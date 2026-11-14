@@ -11,6 +11,7 @@
 | [change-url.md](self-hosting/change-url.md) | Moving an instance to a new address. |
 | [workers.md](self-hosting/workers.md) | Running the instance on Cloudflare Workers. |
 | [limits.md](security/limits.md) | Upload, storage, fetch and image decoding limits. |
+| [ip-hashing.md](security/ip-hashing.md) | How IP addresses are stored as keyed hashes, the `IP_HASH_SECRET`, what admins see and the one-way upgrade of stored addresses. |
 
 ## Features
 

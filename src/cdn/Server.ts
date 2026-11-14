@@ -11,6 +11,7 @@ import { storageOwnership } from "./util/storageOwnership";
 import { cdnResponseSafety, storage } from "./util";
 import { readdirSync } from "node:fs";
 import { ErrorHandler } from "@spacebar/cdn/util/ErrorHandler";
+import { ipLabel } from "@spacebar/util/util/IpHash";
 
 export type CDNServerOptions = ServerOptions;
 
@@ -35,6 +36,7 @@ export class CDNServer extends Server {
         );
 
         const logRequests = process.env["LOG_REQUESTS"] != undefined;
+        morgan.token("remote-addr", (req: { ip?: string; socket?: { remoteAddress?: string } }) => ipLabel(req.ip ?? req.socket?.remoteAddress));
         if (logRequests && !this.options.app) {
             this.app.use(
                 morgan("combined", {

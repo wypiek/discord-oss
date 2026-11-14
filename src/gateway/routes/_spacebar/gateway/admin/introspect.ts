@@ -2,6 +2,7 @@ import { route } from "@spacebar/api/middlewares";
 import { Request, Response, Router } from "express";
 import { ProcessLifecycle } from "@spacebar/util/util/ProcessLifecycle";
 import { openConnections } from "@spacebar/gateway/events/Connection";
+import { ipLabel } from "@spacebar/util/util/IpHash";
 
 const router: Router = Router({ mergeParams: true });
 
@@ -75,7 +76,7 @@ router.get(
                                       accessToken: x.accessToken?.split(".")[0] + "." + x.accessToken?.split(".")[1] + +".***",
                                       encoding: x.encoding,
                                       compress: x.compress,
-                                      ipAddress: x.ipAddress,
+                                      ipAddress: x.ipAddress ? ipLabel(x.ipAddress) : undefined,
                                       userAgent: x.userAgent,
                                       fingerprint: x.fingerprint,
                                       shard_count: x.shard_count,

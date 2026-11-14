@@ -1011,7 +1011,7 @@ async function renderAutomod(view) {
       target,
       html`
         <p class="muted">
-          Counted as ${result.group}${result.exempt ? html` <span class="badge ok">Exempt</span>` : ""}.
+          Counted as ${result.group}, stored as the fingerprint <code>${result.fingerprint}</code>${result.exempt ? html` <span class="badge ok">Exempt</span>` : ""}.
           <a href="#/users/ips">Open IP addresses</a>
         </p>
         ${capLine("Registered from here", result.registration, result.registration.count === 1 ? "account" : "accounts")}

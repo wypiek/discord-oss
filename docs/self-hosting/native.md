@@ -32,7 +32,7 @@ sudo install -d -o meowcord -g meowcord -m 0700 /var/lib/meowcord /var/lib/meowc
 | --- | --- |
 | `/opt/meowcord` | The server, dependencies, scripts and static assets, read-only for the service. |
 | `/etc/meowcord/meowcord.env` | The runtime environment with the database password, mode `0640`. |
-| `/var/lib/meowcord` | Configuration, keys and uploads. |
+| `/var/lib/meowcord` | Configuration, keys, the IP hash secret `.ip-hash.key` and uploads. |
 | `/var/cache/meowcord` | The cached client, the cache miss log and the detectable games list. |
 | `/run/meowcord` | The SFU socket, created by systemd. |
 

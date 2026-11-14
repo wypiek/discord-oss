@@ -4,6 +4,7 @@ import { isIPv4, isIPv6 } from "node:net";
 import { NextFunction, Request, Response, Router } from "express";
 import { LessThanOrEqual } from "typeorm";
 import { ProcessLifecycle } from "@spacebar/util/util/ProcessLifecycle";
+import { hashIpKey } from "@spacebar/util/util/IpHash";
 
 export const API_PREFIX_TRAILING_SLASH = /^\/api(\/v\d+)?\//;
 
@@ -137,6 +138,8 @@ export function addressBucket(address: string | undefined) {
         .join(":")}::/64`;
 }
 
+export const addressExecutor = (address: string | undefined) => hashIpKey(addressBucket(address));
+
 export function routeBucket(req: Request) {
     const raw = req.originalUrl.split("?")[0];
     const segments = (() => {
@@ -189,7 +192,7 @@ export default function rateLimit(opts: {
         if (req.rights?.has("BYPASS_RATE_LIMITS")) return next();
 
         const bucket_id = opts.bucket || routeBucket(req);
-        const executor_id = !opts.onlyIp && req.user_id ? req.user_id : addressBucket(req.ip);
+        const executor_id = !opts.onlyIp && req.user_id ? req.user_id : addressExecutor(req.ip);
         const key = `${executor_id}:${limiterId}:${bucket_id}`;
 
         let max_hits = opts.count;

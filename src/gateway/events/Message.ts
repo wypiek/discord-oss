@@ -9,6 +9,7 @@ import OPCodeHandlers from "../opcodes";
 import { check } from "../opcodes/instanceOf";
 import { PayloadSchema } from "@spacebar/schemas";
 import { HTTPError } from "lambert-server";
+import { ipLabel } from "@spacebar/util/util/IpHash";
 
 const bigIntJson = BigIntJson({ storeAsString: true });
 
@@ -44,11 +45,11 @@ export async function Message(this: WebSocket, buffer: WS.Data) {
             try {
                 data = jsonSafe(unpackEtf(buffer)) as unknown as Payload;
             } catch {
-                console.error(`[Gateway/${this.user_id ?? this.ipAddress}] Failed to decode ETF payload`);
+                console.error(`[Gateway/${this.user_id ?? ipLabel(this.ipAddress)}] Failed to decode ETF payload`);
                 return this.close(CLOSECODES.Decode_error);
             }
         } else {
-            console.error(`[Gateway/${this.user_id ?? this.ipAddress}] Unknown payload format`);
+            console.error(`[Gateway/${this.user_id ?? ipLabel(this.ipAddress)}] Unknown payload format`);
             return this.close(CLOSECODES.Decode_error);
         }
 
@@ -68,7 +69,7 @@ export async function Message(this: WebSocket, buffer: WS.Data) {
             await fs.mkdir(path.join("dump", id), { recursive: true });
             await fs.writeFile(path.join("dump", id, `${Date.now()}.in.json`), JSON.stringify(data, null, 2));
 
-            if (!this.session_id) console.log(`[Gateway/${this.user_id ?? this.ipAddress}] Unknown session id, dumping to unknown folder`);
+            if (!this.session_id) console.log(`[Gateway/${this.user_id ?? ipLabel(this.ipAddress)}] Unknown session id, dumping to unknown folder`);
         }
 
         if (data.op !== OPCODES.Heartbeat && data.op !== OPCODES.SetQoS) {
@@ -86,7 +87,7 @@ export async function Message(this: WebSocket, buffer: WS.Data) {
 
         const OPCodeHandler = OPCodeHandlers[data.op];
         if (!OPCodeHandler) {
-            console.error(`[Gateway/${this.user_id ?? this.ipAddress}] Unknown opcode`, data.op);
+            console.error(`[Gateway/${this.user_id ?? ipLabel(this.ipAddress)}] Unknown opcode`, data.op);
             // TODO: if all opcodes are implemented comment this out:
             // this.close(CLOSECODES.Unknown_opcode);
             return;
@@ -94,7 +95,7 @@ export async function Message(this: WebSocket, buffer: WS.Data) {
 
         return await OPCodeHandler.call(this, data);
     } catch (error) {
-        console.error(`[Gateway/${this.user_id ?? this.ipAddress}] Error: Op ${data.op}`, error);
+        console.error(`[Gateway/${this.user_id ?? ipLabel(this.ipAddress)}] Error: Op ${data.op}`, error);
         let message: string | undefined;
         if (error instanceof HTTPError) message = error.message;
         if (data.op === 2 && error instanceof HTTPError && error.code >= 400 && error.code < 500) return this.close(CLOSECODES.Authentication_failed, "Authentication failed.");

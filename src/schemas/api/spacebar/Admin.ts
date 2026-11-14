@@ -1104,6 +1104,7 @@ export interface AdminUsersBulkSchema {
 
 export interface AdminIpBanCreateSchema {
     /**
+     * A full IPv4 or IPv6 address, or an address hash from the IP addresses list. Addresses are hashed before they are stored.
      * @maxLength 64
      */
     ip: string;

@@ -5,6 +5,9 @@ import jwt from "jsonwebtoken";
 import { InstanceBan, Session, User } from "@spacebar/database";
 import { Config } from "./Config";
 import { checkToken, JwtKeypairManager } from "./Token";
+import { hashIp } from "./IpHash";
+
+process.env.IP_HASH_SECRET ||= "unit-test-ip-hash-secret-0123456789abcdef";
 
 let keys: { privateKey: crypto.KeyObject; publicKey: crypto.KeyObject };
 let user: User;
@@ -117,7 +120,10 @@ test("device activity uses a partial update and never requests external geolocat
     mock.method(session!, "updateIpInfo", async () => assert.fail("auth must not depend on a third-party request"));
     await checkToken(token(), { ipAddress: "192.0.2.1" });
     assert.equal(updates.length, 1);
-    assert.deepEqual(Object.keys(updates[0]).sort(), ["last_seen", "last_seen_ip"]);
+    assert.deepEqual(Object.keys(updates[0]).sort(), ["last_seen", "last_seen_ip", "last_seen_ip_group"]);
+    assert.equal(updates[0].last_seen_ip, hashIp("192.0.2.1"));
+    assert.equal(updates[0].last_seen_ip_group, hashIp("192.0.2.1"));
+    assert.doesNotMatch(JSON.stringify(updates[0]), /192\.0\.2\.1/);
 });
 
 test("disabled accounts reject a previously cached signature immediately", async () => {

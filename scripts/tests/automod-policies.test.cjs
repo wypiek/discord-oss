@@ -135,6 +135,7 @@ function instanceAutomodFixture(automod, { users = [], staff = [] } = {}) {
         }
     }
     const module = load("src/api/util/utility/instanceAutomod.ts", {
+        "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
         "@spacebar/database": database,
         "@spacebar/util": {
             ApiError,

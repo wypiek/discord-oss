@@ -3,6 +3,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const ts = require("typescript");
+const ipHash = require("./helpers/ip-hash.cjs");
+
+const h = ipHash.hashIp;
 
 class HTTPError extends Error {
     constructor(message, status) {
@@ -96,11 +99,10 @@ function load(file, db) {
             if (name === "@spacebar/schemas") return {};
             if (name === "@spacebar/api/util")
                 return {
-                    normalizeIp: (ip) => (ip ? String(ip).replace(/^::ffff:/, "") : ip),
-                    ipVariants: (ip) => [ip, `::ffff:${ip}`],
-                    parseIp: (ip) => ip,
+                    addressQuery: (value) => (typeof value === "string" ? h(value.trim()) : null),
                     listOffset: require("../../dist/api/util/utility/adminCursor").listOffset,
                 };
+            if (name === "@spacebar/util/util/IpHash") return ipHash;
             if (name === "../../users/index") return { scalarQuery, paginationQuery };
             if (name === "./index") return load("src/api/routes/admin/ips/bans/index.ts", db).exports;
             throw Error(name);
@@ -124,11 +126,11 @@ const response = () => {
 };
 
 const fixture = () => [
-    { id: "10", ip_address: "203.0.113.7", reason: "Raid on Cat Cafe", created_at: new Date(3), is_from_other_instance_ban: false, is_allowlisted: false },
-    { id: "11", ip_address: "::ffff:198.51.100.4", reason: "Spammer", created_at: new Date(2), is_from_other_instance_ban: false, is_allowlisted: false },
+    { id: "10", ip_address: h("203.0.113.7"), reason: "Raid on Cat Cafe", created_at: new Date(3), is_from_other_instance_ban: false, is_allowlisted: false },
+    { id: "11", ip_address: h("::ffff:198.51.100.4"), reason: "Spammer", created_at: new Date(2), is_from_other_instance_ban: false, is_allowlisted: false },
     {
         id: "20",
-        ip_address: "203.0.113.70",
+        ip_address: h("203.0.113.70"),
         user_id: "500",
         reason: "Used the banned address 203.0.113.7, ban 10",
         created_at: new Date(1),
@@ -148,20 +150,20 @@ const fixture = () => [
     { id: "30", user_id: "502", reason: "Account ban", created_at: new Date(1), is_from_other_instance_ban: false, is_allowlisted: false },
 ];
 
-test("the IP ban filter splits explicit and spread bans and matches address prefixes in both IPv4 spellings", () => {
+test("the IP ban filter splits explicit and spread bans and finds one address by its hash in either IPv4 spelling", () => {
     const { exports } = load("src/api/routes/admin/ips/bans/index.ts", database([]));
     const all = exports.ipBanFilter(undefined, undefined);
     assert.equal(all.kind, "all");
-    assert.equal(all.where.length, 1);
-    assert.equal(all.where[0].is_allowlisted, false);
-    assert.equal("is_from_other_instance_ban" in all.where[0], false);
-    assert.equal(exports.ipBanFilter("explicit").where[0].is_from_other_instance_ban, false);
-    assert.equal(exports.ipBanFilter("spread").where[0].is_from_other_instance_ban, true);
-    const prefix = exports.ipBanFilter("all", " 203.0.113. ");
-    assert.deepEqual([...prefix.where.map((where) => where.ip_address.like)], ["203.0.113.%", "::ffff:203.0.113.%"]);
+    assert.equal(all.where.is_allowlisted, false);
+    assert.equal("is_from_other_instance_ban" in all.where, false);
+    assert.equal(exports.ipBanFilter("explicit").where.is_from_other_instance_ban, false);
+    assert.equal(exports.ipBanFilter("spread").where.is_from_other_instance_ban, true);
+    assert.equal(exports.ipBanFilter("all", " ::ffff:203.0.113.7 ").where.ip_address, h("203.0.113.7"));
+    assert.equal(exports.ipBanFilter("all", h("203.0.113.7")).where.ip_address, h("203.0.113.7"));
     for (const [kind, q] of [
         ["automatic", ""],
         [["all", "spread"], ""],
+        ["all", "203.0.113."],
         ["all", "203.0.%"],
         ["all", "x".repeat(65)],
         ["all", ["1", "2"]],
@@ -184,13 +186,16 @@ test("listing IP bans names the ban each one spread from, its account and how fa
     assert.equal(res.body.total, 3);
     assert.deepEqual({ ...res.body.counts }, { explicit: 2, spread: 1 });
     const byIp = Object.fromEntries(res.body.bans.map((ban) => [ban.ip, ban]));
-    assert.equal(byIp["203.0.113.7"].spread_count, 2);
-    assert.equal(byIp["203.0.113.7"].origin, null);
-    assert.equal(byIp["198.51.100.4"].spread_count, 0);
-    assert.equal(byIp["203.0.113.70"].propagated, true);
-    assert.equal(byIp["203.0.113.70"].user.username, "spam_bot_1");
-    assert.equal(byIp["203.0.113.70"].origin.ip, "203.0.113.7");
-    assert.equal(byIp["203.0.113.70"].origin_ban_id, "10");
+    assert.equal(byIp[h("203.0.113.7")].spread_count, 2);
+    assert.equal(byIp[h("203.0.113.7")].origin, null);
+    assert.equal(byIp[h("203.0.113.7")].fingerprint, h("203.0.113.7").slice(5, 15));
+    assert.equal(byIp[h("198.51.100.4")].spread_count, 0);
+    assert.equal(byIp[h("203.0.113.70")].propagated, true);
+    assert.equal(byIp[h("203.0.113.70")].user.username, "spam_bot_1");
+    assert.equal(byIp[h("203.0.113.70")].origin.ip, h("203.0.113.7"));
+    assert.equal(byIp[h("203.0.113.70")].origin.fingerprint, h("203.0.113.7").slice(5, 15));
+    assert.equal(byIp[h("203.0.113.70")].origin_ban_id, "10");
+    assert.ok(res.body.bans.every((ban) => !/\d+\.\d+\.\d+\.\d+/.test(JSON.stringify({ ip: ban.ip, fingerprint: ban.fingerprint, origin: ban.origin?.ip }))));
 
     const spread = response();
     await handlers.get.fn({ query: { kind: "spread" } }, spread);
@@ -211,7 +216,7 @@ test("lifting IP bans in bulk lifts what they spread, skips account bans and rep
     await handlers.post.fn({ body: { ban_ids: ["10", "10", "30", "999", "not-an-id"] }, user_id: "1" }, res);
     assert.deepEqual(
         res.body.lifted.map((ban) => [ban.id, ban.ip, ban.reason]),
-        [["10", "203.0.113.7", "Raid on Cat Cafe"]],
+        [["10", h("203.0.113.7"), "Raid on Cat Cafe"]],
     );
     assert.deepEqual([...res.body.missing], ["30", "999", "not-an-id"]);
     assert.equal(res.body.spread_lifted, 2);

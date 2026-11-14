@@ -660,9 +660,6 @@
                             "type": "string",
                             "format": "date-time"
                         },
-                        "last_seen_ip": {
-                            "type": "string"
-                        },
                         "last_seen_location": {
                             "type": "string"
                         }
@@ -13099,6 +13096,7 @@
         "type": "object",
         "properties": {
             "ip": {
+                "description": "A full IPv4 or IPv6 address, or an address hash from the IP addresses list. Addresses are hashed before they are stored.",
                 "maxLength": 64,
                 "type": "string"
             },
@@ -18998,6 +18996,12 @@
                     "string"
                 ]
             },
+            "registration_ip_group": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
             "settings": {
                 "$ref": "#/definitions/UserSettings"
             },
@@ -19216,6 +19220,9 @@
                 "format": "date-time"
             },
             "last_seen_ip": {
+                "type": "string"
+            },
+            "last_seen_ip_group": {
                 "type": "string"
             },
             "last_seen_location": {

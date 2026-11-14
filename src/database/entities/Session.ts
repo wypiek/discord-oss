@@ -3,6 +3,7 @@ import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, Primary
 import { DateBuilder, TimeSpan, Random } from "@spacebar/extensions";
 import { ClientStatus, PrivateStatus } from "@spacebar/schemas";
 import { IpDataClient } from "@spacebar/util/util/networking";
+import { hashIp, hashIpGroup } from "@spacebar/util/util/IpHash";
 import { Activity, GatewaySession, GatewaySessionClientInfo } from "../../util/interfaces";
 import { User } from "./User";
 import { BaseClassWithoutId } from "./BaseClass";
@@ -55,6 +56,10 @@ export class Session extends BaseClassWithoutId {
     @Column({ nullable: true, type: String })
     last_seen_ip?: string;
 
+    @Index("IDX_sessions_last_seen_ip_group")
+    @Column({ nullable: true, type: String })
+    last_seen_ip_group?: string;
+
     @Column({ nullable: true, type: String })
     last_seen_location?: string;
 
@@ -96,7 +101,6 @@ export class Session extends BaseClassWithoutId {
                 location: this.last_seen_location,
             },
             last_seen: this.last_seen,
-            last_seen_ip: this.last_seen_ip,
             last_seen_location: this.last_seen_location,
             last_seen_location_info: this.last_seen_location_info,
         };
@@ -121,8 +125,16 @@ export class Session extends BaseClassWithoutId {
         };
     }
 
-    async updateIpInfo() {
-        const ipInfo = await IpDataClient.getIpInfo(this.last_seen_ip!);
+    seenFrom(address: string) {
+        const ip = hashIp(address);
+        if (!ip || ip === this.last_seen_ip) return false;
+        this.last_seen_ip = ip;
+        this.last_seen_ip_group = hashIpGroup(address) ?? undefined;
+        return true;
+    }
+
+    async updateIpInfo(address: string) {
+        const ipInfo = await IpDataClient.getIpInfo(address);
         if (ipInfo?.ip) {
             this.last_seen_location = `${ipInfo.emoji_flag} ${ipInfo.postal} ${ipInfo.city}, ${ipInfo.region}, ${ipInfo.country_name}`;
             this.last_seen_location_info = {

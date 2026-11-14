@@ -141,6 +141,8 @@ test("message deletion works through large histories in batches", async () => {
     assert.equal(await module.deleteAuthoredMessages([]), 0);
 });
 
+const { hashIp } = require("./helpers/ip-hash.cjs");
+
 const ipHarness = (bans = []) => {
     const queries = [];
     const module = load("src/api/util/utility/accountIps.ts", {
@@ -153,11 +155,11 @@ const ipHarness = (bans = []) => {
                 live: (ban) => !ban.is_allowlisted,
                 find: async ({ where }) => {
                     queries.push(where);
-                    return bans.filter((ban) => where.ip_address.in.includes(ban.ip_address) && ban.is_allowlisted === where.is_allowlisted);
+                    return bans.filter((ban) => ban.ip_address === where.ip_address && ban.is_allowlisted === where.is_allowlisted);
                 },
             },
         },
-        "@spacebar/database/Sql": { sqlLike: (value, pattern) => `${value} ILIKE ${pattern}` },
+        "@spacebar/util/util/IpHash": require("./helpers/ip-hash.cjs"),
     });
     return { module, queries };
 };
@@ -171,14 +173,16 @@ test("addresses normalize IPv4-mapped IPv6 and reject anything that isn't an add
     assert.equal(module.parseIp("203.0.113"), null);
     assert.equal(module.parseIp("not an ip"), null);
     assert.equal(module.parseIp(["203.0.113.7"]), null);
-    same(module.ipVariants("::ffff:203.0.113.7"), ["203.0.113.7", "::ffff:203.0.113.7"]);
-    same(module.ipVariants("2001:db8::1"), ["2001:db8::1"]);
+    assert.equal(module.addressQuery(" ::ffff:203.0.113.7 "), hashIp("203.0.113.7"));
+    assert.equal(module.addressQuery(hashIp("2001:db8::1")), hashIp("2001:db8::1"));
+    assert.equal(module.addressQuery("203.0.113"), null);
+    assert.equal(module.addressQuery("iph1_short"), null);
 });
 
 test("a banned address is refused in either IPv4 spelling and an allowlist entry doesn't count", async () => {
     const { module, queries } = ipHarness([
-        { ip_address: "203.0.113.7", is_allowlisted: false },
-        { ip_address: "198.51.100.4", is_allowlisted: true },
+        { ip_address: hashIp("203.0.113.7"), is_allowlisted: false },
+        { ip_address: hashIp("198.51.100.4"), is_allowlisted: true },
     ]);
     assert.equal(await module.isIpBanned("::ffff:203.0.113.7"), true);
     assert.equal(await module.isIpBanned("198.51.100.4"), false);
@@ -189,19 +193,21 @@ test("a banned address is refused in either IPv4 spelling and an allowlist entry
 });
 
 test("a private or loopback address never counts as banned, so a reverse proxy can't lock everyone out", async () => {
-    const { module, queries } = ipHarness([{ ip_address: "127.0.0.1", is_allowlisted: false }]);
+    const { module, queries } = ipHarness([{ ip_address: hashIp("127.0.0.1"), is_allowlisted: false }]);
     assert.equal(await module.isIpBanned("127.0.0.1"), false);
     assert.equal(queries.length, 0);
 });
 
 test("instance ban lookups without any identifier match nothing instead of every ban", async () => {
     const lookups = [];
-    const { InstanceBan } = loadInstanceBan(lookups, [{ id: "1", ip_address: "203.0.113.7", is_allowlisted: false, is_from_other_instance_ban: false, created_at: new Date() }]);
+    const { InstanceBan } = loadInstanceBan(lookups, [
+        { id: "1", ip_address: hashIp("203.0.113.7"), is_allowlisted: false, is_from_other_instance_ban: false, created_at: new Date() },
+    ]);
     assert.equal(await InstanceBan.hasInstanceBans({}), false);
     same(await InstanceBan.findInstanceBans({}), []);
     assert.equal(lookups.length, 0);
-    assert.equal(await InstanceBan.hasInstanceBans({ ipAddress: "203.0.113.7" }), true);
-    same(lookups[0], [{ ip_address: "203.0.113.7" }]);
+    assert.equal(await InstanceBan.hasInstanceBans({ ipAddress: "::ffff:203.0.113.7" }), true);
+    same(lookups[0], [{ ip_address: hashIp("::ffff:203.0.113.7") }]);
 });
 
 test("bans never spread to addresses, never match private, loopback or Cloudflare addresses, and spread bans name their source", async () => {
@@ -232,7 +238,7 @@ test("bans never spread to addresses, never match private, loopback or Cloudflar
 test("a spread ban blocks but never spreads again, and spread address bans expire after a week", async () => {
     const saved = [];
     const day = 24 * 60 * 60 * 1000;
-    const spreadAddress = { id: "20", user_id: "5", ip_address: "93.184.216.34", is_allowlisted: false, is_from_other_instance_ban: true, created_at: new Date() };
+    const spreadAddress = { id: "20", user_id: "5", ip_address: hashIp("93.184.216.34"), is_allowlisted: false, is_from_other_instance_ban: true, created_at: new Date() };
     const { InstanceBan } = loadInstanceBan([], [spreadAddress], saved);
     same(await InstanceBan.findInstanceBans({ userId: "6", ipAddress: "93.184.216.34", fingerprint: "browser", propagateBan: true }), ["ipAddress"]);
     assert.equal(saved.length, 0, "a bystander on the same address gets no account ban");
@@ -250,6 +256,8 @@ function loadInstanceBan(lookups, found = [], saved = []) {
         typeorm: { Column: decorator, CreateDateColumn: decorator, Entity: decorator, Index: decorator, JoinColumn: decorator, ManyToOne: decorator },
         "../../util/util/networking/PublicNetwork": { isPrivateAddress: (ip) => /^(?:127\.|10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.|::1$)/.test(ip) },
         "../../util/util/networking/Cloudflare": require("../../src/util/util/networking/Cloudflare.ts"),
+        "../../util/util/IpHash": require("./helpers/ip-hash.cjs"),
+        "../IpHashBackfill": require("../../dist/database/IpHashBackfill"),
         "./BaseClass": {
             BaseClass: class {
                 static async exists({ where }) {
@@ -272,7 +280,7 @@ test("register refuses banned addresses first, and login checks the address afte
     const register = fs.readFileSync("src/api/routes/auth/register.ts", "utf8");
     const login = fs.readFileSync("src/api/routes/auth/login.ts", "utf8");
     assert.ok(register.indexOf("assertIpNotBanned(ip") < register.indexOf("checkRegistrationCaptcha(captchaKey, false)"));
-    assert.match(register, /registration_ip: normalizeIp\(ip\)/);
+    assert.match(register, /registration_ip: ip \}/);
     assert.ok(login.indexOf("bcrypt.compare(") < login.indexOf("assertIpNotBanned(req.ip"));
     assert.match(login, /if \(!isStaffAccount\(user, await loadStaffRoles\(\)\)\) await assertIpNotBanned\(req\.ip/);
 });
