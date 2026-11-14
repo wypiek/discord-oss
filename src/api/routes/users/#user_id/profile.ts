@@ -34,6 +34,7 @@ router.get("/", route({ responses: { 200: { body: "UserProfileResponse" } } }), 
         .leftJoin("user.connected_accounts", "connected_accounts")
         .addSelect([
             "connected_accounts.id",
+            "connected_accounts.external_id",
             "connected_accounts.type",
             "connected_accounts.name",
             "connected_accounts.verified",
@@ -100,7 +101,7 @@ router.get("/", route({ responses: { 200: { body: "UserProfileResponse" } } }), 
     const connected_accounts: PartialConnectedAccountResponse[] = user.connected_accounts
         .filter((x) => x.visibility != 0)
         .map((x) => ({
-            id: x.id,
+            id: x.external_id,
             type: x.type,
             name: x.name,
             verified: x.verified ?? false,
