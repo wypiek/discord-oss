@@ -86,7 +86,15 @@ type lossTracker struct {
 	mu      sync.Mutex
 	started bool
 	highest uint16
+	base    uint16
+	cycles  uint32
 	missing map[uint16]*missingPacket
+}
+
+func (l *lossTracker) extended() (base, highest uint32, ok bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return uint32(l.base), l.cycles | uint32(l.highest), l.started
 }
 
 func newLossTracker() *lossTracker {
@@ -99,6 +107,7 @@ func (l *lossTracker) receive(seq uint16) (forward bool, recovered bool) {
 	if !l.started {
 		l.started = true
 		l.highest = seq
+		l.base = seq
 		return true, false
 	}
 	diff := int16(seq - l.highest)
@@ -113,6 +122,9 @@ func (l *lossTracker) receive(seq uint16) (forward bool, recovered bool) {
 			for s := l.highest + 1; s != seq; s++ {
 				l.missing[s] = &missingPacket{since: now}
 			}
+		}
+		if seq < l.highest {
+			l.cycles += 1 << 16
 		}
 		l.highest = seq
 		return true, false
@@ -187,7 +199,7 @@ func (pt *PublishedTrack) requestRetransmissions() {
 				seqs = seqs[:100]
 			}
 			pt.nacked.Add(uint64(len(seqs)))
-			if err := pt.publisher.pc.WriteRTCP([]rtcp.Packet{&rtcp.TransportLayerNack{
+			if err := pt.publisher.writeRTCP([]rtcp.Packet{&rtcp.TransportLayerNack{
 				MediaSSRC: uint32(pt.ssrc),
 				Nacks:     rtcp.NackPairsFromSequenceNumbers(seqs),
 			}}); err != nil {
@@ -211,7 +223,7 @@ func (pt *PublishedTrack) requestKeyframe() {
 	if !due {
 		return
 	}
-	if err := p.pc.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(pt.ssrc)}}); err != nil {
+	if err := p.writeRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(pt.ssrc)}}); err != nil {
 		log.Printf("WriteRTCP: %v", err)
 	}
 }
@@ -359,6 +371,10 @@ func (sub *Peer) retransmit(pt *PublishedTrack, nack *rtcp.TransportLayerNack) {
 				continue
 			}
 			sub.retransmitted.Add(1)
+			if client := sub.native.Load(); client != nil {
+				client.retransmit(pt, pkt)
+				continue
+			}
 			if pt.kind == "video" {
 				if sent, _ := sub.masterVideo.WriteRTX(pkt, rtxSSRC, sequence, pt.extensions); sent {
 					continue
@@ -489,6 +505,7 @@ func bandwidthLoop() {
 		peers := sfu.PeerSnapshot()
 
 		for _, publisher := range peers {
+			publisher.reportReception()
 			publisher.mu.Lock()
 			pt := publisher.videoPublished
 			publishing := publisher.isVideoPublished
@@ -497,7 +514,7 @@ func bandwidthLoop() {
 				continue
 			}
 			limit := pt.adjustBitrateCap(sfu.Subscribers(pt.key))
-			if err := publisher.pc.WriteRTCP([]rtcp.Packet{&rtcp.ReceiverEstimatedMaximumBitrate{
+			if err := publisher.writeRTCP([]rtcp.Packet{&rtcp.ReceiverEstimatedMaximumBitrate{
 				Bitrate: float32(limit + rembAudioHeadroom),
 				SSRCs:   []uint32{uint32(pt.ssrc)},
 			}}); err != nil {
@@ -530,8 +547,9 @@ func logStats(peers []*Peer) {
 			if addr := client.addr.Load(); addr != nil {
 				remote = addr.String()
 			}
-			log.Printf("stats native=%s remote=%s packets=%d rtcp=%d foreign_ssrc=%d undecryptable=%d sent=%d",
-				p.id, remote, client.packets.Load(), client.rtcp.Load(), client.foreignSSRC.Load(), client.undecryptable.Load(), client.counter.Load())
+			log.Printf("stats native=%s remote=%s packets=%d video=%d rtx=%d wrong_codec=%d rtcp=%d rtcp_handled=%d foreign_ssrc=%d undecryptable=%d sent=%d video_sent=%d rtcp_sent=%d",
+				p.id, remote, client.packets.Load(), client.videoPackets.Load(), client.rtxPackets.Load(), client.wrongCodec.Load(), client.rtcp.Load(), client.rtcpHandled.Load(),
+				client.foreignSSRC.Load(), client.undecryptable.Load(), client.counter.Load(), client.videoSent.Load(), client.rtcpSent.Load())
 		}
 	}
 }

@@ -23,6 +23,7 @@ function createFixture() {
             Member: { exists: async () => true, findOneOrFail: async () => ({}) },
             Channel: { findOne: async () => ({ id: "voice", guild_id: "guild" }) },
             Stream: {
+                findOne: async () => null,
                 delete: async () => {},
                 create: (value) => {
                     created.push(value);
@@ -30,6 +31,7 @@ function createFixture() {
                 },
             },
         },
+        typeorm: { Not: (value) => ({ not: value }) },
         "@spacebar/gateway": {},
         "@spacebar/util": {
             getPermission: async () => ({ has: (name) => permissions.has(name) }),
@@ -48,6 +50,69 @@ test("stream creation binds authorization to the current voice channel", async (
     assert.equal(fixture.created.length, 0);
     await assert.rejects(fixture.onStreamCreate.call({ user_id: "user" }, { d: { channel_id: "voice", guild_id: "guild", type: "guild" } }), /authorized creation/);
     assert.equal(fixture.created.length, 1);
+});
+
+function restartFixture(session) {
+    const events = [];
+    const deleted = [];
+    const createdSessions = [];
+    const running = { id: "100", owner_id: "user", channel_id: "voice", endpoint: "localhost:3001" };
+    const mocks = {
+        "@spacebar/database": {
+            VoiceState: { findOne: async () => ({ user_id: "user", channel_id: "voice", guild_id: "guild", save: async () => {}, toPublicVoiceState: () => ({}) }) },
+            Member: { exists: async () => true, findOneOrFail: async () => ({ toPublicMember: () => ({}) }) },
+            Channel: { findOne: async () => ({ id: "voice", guild_id: "guild" }) },
+            Stream: {
+                findOne: async ({ where }) => (where.channel_id === "voice" ? running : null),
+                delete: async (where) => deleted.push(where),
+                create: () => {
+                    throw new Error("a running stream was replaced");
+                },
+            },
+            StreamSession: {
+                find: async () => [{ user_id: "viewer" }, { user_id: "viewer" }],
+                findOne: async () => session,
+                create: (value) => ({
+                    ...value,
+                    used: false,
+                    save: async function () {
+                        createdSessions.push(value);
+                        return this;
+                    },
+                }),
+            },
+        },
+        typeorm: { Not: (value) => ({ not: value }) },
+        "@spacebar/gateway": { genVoiceToken: () => "fresh-token", generateStreamKey: () => "guild:guild:voice:user" },
+        "@spacebar/util": {
+            getPermission: async () => ({ has: () => true }),
+            Config: { get: () => ({ regions: { default: "local", available: [{ id: "local", name: "local" }] } }) },
+            Snowflake: { generate: () => "new" },
+            emitEvent: async (event) => events.push(event),
+        },
+        "@spacebar/schemas": {},
+        "./instanceOf": { check() {} },
+    };
+    return { ...load("src/gateway/opcodes/StreamCreate.ts", mocks), events, deleted, createdSessions };
+}
+
+test("creating a stream again while it runs keeps its server and connection", async () => {
+    const fixture = restartFixture({ token: "live-token", used: true });
+    await fixture.onStreamCreate.call({ user_id: "user", session_id: "gateway-session" }, { d: { channel_id: "voice", guild_id: "guild", type: "guild" } });
+    const create = fixture.events.find((event) => event.event === "STREAM_CREATE");
+    assert.equal(create.data.rtc_server_id, "100");
+    assert.deepEqual([...create.data.viewer_ids], ["viewer"]);
+    assert.deepEqual(JSON.parse(JSON.stringify(fixture.deleted)), [{ owner_id: "user", id: { not: "100" } }]);
+    assert.equal(fixture.createdSessions.length, 0);
+    assert.ok(!fixture.events.some((event) => event.event === "STREAM_SERVER_UPDATE"));
+});
+
+test("creating a stream again from a session without a connection hands out a token for the same server", async () => {
+    const fixture = restartFixture(null);
+    await fixture.onStreamCreate.call({ user_id: "user", session_id: "gateway-session" }, { d: { channel_id: "voice", guild_id: "guild", type: "guild" } });
+    assert.equal(fixture.events.find((event) => event.event === "STREAM_CREATE").data.rtc_server_id, "100");
+    assert.equal(fixture.createdSessions.length, 1);
+    assert.equal(fixture.events.find((event) => event.event === "STREAM_SERVER_UPDATE").data.token, "fresh-token");
 });
 
 test("stream creation requires all current channel permissions", async () => {

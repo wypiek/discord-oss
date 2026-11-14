@@ -43,6 +43,11 @@ type SignalMessage struct {
 	Remote      string `json:"remote,omitempty"`
 	Mode        string `json:"mode,omitempty"`
 	Key         []byte `json:"key,omitempty"`
+	RtxSSRC     uint32 `json:"rtxSsrc,omitempty"`
+
+	AudioPayloadType uint8 `json:"audioPayloadType,omitempty"`
+	VideoPayloadType uint8 `json:"videoPayloadType,omitempty"`
+	RtxPayloadType   uint8 `json:"rtxPayloadType,omitempty"`
 }
 
 func getListener(path string) (net.Listener, error) {
@@ -213,7 +218,7 @@ func (ipcConn *IpcConnection) processMessage(ctx context.Context, ipcMsg IpcMess
 				pt := p.videoPublished
 				p.mu.Unlock()
 				if pt != nil {
-					if err := p.pc.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(pt.ssrc)}}); err != nil {
+					if err := p.writeRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(pt.ssrc)}}); err != nil {
 						log.Printf("WriteRTCP: %v", err)
 					}
 				}

@@ -48,6 +48,8 @@ Header extension IDs are remapped by URI between the publisher's and each subscr
 
 The client never offers simulcast: the web client adds a single video sender without `sendEncodings`, so every publisher has one video SSRC.
 
+Native clients on Discord's UDP protocol go through the same packet cache, NACK, PLI and REMB logic. Their RTCP is sealed with the transport key, and they also get a receiver report once a second, because they have no WebRTC stack on the SFU side to send one. A native camera may announce several simulcast layers, and the voice gateway publishes the highest active one. See [native-voice.md](../../docs/development/native-voice.md).
+
 ## Testing loss recovery
 
 `-drop-in <percent>` drops that share of incoming RTP and `-drop-out <percent>` drops outgoing RTP at the UDP socket, before SRTP, so it looks like network loss to both ends. Pass extra flags through `PION_SFU_ARGS`, and set `PION_SFU_LOG=1` to print the SFU log (including a stats line per track every 10 s) without pion's debug output:

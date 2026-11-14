@@ -136,10 +136,12 @@ export async function onIdentify(this: WebRtcWebSocket, data: VoicePayload) {
 
     // the server generates a unique ssrc for the audio and video stream. Must be unique among users connected to same server
     // UDP clients will respect this ssrc, but webrtc clients will generate and replace it with their own
+    const audio_ssrc = generateSsrc();
+    const streamSsrcs = (streams?.length ? streams : [undefined]).map(() => ({ ssrc: generateSsrc(), rtx_ssrc: generateSsrc() }));
     const generatedSsrc: SSRCs = {
-        audio_ssrc: generateSsrc(),
-        video_ssrc: generateSsrc(),
-        rtx_ssrc: generateSsrc(),
+        audio_ssrc,
+        video_ssrc: streamSsrcs[0].ssrc,
+        rtx_ssrc: streamSsrcs[0].rtx_ssrc,
     };
     this.webRtcClient.initIncomingSSRCs(generatedSsrc);
 
@@ -153,11 +155,10 @@ export async function onIdentify(this: WebRtcWebSocket, data: VoicePayload) {
             modes: [...NATIVE_VOICE_MODES],
             ip: mediaServer.ip,
             experiments: [],
-            streams: streams?.map((x) => ({
+            streams: streams?.map((x, index) => ({
                 ...x,
-                ssrc: generatedSsrc.video_ssrc,
-                rtx_ssrc: generatedSsrc.rtx_ssrc,
-                type: "video", // client expects this to be overriden for some reason???
+                ...streamSsrcs[index],
+                type: "video",
             })),
         },
     });

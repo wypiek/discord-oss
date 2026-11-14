@@ -57,7 +57,12 @@ class PionClient implements WebRtcClient<unknown> {
         if (type === "audio") this.incoming.audio_ssrc = ssrcs.audio_ssrc;
         else this.incoming = { ...ssrcs, audio_ssrc: this.incoming.audio_ssrc };
         this.published[type] = true;
-        this.server.ipc.send({ type: "publish", clientId: this.uniqueId, trackType: type });
+        this.server.ipc.send({
+            type: "publish",
+            clientId: this.uniqueId,
+            trackType: type,
+            ...(type === "video" && { ssrc: ssrcs.video_ssrc, rtxSsrc: ssrcs.rtx_ssrc }),
+        });
     }
 
     stopPublishingTrack(type: "audio" | "video") {
@@ -77,8 +82,8 @@ class PionClient implements WebRtcClient<unknown> {
         });
     }
 
-    async useNativeTransport(ssrc: number, mode: string, key: Buffer) {
-        await this.server.ipc.request({ type: "native", clientId: this.uniqueId, ssrc, mode, key: key.toString("base64") });
+    async useNativeTransport(ssrc: number, mode: string, key: Buffer, payloadTypes: { audioPayloadType?: number; videoPayloadType?: number; rtxPayloadType?: number } = {}) {
+        await this.server.ipc.request({ type: "native", clientId: this.uniqueId, ssrc, mode, key: key.toString("base64"), ...payloadTypes });
     }
 
     requestKeyframe() {
