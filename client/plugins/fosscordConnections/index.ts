@@ -3,12 +3,17 @@ import definePlugin from "@utils/types";
 import { FosscordAuthor } from "../fosscordCore/shared";
 
 const instanceIcon = "/favicon.svg";
+const extraPlatformTypes = new Set(["discord"]);
 
 export default definePlugin({
     name: "FosscordConnections",
     description: "Lists connection providers the instance offers that Discord's own client has no entry for, such as linking a discord.com account.",
     authors: [FosscordAuthor],
     required: true,
+
+    isExtraPlatform(type: unknown) {
+        return extraPlatformTypes.has(type as string);
+    },
 
     extraPlatforms() {
         return [
@@ -30,6 +35,13 @@ export default definePlugin({
     },
 
     patches: [
+        {
+            find: 'icon.whiteSVG}")`',
+            replacement: {
+                match: /return null!=(\i)&&Object\.values\((\i\.\i)\)\.includes\(\1\)\?\1:null/,
+                replace: "return null!=$1&&(Object.values($2).includes($1)||$self.isExtraPlatform($1))?$1:null",
+            },
+        },
         {
             find: 'name:"Bluesky",icon:',
             replacement: {

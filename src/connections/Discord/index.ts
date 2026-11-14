@@ -3,6 +3,7 @@ import { ConnectedAccount } from "@spacebar/database";
 import { Connection, ConnectionLoader, DiscordApiErrors } from "@spacebar/util";
 
 import { GenericOAuthSettings as DiscordSettings } from "../GenericOAuthSettings";
+import { discordAccountName } from "./accountName";
 import { ConnectedAccountCommonOAuthTokenResponse, ConnectionCallbackSchema } from "@spacebar/schemas";
 
 interface UserResponse {
@@ -73,8 +74,8 @@ export default class DiscordConnection extends Connection {
             )
             .post()
             .json<ConnectedAccountCommonOAuthTokenResponse>()
-            .catch((e) => {
-                console.error(e);
+            .catch((error) => {
+                console.error(`[Discord connection] token exchange failed with status ${error?.status ?? "unknown"}`);
                 throw DiscordApiErrors.GENERAL_ERROR;
             });
     }
@@ -87,8 +88,8 @@ export default class DiscordConnection extends Connection {
             })
             .get()
             .json<UserResponse>()
-            .catch((e) => {
-                console.error(e);
+            .catch((error) => {
+                console.error(`[Discord connection] user lookup failed with status ${error?.status ?? "unknown"}`);
                 throw DiscordApiErrors.GENERAL_ERROR;
             });
     }
@@ -109,7 +110,7 @@ export default class DiscordConnection extends Connection {
             user_id: userId,
             external_id: userInfo.id,
             friend_sync: params.friend_sync,
-            name: `${userInfo.username}#${userInfo.discriminator}`,
+            name: discordAccountName(userInfo),
             type: this.id,
         });
     }
