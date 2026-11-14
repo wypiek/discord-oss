@@ -14,7 +14,8 @@ const constraintValue = (value: Constraint) => (typeof value === "number" ? valu
 
 export default definePlugin({
     name: "FosscordGoLive",
-    description: "Announces the resolution and frame rate a browser Go Live stream really captures, so viewers see the right quality.",
+    description:
+        "Announces the resolution and frame rate a browser Go Live stream really captures, so viewers see the right quality, and keeps the camera on the device picked in Voice & Video.",
     authors: [FosscordAuthor],
     required: true,
 
@@ -42,6 +43,13 @@ export default definePlugin({
             replacement: {
                 match: /(let (\i)=\i\.stream\.getVideoTracks\(\)\[0\]\.getConstraints\(\),(\i)=\{width:.+?)(this\.videoQualityManager\.setGoliveQuality\(\{encode:\3,capture:\3,bitrateMax:\i\}\))/,
                 replace: "$1$self.withFrameRate($3,$2),$4,$self.syncStreamParameters(this,$3)",
+            },
+        },
+        {
+            find: '"VideoInput: Already destroyed"',
+            replacement: {
+                match: /(\i)\.some\((\i)=>\2\.id===this\.sourceId\)&&\((\i)\.deviceId=this\.sourceId\)/,
+                replace: "$1.some($2=>$2.id===this.sourceId)&&($3.deviceId={exact:this.sourceId})",
             },
         },
     ],
