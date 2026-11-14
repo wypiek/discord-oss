@@ -76,6 +76,21 @@ function isInstanceUrl(url: string | undefined) {
 }
 
 const isAppPage = (url: string | undefined) => !!url && url.startsWith("file:") && url.includes("/static/");
+const connectionPopups = new WeakSet<WebContents>();
+
+function isConnectionPage(url: string) {
+    if (!isInstanceUrl(url)) return false;
+    return new URL(url).pathname.startsWith("/connections/");
+}
+
+function isWebUrl(url: string) {
+    try {
+        const protocol = new URL(url).protocol;
+        return protocol === "https:" || protocol === "http:";
+    } catch {
+        return false;
+    }
+}
 
 function openExternal(url: string) {
     try {
@@ -220,11 +235,25 @@ function createWindow() {
 function secureContents(contents: WebContents) {
     contents.on("will-navigate", (event, url) => {
         if (isAppPage(url) || isInstanceUrl(url)) return;
+        if (connectionPopups.has(contents) && isWebUrl(url)) return;
         event.preventDefault();
         openExternal(url);
     });
     contents.on("will-attach-webview", (event) => event.preventDefault());
+    contents.on("did-create-window", (window, { url }) => {
+        if (isConnectionPage(url)) connectionPopups.add(window.webContents);
+    });
     contents.setWindowOpenHandler(({ url }) => {
+        if (isConnectionPage(url))
+            return {
+                action: "allow",
+                overrideBrowserWindowOptions: {
+                    autoHideMenuBar: true,
+                    backgroundColor: "#1a1a1e",
+                    icon: resource("icon.png"),
+                    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: true },
+                },
+            };
         if (url === "about:blank" || isInstanceUrl(url))
             return {
                 action: "allow",
