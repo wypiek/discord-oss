@@ -55,6 +55,7 @@ Compose passes these from `.env` and refuses to start without the first three. `
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_STARTTLS`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM` | Email over SMTP, off without `SMTP_HOST`. The port is 465 with `SMTP_SECURE=true` and 587 otherwise, STARTTLS is required unless `SMTP_STARTTLS=false`, and the sender is `noreply@<DOMAIN>` by default. |
 | `PUBLIC_FETCH_PROXY`, `WARP_LICENSE_KEY` | `socks5://warp:1080` by default, and an optional WARP+ key. See [external-services.md](external-services.md#hiding-the-servers-address). |
 | `E2EE_RECOVERY_KEY_FILE`, `E2EE_RECOVERY_MASTER_KEY` | The encryption recovery key's path inside the container, `/data/state/.e2ee-recovery.key` by default, or the key itself. Never change it once recovery records exist. |
+| `IP_HASH_SECRET`, `IP_HASH_SECRET_FILE` | The secret that IP addresses are hashed with before they are stored, at least 32 characters, or its path inside the container. Without either, the server generates one into `/data/state/.ip-hash.key` on the first start and logs a line asking you to back it up. Changing or losing it makes existing IP bans and the accounts per address caps stop matching. See [ip-hashing.md](../security/ip-hashing.md). |
 | `CLIENT_CONCURRENCY` | Parallel downloads for the client service, 8 by default. |
 | `LOG_REQUESTS` | Status codes whose requests the server logs, `500,501` by default. |
 | `REVISION`, `REVISION_TIME` | Commit hash and commit time in Unix seconds, set as shown in [Updates](#updates). |
@@ -102,13 +103,13 @@ Set `DOMAIN=http://localhost:32171`, `WRTC_PUBLIC_IP=127.0.0.1` and a free `WRTC
 | Volume | Holds |
 | --- | --- |
 | `postgres` | The database. |
-| `state` | `config.json`, `jwt.key`, `jwt.key.pub`, `.e2ee-recovery.key`, managed sender keys in `.e2ee-system` and queued announcements in `.announcement-spool`. |
+| `state` | `config.json`, `jwt.key`, `jwt.key.pub`, `.e2ee-recovery.key`, the IP hash secret `.ip-hash.key`, managed sender keys in `.e2ee-system` and queued announcements in `.announcement-spool`. |
 | `storage` | Uploads and the cache of Discord assets. |
 | `client` | The downloaded web client. |
 | `sfu` | The socket between the server and the SFU. |
 | `warp` | The WARP registration. |
 
-Volume names start with `MEOWCORD_VOLUME_PREFIX`. **Losing `state` signs everyone out and loses the keys for encrypted account recovery, managed Official conversations and queued announcements.** Never run `docker compose down -v` on data you want to keep.
+Volume names start with `MEOWCORD_VOLUME_PREFIX`. **Losing `state` signs everyone out and loses the keys for encrypted account recovery, managed Official conversations and queued announcements, and the IP hash secret, after which IP bans and the accounts per address caps stop matching.** Never run `docker compose down -v` on data you want to keep.
 
 ```sh
 mkdir -p dump
