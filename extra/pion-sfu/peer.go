@@ -117,6 +117,8 @@ type PublishedTrack struct {
 	lastBytes      uint64
 	bitrateCap     int
 	subscriberLoss float64
+	reportExpected uint32
+	reportReceived uint32
 	received       atomic.Uint64
 	nacked         atomic.Uint64
 	recovered      atomic.Uint64

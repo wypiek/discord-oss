@@ -184,7 +184,7 @@ async function nativeUser(name) {
             const received = {};
             let undecryptable = 0;
             for (const packet of packets) {
-                if (packet.length < 32) continue;
+                if (packet.length < 32 || (packet[1] >= 192 && packet[1] <= 223)) continue;
                 try {
                     open(key, packet);
                     const ssrc = packet.readUInt32BE(8);

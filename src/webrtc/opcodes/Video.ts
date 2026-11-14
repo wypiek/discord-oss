@@ -3,6 +3,8 @@ import { mediaServer, Send, VoiceOPCodes, VoicePayload, WebRtcWebSocket } from "
 import type { WebRtcClient } from "@spacebarchat/spacebar-webrtc-types";
 import { validateSchema, VoiceVideoSchema } from "@spacebar/schemas";
 
+type VideoStreamState = NonNullable<VoiceVideoSchema["streams"]>[number];
+
 const pendingVideo = new WeakMap<WebRtcClient<WebRtcWebSocket>, VoicePayload>();
 
 export function mapNativeSsrc(subscriber: WebRtcWebSocket, userId: string, ssrc: number | undefined, speaking: number | undefined) {
@@ -43,7 +45,11 @@ export async function onVideo(this: WebRtcWebSocket, payload: VoicePayload) {
         }
     }
 
-    const stream = d.streams?.find((element) => element.active);
+    const stream = d.streams
+        ?.filter((element) => element.active)
+        .reduce<VideoStreamState | undefined>((best, element) => ((element.quality ?? 0) > (best?.quality ?? -1) ? element : best), undefined);
+    const videoSsrc = stream?.ssrc || d.video_ssrc;
+    const rtxSsrc = stream?.ssrc ? stream.rtx_ssrc : d.rtx_ssrc;
 
     const clientsThatNeedUpdate = new Set<WebRtcClient<WebRtcWebSocket>>();
     const wantsToProduceAudio = d.audio_ssrc !== 0;
@@ -94,11 +100,12 @@ export async function onVideo(this: WebRtcWebSocket, payload: VoicePayload) {
         // @ts-expect-error
         this.webRtcClient!.videoStream = { ...stream, type: "video" }; // client sends "screen" on go live but expects "video" on response
         // check if we are already publishing video, if not, publish a new video track for it
-        if (!this.webRtcClient!.isProducingVideo()) {
-            console.log(`[${this.user_id}] publishing new video track ssrc:${d.video_ssrc}`);
+        const switchedLayer = this.voiceProtocol === "udp" && this.webRtcClient.getIncomingStreamSSRCs().video_ssrc !== videoSsrc;
+        if (!this.webRtcClient!.isProducingVideo() || switchedLayer) {
+            console.log(`[${this.user_id}] publishing new video track ssrc:${videoSsrc}`);
             await this.webRtcClient.publishTrack("video", {
-                video_ssrc: d.video_ssrc,
-                rtx_ssrc: d.rtx_ssrc,
+                video_ssrc: videoSsrc,
+                rtx_ssrc: rtxSsrc,
             });
         }
 
@@ -118,7 +125,7 @@ export async function onVideo(this: WebRtcWebSocket, payload: VoicePayload) {
                     audio_ssrc: ssrcs.audio_ssrc ?? this.webRtcClient!.getIncomingStreamSSRCs().audio_ssrc,
                     video_ssrc: ssrcs.video_ssrc ?? 0,
                     rtx_ssrc: ssrcs.rtx_ssrc ?? 0,
-                    streams: d.streams?.map((x) => ({
+                    streams: (wantsToProduceVideo && stream ? [stream] : d.streams)?.map((x) => ({
                         ...x,
                         ssrc: ssrcs.video_ssrc ?? 0,
                         rtx_ssrc: ssrcs.rtx_ssrc ?? 0,
@@ -171,7 +178,7 @@ export async function subscribeToProducers(this: WebRtcWebSocket): Promise<void>
                     video_ssrc: ssrcs.video_ssrc ?? 0,
                     rtx_ssrc: ssrcs.rtx_ssrc ?? 0,
                     streams: [
-                        client.videoStream ?? {
+                        (client.videoStream && ssrcs.video_ssrc ? { ...client.videoStream, ssrc: ssrcs.video_ssrc, rtx_ssrc: ssrcs.rtx_ssrc ?? 0 } : client.videoStream) ?? {
                             type: "video",
                             rid: "100",
                             ssrc: ssrcs.video_ssrc ?? 0,

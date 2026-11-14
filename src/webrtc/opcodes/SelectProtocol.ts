@@ -6,9 +6,18 @@ import type { Codec } from "@spacebarchat/spacebar-webrtc-types";
 import { DAVE_PROTOCOL_VERSION, DaveSession } from "../dave/DaveSession";
 import { onVideo } from "./Video";
 
-type NativeCapableClient = { useNativeTransport?: (ssrc: number, mode: string, key: Buffer) => Promise<void> };
+type NativePayloadTypes = { audioPayloadType?: number; videoPayloadType?: number; rtxPayloadType?: number };
+type NativeCapableClient = { useNativeTransport?: (ssrc: number, mode: string, key: Buffer, payloadTypes: NativePayloadTypes) => Promise<void> };
 
 const UNKNOWN_ENCRYPTION_MODE = 4016;
+const STREAM_KEYFRAME_INTERVAL_MS = 5000;
+
+function nativePayloadTypes(codecs: SelectProtocolSchema["codecs"]): NativePayloadTypes {
+    const find = (name: string) => codecs?.find((codec) => codec.name.toUpperCase() === name);
+    const opus = find("OPUS");
+    const h264 = find("H264");
+    return { audioPayloadType: opus?.payload_type, videoPayloadType: h264?.payload_type, rtxPayloadType: h264?.rtx_payload_type };
+}
 
 async function selectWebRtc(socket: WebRtcWebSocket, data: SelectProtocolSchema) {
     const response = await mediaServer.onOffer(
@@ -49,7 +58,7 @@ async function selectUdp(socket: WebRtcWebSocket, data: SelectProtocolSchema) {
         return false;
     }
     const key = randomBytes(32);
-    await client.useNativeTransport(ssrc, mode, key);
+    await client.useNativeTransport(ssrc, mode, key, nativePayloadTypes(data.codecs));
     socket.voiceProtocol = "udp";
     socket.daveVersion = Math.min(socket.maxDaveVersion, DAVE_PROTOCOL_VERSION);
 
@@ -62,6 +71,7 @@ async function selectUdp(socket: WebRtcWebSocket, data: SelectProtocolSchema) {
             video_codec: "H264",
             media_session_id: socket.session_id,
             dave_protocol_version: socket.daveVersion,
+            ...(socket.type === "stream" && { keyframe_interval: STREAM_KEYFRAME_INTERVAL_MS }),
         },
     });
     return true;

@@ -235,7 +235,10 @@ func handlePublish(p *Peer, msg SignalMessage) error {
 	}
 	existing := p.getPublishedTrack(trackType)
 	p.mu.Unlock()
-	if p.native.Load() != nil {
+	if client := p.native.Load(); client != nil {
+		if trackType == "video" {
+			return client.publishVideo(msg.SSRC, msg.RtxSSRC)
+		}
 		return nil
 	}
 	if existing != nil {

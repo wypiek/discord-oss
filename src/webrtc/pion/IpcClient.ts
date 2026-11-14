@@ -15,6 +15,10 @@ export interface IpcPayload {
     remote?: string;
     mode?: string;
     key?: string;
+    rtxSsrc?: number;
+    audioPayloadType?: number;
+    videoPayloadType?: number;
+    rtxPayloadType?: number;
 }
 
 interface IpcMessage {
