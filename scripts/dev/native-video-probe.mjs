@@ -14,7 +14,7 @@ const flag = (name, fallback) => {
 const port = flag("port", process.env.PORT || "3001");
 const seconds = Number(flag("seconds", "10"));
 const mode = flag("mode", "aead_aes256_gcm_rtpsize");
-const cases = flag("case", "native-golive-web,native-camera-web,web-camera-native,native-golive-native,web-golive-native").split(",");
+const cases = flag("case", "native-golive-web,native-camera-web,web-camera-native,native-golive-native,web-golive-native,web-golive-switch").split(",");
 const fps = 30;
 const api = `http://localhost:${port}/api/v9`;
 const origin = `http://fosscord.localhost:${port}`;
@@ -495,7 +495,78 @@ async function webGoLiveToNative() {
     }
 }
 
+async function webGoLiveSwitch() {
+    const name = "web-golive-switch";
+    const friend = await webUser("friend");
+    const tester = await webUser("tester");
+    const inbound = async () => Object.fromEntries((await tester.stats()).filter((r) => r.dir === "in" && r.kind === "video").map((r) => [r.ssrc, r.framesDecoded ?? 0]));
+    const total = (frames) => Object.values(frames).reduce((sum, value) => sum + value, 0);
+    try {
+        const friendId = (await call(tokens.friend, "GET", "/users/@me")).id;
+        assert.ok(await friend.joinVoice(), "friend voice action");
+        await sleep(3000);
+        assert.ok(await tester.joinVoice(), "tester voice action");
+        await sleep(3000);
+        step("friend goes live");
+        assert.equal(await friend.goLive(), true, "friend go live action");
+        step("friend is live");
+        await sleep(3000);
+        assert.ok(await tester.watch(friendId), "tester watch action");
+        await sleep(seconds * 1000);
+        const live = await inbound();
+        step("switching quality");
+        const quality = await friend.updateQuality({ preset: 3, resolution: 480, frameRate: 15 });
+        await sleep(seconds * 1000);
+        const afterQuality = await inbound();
+        step("switching source");
+        await friend.page.evaluate(() => {
+            window.__displaySource = 2;
+        });
+        const source = await friend.goLive();
+        await sleep(seconds * 1000);
+        const afterSource = await inbound();
+        step("picking the same source again");
+        const sameSource = await friend.goLive();
+        await sleep(seconds * 1000);
+        const afterSameSource = await inbound();
+        const pick = (entries) =>
+            entries.filter(
+                (entry) =>
+                    entry.dir === "close" ||
+                    entry.dir === "open" ||
+                    [0, 1, 2, 4, 5, 12, 13, 14, 15, 18, 19, 20, 22].includes(entry.op) ||
+                    entry.t?.startsWith("STREAM_") ||
+                    entry.t === "VOICE_STATE_UPDATE",
+            );
+        report(name, {
+            quality,
+            source,
+            sameSource,
+            live,
+            afterQuality,
+            afterSource,
+            afterSameSource,
+            friendTraffic: pick(await friend.traffic()).map(({ d, ...entry }) => ({
+                ...entry,
+                d: entry.op === 12 || entry.t?.startsWith("STREAM_") || entry.op === 1 ? JSON.stringify(d).slice(0, 300) : undefined,
+            })),
+            testerTraffic: pick(await tester.traffic()).map(({ d, ...entry }) => ({
+                ...entry,
+                d: entry.op === 12 || entry.t?.startsWith("STREAM_") ? JSON.stringify(d).slice(0, 300) : undefined,
+            })),
+        });
+        check(`${name}:live`, total(live) > 20, live);
+        check(`${name}:after-quality`, total(afterQuality) - total(live) > 20, { live, afterQuality });
+        check(`${name}:after-source`, total(afterSource) - total(afterQuality) > 20, { afterQuality, afterSource });
+        check(`${name}:after-same-source`, total(afterSameSource) - total(afterSource) > 20, { afterSource, afterSameSource });
+    } finally {
+        await friend.close();
+        await tester.close();
+    }
+}
+
 const scenarios = {
+    "web-golive-switch": webGoLiveSwitch,
     "native-golive-web": nativeGoLiveToWeb,
     "native-camera-web": nativeCameraToWeb,
     "web-camera-native": webCameraToNative,

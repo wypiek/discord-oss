@@ -1,6 +1,7 @@
 import { Channel, Member, Recipient, Stream, StreamSession, VoiceState } from "@spacebar/database";
 import { genVoiceToken, Payload, WebSocket, generateStreamKey } from "@spacebar/gateway";
 import { Config, emitEvent, getPermission, Snowflake, StreamCreateEvent, StreamServerUpdateEvent, VoiceStateUpdateEvent } from "@spacebar/util";
+import { Not } from "typeorm";
 import { check } from "./instanceOf";
 import { StreamCreateSchema } from "@spacebar/schemas";
 
@@ -47,31 +48,35 @@ export async function onStreamCreate(this: WebSocket, data: Payload) {
         throw new Error("No default region configured");
     }
 
-    // first make sure theres no other streams for this user that somehow didnt get cleared
+    const running = await Stream.findOne({ where: { owner_id: this.user_id, channel_id: body.channel_id } });
+
     await Stream.delete({
         owner_id: this.user_id,
+        ...(running && { id: Not(running.id) }),
     });
 
-    // create a new entry in db containing the token for authenticating user in stream gateway IDENTIFY
-    const stream = Stream.create({
-        id: Snowflake.generate(),
-        owner_id: this.user_id,
-        channel_id: body.channel_id,
-        endpoint: guildRegion.endpoint,
-    });
+    const stream =
+        running ??
+        Stream.create({
+            id: Snowflake.generate(),
+            owner_id: this.user_id,
+            channel_id: body.channel_id,
+            endpoint: guildRegion.endpoint,
+        });
 
-    await stream.save();
+    if (!running) await stream.save();
 
-    const token = genVoiceToken();
+    const viewers = running ? await StreamSession.find({ where: { stream_id: stream.id, used: true, user_id: Not(this.user_id) } }) : [];
 
-    const streamSession = StreamSession.create({
-        stream_id: stream.id,
-        user_id: this.user_id,
-        session_id: this.session_id,
-        token,
-    });
-
-    await streamSession.save();
+    const existingSession = running ? await StreamSession.findOne({ where: { stream_id: stream.id, user_id: this.user_id, session_id: this.session_id } }) : null;
+    const streamSession =
+        existingSession ??
+        (await StreamSession.create({
+            stream_id: stream.id,
+            user_id: this.user_id,
+            session_id: this.session_id,
+            token: genVoiceToken(),
+        }).save());
 
     const streamKey = generateStreamKey(body.type, body.guild_id, body.channel_id, this.user_id);
 
@@ -81,23 +86,24 @@ export async function onStreamCreate(this: WebSocket, data: Payload) {
             stream_key: streamKey,
             rtc_server_id: stream.id, // for voice connections in guilds it is guild_id, for dm voice calls it seems to be DM channel id, for GoLive streams a generated number
             rtc_channel_id: (BigInt(stream.id) - 1n).toString(),
-            viewer_ids: [],
+            viewer_ids: [...new Set(viewers.map((viewer) => viewer.user_id))],
             region: guildRegion.name,
             paused: false,
         },
         user_id: this.user_id,
     } satisfies StreamCreateEvent);
 
-    await emitEvent({
-        event: "STREAM_SERVER_UPDATE",
-        data: {
-            token: streamSession.token,
-            stream_key: streamKey,
-            guild_id: null, // not sure why its always null
-            endpoint: stream.endpoint,
-        },
-        user_id: this.user_id,
-    } satisfies StreamServerUpdateEvent);
+    if (!streamSession.used)
+        await emitEvent({
+            event: "STREAM_SERVER_UPDATE",
+            data: {
+                token: streamSession.token,
+                stream_key: streamKey,
+                guild_id: null,
+                endpoint: stream.endpoint,
+            },
+            user_id: this.user_id,
+        } satisfies StreamServerUpdateEvent);
 
     voiceState.self_stream = true;
     await voiceState.save();

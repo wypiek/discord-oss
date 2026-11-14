@@ -56,7 +56,7 @@ export async function onVideo(this: WebRtcWebSocket, payload: VoicePayload) {
     const wantsToProduceVideo = d.video_ssrc !== 0 && stream?.active;
 
     if (!this.webRtcClient.webrtcConnected) {
-        if (!wantsToProduceAudio) return;
+        if (!wantsToProduceAudio && !wantsToProduceVideo) return;
         const client = this.webRtcClient;
         const waiting = pendingVideo.has(client);
         pendingVideo.set(client, payload);
