@@ -1,4 +1,4 @@
-export type MusicSource = "spotify" | "soundcloud";
+export type MusicSource = "spotify";
 
 export interface MusicTrack {
     source: MusicSource;
@@ -15,5 +15,4 @@ export interface MusicTrack {
 
 export interface MusicWatch {
     spotify?: boolean;
-    soundcloud?: boolean;
 }

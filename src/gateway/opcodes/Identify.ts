@@ -7,6 +7,7 @@ import { arrayGroupBy, ElapsedTime, Stopwatch, timeFunction, timePromise } from 
 import {
     getDatabase,
     Application,
+    ConnectedAccount,
     Channel,
     Guild,
     GuildJoinRequest,
@@ -33,6 +34,7 @@ import {
 import {
     Activity,
     broadcastPresence,
+    ConnectedAccountDTO,
     emitSessionsReplace,
     sanitizeActivities,
     getClientPlatform,
@@ -791,13 +793,32 @@ export async function onIdentify(this: WebSocket, data: Payload) {
         return a + (b as { micros: number }).micros;
     }, 0);
 
-    const [authenticator_types, preferences, guild_join_requests] = await Promise.all([
+    const [authenticator_types, preferences, guild_join_requests, connectedAccounts] = await Promise.all([
         SecurityKey.authenticatorTypes(this.user_id),
         User.findOne({
             where: { id: this.user_id },
             select: { id: true, account_preferences: true, private_channel_settings: true },
         }),
         GuildJoinRequest.activeForUser(this.user_id),
+        ConnectedAccount.find({
+            where: { user_id: this.user_id },
+            select: {
+                external_id: true,
+                user_id: true,
+                type: true,
+                name: true,
+                verified: true,
+                visibility: true,
+                show_activity: true,
+                revoked: true,
+                token_data: true,
+                friend_sync: true,
+                integrations: true,
+                metadata_: true,
+                metadata_visibility: true,
+                two_way_link: true,
+            },
+        }),
     ]);
 
     // const d: ReadyEventData = {
@@ -844,7 +865,7 @@ export async function onIdentify(this: WebSocket, data: Payload) {
                 },
                 experiments: getUserExperiments(this.user_id),
                 guild_join_requests: guild_join_requests.map((request) => request.toJSON("self")),
-                connected_accounts: [],
+                connected_accounts: connectedAccounts.map((account) => new ConnectedAccountDTO(account, true)),
                 guild_experiments: [],
                 apex_experiments: getApexExperiments(this.user_id),
                 geo_ordered_rtc_regions: [],

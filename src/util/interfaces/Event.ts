@@ -1,4 +1,5 @@
-import { ConnectedAccount, Invite, Role, Emoji, Channel, User, Sticker, UserSettings, ReadState, PublicThreadMember } from "@spacebar/database";
+import type { ConnectedAccountDTO } from "../dtos/ConnectedAccountDTO";
+import { Invite, Role, Emoji, Channel, User, Sticker, UserSettings, ReadState, PublicThreadMember } from "@spacebar/database";
 import {
     Activity,
     Presence,
@@ -65,7 +66,7 @@ export interface ReadyEventData {
     session_id: string; // resuming
     guilds: IReadyGuildDTO[] | GuildOrUnavailable[]; // depends on capability
     analytics_token?: string;
-    connected_accounts?: ConnectedAccount[];
+    connected_accounts?: ConnectedAccountDTO[];
     consents?: {
         personalization?: {
             consented?: boolean;
@@ -431,7 +432,7 @@ export interface MessagePollVoteRemoveEvent extends Event {
     };
 }
 
-export const enum ReactionType {
+export enum ReactionType {
     normal = 0,
     burst = 1,
 }

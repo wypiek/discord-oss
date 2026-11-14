@@ -3,27 +3,24 @@ import { createMediaSessionReader } from "./media-session";
 import { trackChanged } from "./music-tracks";
 import type { MusicSource, MusicTrack, MusicWatch } from "./music-types";
 
-const SOURCES: MusicSource[] = ["spotify", "soundcloud"];
+const SOURCES: MusicSource[] = ["spotify"];
 
 interface MusicOptions {
     allowed(url: string | undefined): boolean;
-    openSoundCloud(): void;
 }
 
-export function registerMusic({ allowed, openSoundCloud }: MusicOptions) {
+export function registerMusic({ allowed }: MusicOptions) {
     const watchers = new Map<WebContents, MusicWatch>();
     const sent = new Map<WebContents, Partial<Record<MusicSource, MusicTrack>>>();
     const hooked = new WeakSet<WebContents>();
     const reader = createMediaSessionReader();
     let readerRunning = false;
     let systemTracks: MusicTrack[] = [];
-    let soundCloudWindowTrack: MusicTrack | null = null;
 
     const wants = (source: MusicSource) => [...watchers.values()].some((watch) => watch[source]);
 
     const current = (): Partial<Record<MusicSource, MusicTrack>> => ({
         spotify: systemTracks.find((track) => track.source === "spotify"),
-        soundcloud: soundCloudWindowTrack ?? systemTracks.find((track) => track.source === "soundcloud"),
     });
 
     const publish = (force = false) => {
@@ -43,7 +40,7 @@ export function registerMusic({ allowed, openSoundCloud }: MusicOptions) {
 
     const updateReader = () => {
         if (!reader) return;
-        const needed = wants("spotify") || (process.platform === "linux" && wants("soundcloud"));
+        const needed = wants("spotify");
         if (needed && !readerRunning) {
             readerRunning = true;
             reader.start((tracks) => {
@@ -67,8 +64,8 @@ export function registerMusic({ allowed, openSoundCloud }: MusicOptions) {
         if (!allowed(event.senderFrame?.url)) return;
         const contents = event.sender;
         const request = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
-        const watch: MusicWatch = { spotify: request.spotify === true, soundcloud: request.soundcloud === true };
-        if (!watch.spotify && !watch.soundcloud) {
+        const watch: MusicWatch = { spotify: request.spotify === true };
+        if (!watch.spotify) {
             forget(contents);
             return;
         }
@@ -85,15 +82,7 @@ export function registerMusic({ allowed, openSoundCloud }: MusicOptions) {
         publish(true);
     });
 
-    ipcMain.on("music:open-soundcloud", (event) => {
-        if (allowed(event.senderFrame?.url)) openSoundCloud();
-    });
-
     return {
-        setSoundCloudTrack(track: MusicTrack | null) {
-            soundCloudWindowTrack = track;
-            publish();
-        },
         stop() {
             reader?.stop();
             readerRunning = false;

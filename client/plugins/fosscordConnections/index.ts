@@ -3,11 +3,14 @@ import definePlugin from "@utils/types";
 import { FosscordAuthor } from "../fosscordCore/shared";
 
 const instanceIcon = "/favicon.svg";
-const extraPlatformTypes = new Set(["discord"]);
+const lastFmIcon = "/assets/connections/lastfm.svg";
+const extraPlatformTypes = new Set(["discord", "lastfm"]);
+
+const icons = (url: string) => ({ lightPNG: url, darkPNG: url, whitePNG: url, lightSVG: url, darkSVG: url, whiteSVG: url });
 
 export default definePlugin({
     name: "FosscordConnections",
-    description: "Lists connection providers the instance offers that Discord's own client has no entry for, such as linking a discord.com account.",
+    description: "Lists connection providers the instance offers that Discord's own client has no entry for, such as a discord.com or Last.fm account.",
     authors: [FosscordAuthor],
     required: true,
 
@@ -20,21 +23,28 @@ export default definePlugin({
             {
                 type: "discord",
                 name: "Discord",
-                icon: {
-                    lightPNG: instanceIcon,
-                    darkPNG: instanceIcon,
-                    whitePNG: instanceIcon,
-                    lightSVG: instanceIcon,
-                    darkSVG: instanceIcon,
-                    whiteSVG: instanceIcon,
-                },
+                icon: icons(instanceIcon),
                 enabled: true,
                 getPlatformUserUrl: ({ id }: { id: string }) => `https://discord.com/users/${encodeURIComponent(id)}`,
+            },
+            {
+                type: "lastfm",
+                name: "Last.fm",
+                icon: icons(lastFmIcon),
+                enabled: true,
+                getPlatformUserUrl: ({ name }: { name: string }) => `https://www.last.fm/user/${encodeURIComponent(name)}`,
             },
         ];
     },
 
     patches: [
+        {
+            find: '"HANDOFF_AUTHORIZED"',
+            replacement: {
+                match: /(\i)=(\i)\.get\("code"\),/,
+                replace: '$1=$2.get("code")??$2.get("token"),',
+            },
+        },
         {
             find: 'icon.whiteSVG}")`',
             replacement: {

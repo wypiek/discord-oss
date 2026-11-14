@@ -1,12 +1,11 @@
 import { definePluginSettings } from "@api/Settings";
-import { Button } from "@components/Button";
 import definePlugin, { OptionType } from "@utils/types";
 import type { Activity } from "@vencord/discord-types";
-import { ApplicationAssetUtils, ConnectedAccountsStore, FluxDispatcher, SpotifyStore } from "@webpack/common";
+import { ApplicationAssetUtils, ConnectedAccountsStore, FluxDispatcher, RestAPI, SpotifyStore } from "@webpack/common";
 
 import { FosscordAuthor } from "../fosscordCore/shared";
 
-type MusicSource = "spotify" | "soundcloud";
+type MusicSource = "spotify" | "lastfm";
 
 interface MusicTrack {
     source: MusicSource;
@@ -22,12 +21,21 @@ interface MusicTrack {
 }
 
 interface MusicBridge {
-    watch(sources: Partial<Record<MusicSource, boolean>>): void;
+    watch(sources: { spotify?: boolean }): void;
     onTracks(listener: (tracks: MusicTrack[]) => void): () => void;
-    openSoundCloud(): void;
 }
 
-interface SpotifyAccount {
+interface LastFmTrack {
+    title: string;
+    artist: string;
+    album?: string;
+    url?: string;
+    artwork_url?: string;
+    duration_ms?: number;
+    elapsed_ms: number;
+}
+
+interface ConnectedAccount {
     id: string;
     type: string;
     revoked?: boolean;
@@ -38,11 +46,12 @@ type PlayerStateFetcher = (accountId: string, accessToken: string) => Promise<un
 
 const SOCKET_ID = "FosscordMusicPresence";
 const SPOTIFY_POLL_MS = 15_000;
+const LASTFM_POLL_MS = 15_000;
 const START_TOLERANCE_MS = 3000;
 const LISTENING = 2;
 
 const SERVICES: Record<MusicSource, { name: string; applicationId: string; button: string }> = {
-    soundcloud: { name: "SoundCloud", applicationId: "1440106212185735168", button: "Listen on SoundCloud" },
+    lastfm: { name: "Last.fm", applicationId: "1440106212185735170", button: "View on Last.fm" },
     spotify: { name: "Spotify", applicationId: "1440106212185735169", button: "Play on Spotify" },
 };
 
@@ -52,6 +61,9 @@ let fetchPlayerState: PlayerStateFetcher | null = null;
 let tracks: MusicTrack[] = [];
 let unsubscribe: (() => void) | null = null;
 let spotifyTimer: ReturnType<typeof setInterval> | null = null;
+let lastFmTimer: ReturnType<typeof setInterval> | null = null;
+let lastFmTrack: MusicTrack | null = null;
+let lastFmPolling = false;
 let lastActivity = "";
 let lastStart: { key: string; start: number } | null = null;
 let renderId = 0;
@@ -59,15 +71,15 @@ let renderId = 0;
 const bridge = (): MusicBridge | undefined => (window as unknown as { DiscordOSS?: { music?: MusicBridge } }).DiscordOSS?.music;
 
 function rewatch(): void {
-    bridge()?.watch({ soundcloud: settings.store.soundcloud, spotify: settings.store.spotify });
+    bridge()?.watch({ spotify: settings.store.spotify });
 }
 
 const settings = definePluginSettings({
-    soundcloud: {
+    lastfm: {
         type: OptionType.BOOLEAN,
-        description: "Show what plays in the desktop app's SoundCloud window as your activity",
+        description: "Show what a connected Last.fm account is scrobbling as your activity, when Spotify isn't already shown",
         default: true,
-        onChange: rewatch,
+        onChange: () => void pollLastFm(),
     },
     spotify: {
         type: OptionType.BOOLEAN,
@@ -89,7 +101,47 @@ const spotifyImageKey = (url: string | undefined) => {
     return id ? `spotify:${id}` : undefined;
 };
 
-const spotifyAccounts = () => ((ConnectedAccountsStore.getAccounts() ?? []) as unknown as SpotifyAccount[]).filter((account) => account.type === "spotify" && !account.revoked);
+const accountsOf = (type: string) => ((ConnectedAccountsStore.getAccounts() ?? []) as unknown as ConnectedAccount[]).filter((account) => account.type === type && !account.revoked);
+const spotifyAccounts = () => accountsOf("spotify");
+
+function lastFmMusicTrack(track: LastFmTrack, now = Date.now()): MusicTrack {
+    const duration = track.duration_ms && track.elapsed_ms <= track.duration_ms ? track.duration_ms : undefined;
+    return {
+        source: "lastfm",
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        artworkUrl: track.artwork_url,
+        url: track.url,
+        duration,
+        position: track.elapsed_ms,
+        paused: false,
+        updatedAt: now,
+    };
+}
+
+async function pollLastFm(): Promise<void> {
+    const [account] = settings.store.lastfm ? accountsOf("lastfm") : [];
+    if (!account) {
+        if (lastFmTrack) {
+            lastFmTrack = null;
+            void render();
+        }
+        return;
+    }
+    if (lastFmPolling) return;
+    lastFmPolling = true;
+    try {
+        const { body } = await RestAPI.get({ url: `/users/@me/connections/lastfm/${encodeURIComponent(account.id)}/now-playing` });
+        const track = (body as { track?: LastFmTrack | null })?.track;
+        lastFmTrack = track?.title && track.artist ? lastFmMusicTrack(track) : null;
+    } catch {
+        lastFmTrack = null;
+    } finally {
+        lastFmPolling = false;
+    }
+    void render();
+}
 
 function refreshSpotify(): void {
     if (!settings.store.refreshSpotify || !fetchPlayerState) return;
@@ -100,11 +152,10 @@ function refreshSpotify(): void {
 }
 
 function pickTrack(): MusicTrack | null {
-    const playing = tracks.filter((track) => !track.paused && track.title);
-    const soundcloud = settings.store.soundcloud ? playing.find((track) => track.source === "soundcloud") : undefined;
-    if (soundcloud) return soundcloud;
-    if (!settings.store.spotify || spotifyAccounts().length || SpotifyStore.getActivity()) return null;
-    return playing.find((track) => track.source === "spotify") ?? null;
+    if (SpotifyStore.getActivity()) return null;
+    const desktopSpotify = settings.store.spotify && !spotifyAccounts().length ? tracks.find((track) => track.source === "spotify" && !track.paused && track.title) : undefined;
+    if (desktopSpotify) return desktopSpotify;
+    return settings.store.lastfm ? lastFmTrack : null;
 }
 
 function startTime(track: MusicTrack): number {
@@ -158,7 +209,8 @@ async function render(): Promise<void> {
 
 export default definePlugin({
     name: "FosscordMusicPresence",
-    description: "Shows what you listen to on SoundCloud or Spotify as a Listening activity, read from the desktop app, and keeps a connected Spotify account's activity current.",
+    description:
+        "Shows what a connected Last.fm account is playing, or the Spotify app read by the desktop app, as a Listening activity, and keeps a connected Spotify account's activity current.",
     authors: [FosscordAuthor],
     required: true,
     settings,
@@ -185,18 +237,12 @@ export default definePlugin({
             tokens.delete(accountId);
         },
         USER_CONNECTIONS_UPDATE() {
-            void render();
+            void pollLastFm();
         },
     },
 
     settingsAboutComponent() {
-        const music = bridge();
-        if (!music) return <p>The SoundCloud window and the Spotify app need the desktop app. A Spotify account connected under Connections works everywhere.</p>;
-        return (
-            <Button size="small" onClick={() => music.openSoundCloud()}>
-                Open SoundCloud
-            </Button>
-        );
+        return <p>Connect Last.fm or Spotify under Connections to share what you listen to anywhere. Reading the Spotify app without a connected account needs the desktop app.</p>;
     },
 
     start() {
@@ -209,6 +255,8 @@ export default definePlugin({
             rewatch();
         }
         spotifyTimer = setInterval(refreshSpotify, SPOTIFY_POLL_MS);
+        lastFmTimer = setInterval(() => void pollLastFm(), LASTFM_POLL_MS);
+        void pollLastFm();
     },
 
     stop() {
@@ -217,6 +265,9 @@ export default definePlugin({
         unsubscribe = null;
         if (spotifyTimer) clearInterval(spotifyTimer);
         spotifyTimer = null;
+        if (lastFmTimer) clearInterval(lastFmTimer);
+        lastFmTimer = null;
+        lastFmTrack = null;
         tracks = [];
         setActivity(null);
     },

@@ -22,6 +22,7 @@ Callback URLs are `<origin>/connections/<provider>/callback`. The origin is the 
 | Roblox | Client ID and secret | No | OAuth 2.0 with OpenID Connect. |
 | Bungie.net | Client ID, secret and API key | No | OAuth 2.0. |
 | Battle.net, Discord, Epic Games, Facebook, GitHub, Reddit, Spotify, Twitch, X, Xbox, YouTube | Client ID and secret | No | OAuth 2.0. |
+| Last.fm | API key and shared secret | No | Last.fm web authentication. Also shows what you play as a Listening activity. |
 
 ### Domain
 
@@ -90,6 +91,13 @@ The connection stores the Bungie.net membership ID and is named after the Bungie
 3. Paste the client ID and client secret into the dashboard and turn Discord on.
 
 Discord's own client has no Discord entry in its list of connection platforms, so the `FosscordConnections` plugin adds one at the front of the list. The entry uses the instance icon from `/favicon.svg`, and a connected account links to `https://discord.com/users/<id>`. `assets/client_patches/71-connections.js` still hides it when the server reports Discord as off. The client's callback page only runs for types in its own platform enum, so the plugin also lets it accept the types the plugin adds. Without that, `/connections/discord/callback` stays blank and never calls the server. A linked account is named by its username, with `#<discriminator>` only for legacy accounts that still have one.
+
+### Last.fm
+
+1. Open [last.fm/api/account/create](https://www.last.fm/api/account/create) and create an API account. Its callback URL can stay empty, because the server sends the callback with each sign in.
+2. Paste the API key and the shared secret into the dashboard and turn Last.fm on.
+
+The connection stores the Last.fm username. [music-presence.md](music-presence.md) describes the sign in and the Listening activity.
 
 ### GitHub
 

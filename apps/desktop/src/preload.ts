@@ -19,8 +19,8 @@ if (location.protocol === "file:") {
         focusWindow: () => ipcRenderer.send("app:focus"),
         openInstanceSwitcher: () => ipcRenderer.send("app:switcher"),
         music: {
-            sources: ["spotify", "soundcloud"],
-            watch: (sources: MusicWatch) => ipcRenderer.send("music:watch", { spotify: sources?.spotify === true, soundcloud: sources?.soundcloud === true }),
+            sources: ["spotify"],
+            watch: (sources: MusicWatch) => ipcRenderer.send("music:watch", { spotify: sources?.spotify === true }),
             onTracks: (listener: (tracks: MusicTrack[]) => void) => {
                 const handler = (_event: Electron.IpcRendererEvent, tracks: MusicTrack[]) => listener(tracks);
                 ipcRenderer.on("music:tracks", handler);
@@ -28,7 +28,6 @@ if (location.protocol === "file:") {
                     ipcRenderer.off("music:tracks", handler);
                 };
             },
-            openSoundCloud: () => ipcRenderer.send("music:open-soundcloud"),
         },
         games: {
             watch: (options: GamesWatch | null) =>
