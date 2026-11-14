@@ -37,6 +37,7 @@ const REFERENCES: [RegExp, () => string[]][] = [
     [new RegExp(`^icons/${ID}/${HASH}$`), () => [columns("guilds", "icon")]],
     [new RegExp(`^splashes/${ID}/${HASH}$`), () => [columns("guilds", "splash")]],
     [new RegExp(`^discovery-splashes/${ID}/${HASH}$`), () => [columns("guilds", "discovery_splash")]],
+    [new RegExp(`^home-headers/${ID}/${HASH}$`), () => [columns("guilds", "home_header")]],
     [new RegExp(`^guild-space/${ID}/banner/${HASH}$`), () => [`SELECT 1 FROM "guilds" WHERE "id" = $1 AND ${json(`"profile"`, ["custom_banner_hash"])} = $2`]],
     [new RegExp(`^channel-icons/${ID}/${HASH}$`), () => [columns("channels", "icon")]],
     [new RegExp(`^role-icons/${ID}/${HASH}\\.png$`), () => [columns("roles", "icon")]],

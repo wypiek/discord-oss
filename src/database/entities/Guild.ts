@@ -127,6 +127,9 @@ export class Guild extends BaseClass {
     discovery_splash?: string;
 
     @Column({ nullable: true })
+    home_header?: string;
+
+    @Column({ nullable: true })
     explicit_content_filter?: number;
 
     @Column({ type: "int8", nullable: true })

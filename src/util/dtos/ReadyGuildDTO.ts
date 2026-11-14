@@ -62,7 +62,7 @@ export interface IReadyGuildDTO {
         nsfw_level: number | undefined;
         hub_type?: unknown | null; // ????
 
-        home_header: null; // TODO
+        home_header: string | null;
         latest_onboarding_question_id: null; // TODO
         safety_alerts_channel_id: string | null;
         max_stage_video_channel_users: 50; // TODO
@@ -152,7 +152,7 @@ export class ReadyGuildDTO implements IReadyGuildDTO {
         nsfw_level: number | undefined;
         hub_type?: unknown | null; // ????
 
-        home_header: null; // TODO
+        home_header: string | null;
         latest_onboarding_question_id: null; // TODO
         safety_alerts_channel_id: string | null;
         max_stage_video_channel_users: 50; // TODO
@@ -224,7 +224,7 @@ export class ReadyGuildDTO implements IReadyGuildDTO {
             nsfw_level: guild.nsfw_level,
             hub_type: null,
 
-            home_header: null,
+            home_header: guild.home_header ?? null,
             id: guild.id,
             latest_onboarding_question_id: null,
             max_stage_video_channel_users: 50, // TODO

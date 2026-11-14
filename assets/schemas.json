@@ -2586,6 +2586,12 @@
                     "string"
                 ]
             },
+            "home_header": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
             "safety_alerts_channel_id": {
                 "maxLength": 20,
                 "type": [
@@ -3538,6 +3544,12 @@
                     "string"
                 ]
             },
+            "home_header": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
             "safety_alerts_channel_id": {
                 "maxLength": 20,
                 "type": [
@@ -4466,6 +4478,9 @@
             "discovery_splash": {
                 "type": "string"
             },
+            "home_header": {
+                "type": "string"
+            },
             "safety_alerts_channel_id": {
                 "type": [
                     "null",
@@ -5110,6 +5125,12 @@
                 "type": "boolean"
             },
             "discovery_splash": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "home_header": {
                 "type": [
                     "null",
                     "string"
@@ -20484,6 +20505,9 @@
                 "type": "string"
             },
             "discovery_splash": {
+                "type": "string"
+            },
+            "home_header": {
                 "type": "string"
             },
             "explicit_content_filter": {

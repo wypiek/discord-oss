@@ -101,6 +101,7 @@ router.patch(
             "splash",
             "discovery_splash",
             "banner",
+            "home_header",
             "owner_id",
             "region",
             "preferred_locale",
@@ -132,6 +133,9 @@ router.patch(
 
         if (body.discovery_splash && body.discovery_splash !== guild.discovery_splash)
             body.discovery_splash = await handleFile(`/discovery-splashes/${guild_id}`, body.discovery_splash);
+
+        // server guide banner
+        if (body.home_header && body.home_header !== guild.home_header) body.home_header = await handleFile(`/home-headers/${guild_id}`, body.home_header);
 
         const wasApply = isApplyGuild(guild.features);
         if (body.features) {
