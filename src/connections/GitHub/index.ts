@@ -4,6 +4,9 @@ import { Connection, ConnectionLoader, DiscordApiErrors } from "@spacebar/util";
 import { ConnectedAccountCommonOAuthTokenResponse, ConnectionCallbackSchema } from "@spacebar/schemas";
 import { GenericOAuthSettings as GitHubSettings } from "../GenericOAuthSettings";
 
+const githubUserAgent = "instance-connections";
+const githubErrorCode = (error: unknown) => (typeof error === "string" && /^[a-z_]{1,64}$/.test(error) ? error : "no access token");
+
 interface UserResponse {
     login: string;
     id: number;
@@ -43,42 +46,53 @@ export default class GitHubConnection extends Connection {
         return url.toString();
     }
 
-    getTokenUrl(code: string): string {
-        const url = new URL(this.tokenUrl);
-        url.searchParams.append("client_id", this.settings.clientId as string);
-        url.searchParams.append("client_secret", this.settings.clientSecret as string);
-        url.searchParams.append("code", code);
-        return url.toString();
+    getTokenUrl(): string {
+        return this.tokenUrl;
     }
 
     async exchangeCode(state: string, code: string): Promise<ConnectedAccountCommonOAuthTokenResponse> {
         this.validateState(state);
 
-        const url = this.getTokenUrl(code);
-
-        return wretch(url.toString())
+        const response = await wretch(this.getTokenUrl())
             .headers({
                 Accept: "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": githubUserAgent,
             })
-
+            .body(
+                new URLSearchParams({
+                    client_id: this.settings.clientId as string,
+                    client_secret: this.settings.clientSecret as string,
+                    code,
+                    redirect_uri: this.getRedirectUri(),
+                }),
+            )
             .post()
-            .json<ConnectedAccountCommonOAuthTokenResponse>()
-            .catch((e) => {
-                console.error(e);
+            .json<Partial<ConnectedAccountCommonOAuthTokenResponse> & { error?: string }>()
+            .catch((error) => {
+                console.error(`[GitHub connection] token exchange failed with status ${error?.status ?? "unknown"}`);
                 throw DiscordApiErrors.GENERAL_ERROR;
             });
+
+        if (!response.access_token) {
+            console.error(`[GitHub connection] token exchange refused: ${githubErrorCode(response.error)}`);
+            throw DiscordApiErrors.GENERAL_ERROR;
+        }
+        return response as ConnectedAccountCommonOAuthTokenResponse;
     }
 
     async getUser(token: string): Promise<UserResponse> {
-        const url = new URL(this.userInfoUrl);
-        return wretch(url.toString())
+        return wretch(this.userInfoUrl)
             .headers({
+                Accept: "application/vnd.github+json",
                 Authorization: `Bearer ${token}`,
+                "User-Agent": githubUserAgent,
+                "X-GitHub-Api-Version": "2022-11-28",
             })
             .get()
             .json<UserResponse>()
-            .catch((e) => {
-                console.error(e);
+            .catch((error) => {
+                console.error(`[GitHub connection] user lookup failed with status ${error?.status ?? "unknown"}`);
                 throw DiscordApiErrors.GENERAL_ERROR;
             });
     }

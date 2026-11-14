@@ -84,7 +84,7 @@ export abstract class Connection {
     }
 
     async createConnection(data: ConnectedAccountSchema): Promise<ConnectedAccount> {
-        const ca = ConnectedAccount.create({ ...data });
+        const ca = ConnectedAccount.create({ visibility: 1, ...data });
         await ca.save();
         return ca;
     }
