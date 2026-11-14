@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { setOpenAtLogin, startedHidden } from "./autostart";
 import { buildContextMenu } from "./context-menu";
 import { discoverInstance, normalizeInstanceUrl } from "./discovery";
+import { registerGames } from "./games";
 import { registerMusic } from "./music";
 import { registerScreenshare, screenshareFeatureFlags } from "./screenshare";
 import { createSoundCloudWindow, soundCloudSession } from "./soundcloud";
@@ -34,6 +35,7 @@ let pendingDeepLink: string | null = process.argv.find((arg) => arg.startsWith(`
 let lastMentionCount = 0;
 let openSoundCloud = () => {};
 let stopMusic = () => {};
+let stopGames = () => {};
 
 app.setName(APP_NAME);
 if (process.platform === "win32") app.setAppUserModelId(APP_ID);
@@ -420,6 +422,7 @@ function start() {
     registerPermissions();
     const music = registerMusic({ allowed: isInstanceUrl, openSoundCloud: () => openSoundCloud() });
     stopMusic = music.stop;
+    stopGames = registerGames({ allowed: isInstanceUrl }).stop;
     openSoundCloud = createSoundCloudWindow({ icon: resource("icon.png"), onTrack: music.setSoundCloudTrack });
     if (settings().openAtLogin) setOpenAtLogin(true);
     tray = new Tray(trayImage());
@@ -441,6 +444,7 @@ function start() {
 app.on("before-quit", () => {
     quitting = true;
     stopMusic();
+    stopGames();
 });
 
 app.on("window-all-closed", () => {

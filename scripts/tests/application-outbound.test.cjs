@@ -246,6 +246,7 @@ test("signed interactions honor policy, strict HTTPS, bounded helper and app adm
                 "@spacebar/database": {},
                 "./ApplicationCommands": {},
                 "@spacebar/api/util/utility/applicationOutbound": h,
+                "@spacebar/api/util/utility/games": {},
                 "@spacebar/util": {
                     fetchPublicUrl: async (...args) => {
                         calls.push(args);
