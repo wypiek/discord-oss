@@ -4,6 +4,7 @@ export * from "./Branding";
 export * from "./HomePage";
 export * from "./Markdown";
 export * from "./ActivityBadges";
+export * from "./GamePlay";
 export * from "./BadgeCatalog";
 export * from "./VoidBadge";
 export * from "./OpenGraph";

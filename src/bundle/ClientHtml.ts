@@ -51,6 +51,7 @@ export interface ClientEnvSettings {
     emailRequired: boolean;
     joinReason: ClientJoinReason | null;
     nativeVoice: boolean;
+    whiteboardApplicationId?: string | null;
 }
 
 export const baseGlobalEnv = (parsed: Record<string, unknown>) => Object.fromEntries(Object.entries(parsed).filter(([key]) => !ENDPOINT_KEYS.includes(key)));
@@ -100,6 +101,7 @@ export const clientEnvScript = (base: Record<string, unknown>, settings: ClientE
         REGISTER_EMAIL_REQUIRED: ${json(settings.emailRequired === true)},
         REGISTER_JOIN_REASON: ${json(settings.joinReason)},
         NATIVE_VOICE: ${json(settings.nativeVoice)},
+        WHITEBOARD_APPLICATION_ID: ${json(settings.whiteboardApplicationId ?? null)},
     });
 })();
 </script>`;

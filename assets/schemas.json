@@ -1706,6 +1706,7 @@
                     17,
                     18,
                     2,
+                    20,
                     255,
                     3,
                     4,
@@ -4629,6 +4630,19 @@
                     }
                 ]
             },
+            "guild_space": {
+                "anyOf": [
+                    {
+                        "$ref": "#/definitions/GuildSpaceState"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
+            "guild_space_settings": {
+                "$ref": "#/definitions/GuildSpaceSettings"
+            },
             "premium_features": {
                 "type": "object",
                 "properties": {
@@ -4668,6 +4682,10 @@
                 "type": "object",
                 "additionalProperties": false
             },
+            "guildSpaceSettings": {
+                "type": "object",
+                "additionalProperties": false
+            },
             "toInviteGuild": {
                 "type": "object",
                 "additionalProperties": false
@@ -4702,6 +4720,7 @@
             "emojis",
             "features",
             "get_annotations",
+            "guildSpaceSettings",
             "id",
             "insert",
             "invites",
@@ -8394,6 +8413,7 @@
                     17,
                     18,
                     2,
+                    20,
                     255,
                     3,
                     4,
@@ -8619,6 +8639,7 @@
                     17,
                     18,
                     2,
+                    20,
                     255,
                     3,
                     4,
@@ -10910,6 +10931,52 @@
             "tags",
             "type"
         ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "GuildSpaceUpdateSchema": {
+        "type": "object",
+        "properties": {
+            "header": {
+                "type": "object",
+                "properties": {
+                    "custom_banner": {
+                        "type": [
+                            "null",
+                            "string"
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "widgets": {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                    "$ref": "#/definitions/GuildSpaceWidgetUpdate"
+                }
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "widgets"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "GuildSpaceSettingsModifySchema": {
+        "type": "object",
+        "properties": {
+            "enabled": {
+                "type": "boolean"
+            },
+            "publish_status": {
+                "enum": [
+                    0,
+                    1
+                ],
+                "type": "number"
+            }
+        },
+        "additionalProperties": false,
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "GifResponse": {
@@ -18296,6 +18363,7 @@
             16,
             17,
             18,
+            20,
             255
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -20718,6 +20786,19 @@
                     }
                 ]
             },
+            "guild_space": {
+                "anyOf": [
+                    {
+                        "$ref": "#/definitions/GuildSpaceState"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
+            "guild_space_settings": {
+                "$ref": "#/definitions/GuildSpaceSettings"
+            },
             "premium_features": {
                 "type": "object",
                 "properties": {
@@ -22623,6 +22704,170 @@
         "required": [
             "colors",
             "gradient_color_stops"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "GuildSpaceState": {
+        "type": "object",
+        "properties": {
+            "channel_id": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "custom_banner_hash": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "widgets": {
+                "anyOf": [
+                    {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/GuildSpaceStoredWidget"
+                        }
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
+            "enabled": {
+                "type": "boolean"
+            },
+            "publish_status": {
+                "$ref": "#/definitions/GuildSpacePublishStatusValue"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "enabled",
+            "publish_status"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "GuildSpaceStoredWidget": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string"
+            },
+            "type": {
+                "$ref": "#/definitions/GuildSpaceWidgetType"
+            },
+            "position": {
+                "$ref": "#/definitions/GuildSpaceWidgetPosition"
+            },
+            "config": {
+                "$ref": "#/definitions/GuildSpaceWidgetConfig"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "config",
+            "id",
+            "position",
+            "type"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "GuildSpaceWidgetType": {
+        "enum": [
+            "image_text",
+            "leaderboard",
+            "popular_games",
+            "popular_music",
+            "whiteboard"
+        ],
+        "type": "string",
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "GuildSpaceWidgetPosition": {
+        "type": "object",
+        "properties": {
+            "column": {
+                "minimum": 0,
+                "maximum": 1,
+                "type": "integer"
+            },
+            "order": {
+                "minimum": 0,
+                "maximum": 99,
+                "type": "integer"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "column",
+            "order"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "GuildSpaceWidgetConfig": {
+        "type": "object",
+        "properties": {
+            "type": {
+                "$ref": "#/definitions/GuildSpaceWidgetType"
+            },
+            "title": {
+                "maxLength": 100,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "text": {
+                "maxLength": 500,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "image_hash": {
+                "maxLength": 128,
+                "type": [
+                    "null",
+                    "string"
+                ]
+            },
+            "image": {
+                "type": [
+                    "null",
+                    "string"
+                ]
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "type"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "GuildSpacePublishStatusValue": {
+        "enum": [
+            0,
+            1
+        ],
+        "type": "number",
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "GuildSpaceSettings": {
+        "type": "object",
+        "properties": {
+            "enabled": {
+                "type": "boolean"
+            },
+            "publish_status": {
+                "$ref": "#/definitions/GuildSpacePublishStatusValue"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "enabled",
+            "publish_status"
         ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
@@ -29037,6 +29282,31 @@
             }
         },
         "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "GuildSpaceWidgetUpdate": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "maxLength": 64,
+                "type": "string"
+            },
+            "type": {
+                "$ref": "#/definitions/GuildSpaceWidgetType"
+            },
+            "position": {
+                "$ref": "#/definitions/GuildSpaceWidgetPosition"
+            },
+            "config": {
+                "$ref": "#/definitions/GuildSpaceWidgetConfig"
+            }
+        },
+        "additionalProperties": false,
+        "required": [
+            "config",
+            "position",
+            "type"
+        ],
         "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "GifTrendingCategory": {

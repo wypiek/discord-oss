@@ -11,6 +11,7 @@ const IMAGE_ROUTES: ImageRoute[] = [
     { methods: ["POST"], path: /^\/guilds$/, images: 1 },
     { methods: ["PATCH"], path: /^\/guilds\/\d+$/, images: 4 },
     { methods: ["PATCH"], path: /^\/guilds\/\d+\/profile$/, images: 2 },
+    { methods: ["PUT"], path: /^\/guilds\/\d+\/space$/, images: 4 },
     { methods: ["PATCH"], path: new RegExp(String.raw`^\/guilds\/\d+\/(?:profile|members)\/${ID}$`), images: 2 },
     { methods: ["POST", "PATCH"], path: /^\/guilds\/\d+\/(?:roles|scheduled-events|soundboard-sounds)(?:\/\d+)?$/, images: 1 },
     { methods: ["POST"], path: /^\/(?:guilds|applications)\/\d+\/emojis$/, images: 1 },

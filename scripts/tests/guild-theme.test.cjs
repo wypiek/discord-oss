@@ -147,16 +147,33 @@ test("getGuildExperiments provides server theme default and does not leak client
         "murmurhash-js/murmurhash3_gc": require("murmurhash-js/murmurhash3_gc"),
     });
 
+    const murmur = require("murmurhash-js/murmurhash3_gc");
+    const variant = (experiments, name) => experiments?.assignments.find((assignment) => assignment[0] === murmur(name))?.[1];
+
     const normal = getGuildExperiments("guild-normal");
     assert.ok(normal?.assignments);
-    assert.equal(normal.assignments.length, 1);
-    assert.equal(normal.assignments[0][1], 1);
+    assert.equal(variant(normal, "2026-04_server_theme"), 1);
+    assert.equal(variant(normal, "2026-09-guild-spaces"), 1);
+    assert.equal(variant(normal, "secret-user-experiment"), undefined);
 
     const custom = getGuildExperiments("guild-custom");
-    assert.ok(custom?.assignments);
-    assert.equal(custom.assignments.length, 1);
-    assert.equal(custom.assignments[0][1], 2);
+    assert.equal(variant(custom, "2026-04_server_theme"), 2);
 
     const disabled = getGuildExperiments("guild-disabled");
-    assert.equal(disabled, undefined);
+    assert.equal(variant(disabled, "2026-04_server_theme"), undefined);
+    assert.equal(variant(disabled, "2026-09-guild-spaces"), 1);
+});
+
+test("guild experiments are marked eligible for every user", () => {
+    const murmur = require("murmurhash-js/murmurhash3_gc");
+    const { getApexExperiments } = loadModule("src/util/util/ApexExperiments.ts", {
+        "./Config": { Config: { get: () => ({ client: { guildExperiments: { "guild-custom": { "2026-10-custom": 1 } } } }) } },
+        "murmurhash-js/murmurhash3_gc": murmur,
+    });
+    const assignments = getApexExperiments("123").assignments[1]["123"].assignments;
+    for (const name of ["2026-09-guild-spaces", "2026-04_server_theme", "2026-10-custom"]) {
+        const assignment = assignments.find((entry) => entry[0] === murmur(name));
+        assert.ok(assignment, name);
+        assert.equal(assignment[2] & 8, 8);
+    }
 });

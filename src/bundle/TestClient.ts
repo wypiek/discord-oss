@@ -21,6 +21,7 @@ import { BRANDED_CLIENT_ASSETS } from "../util/util/BrandMarkup";
 import { sendMobileBundle } from "./MobileBundle";
 import { compressedStatic } from "../util/util/CompressedStatic";
 import { inviteCodeFromPath, invitePage } from "@spacebar/api/util";
+import { builtinActivityApplicationId } from "@spacebar/api/activities";
 import { User } from "@spacebar/database";
 import {
     appIconPng,
@@ -199,6 +200,7 @@ const buildHtml = () => {
         emailRequired: Config.get().register.email.required === true,
         joinReason: joinReasonEnv(),
         nativeVoice: nativeVoiceEnabled(),
+        whiteboardApplicationId: builtinActivityApplicationId("whiteboard"),
     });
 
     const patches = fs.existsSync(PATCH_PATH)

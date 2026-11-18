@@ -122,6 +122,14 @@ export class ActivityInstances {
         return true;
     }
 
+    static async sessionEnded(userId: string, sessionId: string) {
+        const rows = await ActivityInstanceParticipant.find({
+            where: { user_id: userId, session_id: sessionId },
+            relations: { instance: true },
+        });
+        for (const row of rows) await ActivityInstances.leave(row.instance, userId, sessionId);
+    }
+
     static async userLeftChannel(channelId: string, userId: string) {
         const rows = await ActivityInstanceParticipant.find({
             where: { user_id: userId, instance: { channel_id: channelId } },

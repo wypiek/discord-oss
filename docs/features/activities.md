@@ -25,7 +25,7 @@ The iframe gets a signed proxy ticket that is valid for 12 hours. An activity ba
 
 ## Whiteboard
 
-The server ships one activity, a shared whiteboard, owned by the `official` system account. Boards live in memory and are gone once their instance ends.
+The server ships one activity, a shared whiteboard, owned by the `official` system account. Boards live in memory and are gone once their instance ends, except in a Server Hub, where the board is saved with the hub's channel and comes back on the next launch. A Server Hub's whiteboard starts without a voice connection, see [server-hub.md](server-hub.md#whiteboard).
 
 ## Not done yet
 
