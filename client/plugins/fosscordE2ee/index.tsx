@@ -56,7 +56,7 @@ const guardSend = async (channelId: string) => {
         const deadline = Date.now() + 20000;
         while (!bridge()?.beforeSend && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
         if (!bridge()?.beforeSend) {
-            showToast("Private chat is still preparing. Try sending again.", "failure");
+            showToast({ text: "Private chat is still preparing. Try sending again.", variant: "critical" });
             return true;
         }
     }

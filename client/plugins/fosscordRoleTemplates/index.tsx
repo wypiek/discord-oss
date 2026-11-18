@@ -106,12 +106,12 @@ function apply(template: (typeof TEMPLATES)[number], role: Role, guild: Guild) {
         permissions,
     });
     const skipped = eachBit(wanted).length - grantable.length;
-    showToast(
-        skipped
+    showToast({
+        text: skipped
             ? `Applied ${template.name}, without ${skipped} permission${skipped === 1 ? "" : "s"} you don't have. Save to keep it.`
             : `Applied ${template.name}. Save to keep it.`,
-        skipped ? "message" : "success",
-    );
+        variant: skipped ? "default" : "success",
+    });
 }
 
 function PermissionTemplates({ guild, role, locked }: { guild: Guild; role: Role; locked: boolean }) {

@@ -1,7 +1,8 @@
 import ErrorBoundary from "@components/ErrorBoundary";
-import { ModalCloseButton, ModalContent, ModalHeader, ModalRoot, ModalSize, openModal } from "@utils/modal";
+import { openModal } from "@utils/modal";
 import definePlugin, { StartAt } from "@utils/types";
-import { Checkbox, FluxDispatcher, ReactDOM, RestAPI, UserStore, useEffect, useState, useStateFromStores } from "@webpack/common";
+import { Checkbox, FluxDispatcher, Modal, ReactDOM, RestAPI, UserStore, useEffect, useState, useStateFromStores } from "@webpack/common";
+import type { ReactNode } from "react";
 import { Text } from "../fosscordCore/compat";
 
 import { FosscordAuthor } from "../fosscordCore/shared";
@@ -186,17 +187,11 @@ function PridePicker({ embedded = false }: { embedded?: boolean }) {
 
 function openPrideModal() {
     openModal((props) => (
-        <ModalRoot {...props} size={ModalSize.MEDIUM}>
-            <ModalHeader>
-                <Text variant="heading-lg/semibold" style={{ flexGrow: 1 }}>
-                    Pride flags
-                </Text>
-                <ModalCloseButton onClick={props.onClose} />
-            </ModalHeader>
-            <ModalContent className="fosscord-pride-modal">
+        <Modal {...props} title="Pride flags">
+            <div className="fosscord-pride-modal">
                 <PridePicker embedded />
-            </ModalContent>
-        </ModalRoot>
+            </div>
+        </Modal>
     ));
 }
 
@@ -231,7 +226,7 @@ export default definePlugin({
     flagsFrom,
     prepareUser,
     hasFlags: (user: { prideBadges?: unknown } | undefined) => Array.isArray(user?.prideBadges) && user.prideBadges.length > 0,
-    pronounsWithFlags: (pronouns: string | undefined, pronounsElement: unknown, user: { id?: string } | undefined) => (
+    pronounsWithFlags: (pronouns: string | undefined, pronounsElement: ReactNode, user: { id?: string } | undefined) => (
         <span className="fosscord-pride-pronouns">
             {pronouns?.length ? pronounsElement : null}
             <PrideFlags userId={user?.id} max={8} className="fosscord-pride-flags-pronouns" />

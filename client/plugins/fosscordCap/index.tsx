@@ -15,7 +15,7 @@ type CapController = {
 let current: CapController | undefined;
 let registrationRequest: ReturnType<typeof RestAPI.post> | undefined;
 
-function registerAccount(api: Pick<typeof RestAPI, "post">, options: Parameters<typeof RestAPI.post>[0]) {
+function registerAccount(api: Pick<typeof RestAPI, "post">, options: Exclude<Parameters<typeof RestAPI.post>[0], string>) {
     if (registrationRequest) return registrationRequest;
     const controller = current;
     const request = api.post({ ...options, retries: 0 }).then(

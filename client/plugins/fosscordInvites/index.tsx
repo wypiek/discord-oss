@@ -150,7 +150,7 @@ function InvitesPage() {
         setError("");
         try {
             await RestAPI.del({ url: `/users/@me/instance-invites/${invite.code}` });
-            showToast("Invite revoked.", "success");
+            showToast({ text: "Invite revoked.", variant: "success" });
             await load();
         } catch (failure) {
             setError(errorMessage(failure, "Could not revoke the invite. Try again."));

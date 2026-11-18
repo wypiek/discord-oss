@@ -88,14 +88,12 @@ export function PrideFlags({ userId, max, className }: { userId?: string; max: n
         <span className={className ? `fosscord-pride-flags ${className}` : "fosscord-pride-flags"} role="group" aria-label="Pride flags">
             {shown.map((flag) => (
                 <Tooltip key={flag.slug} text={flag.description}>
-                    {(props: Record<string, unknown>) => (
-                        <img {...props} className="fosscord-pride-flag" src={flag.icon_url} alt={flag.description} draggable={false} loading="lazy" />
-                    )}
+                    {(props) => <img {...props} className="fosscord-pride-flag" src={flag.icon_url} alt={flag.description} draggable={false} loading="lazy" />}
                 </Tooltip>
             ))}
             {hidden > 0 && (
                 <Tooltip text={names.join(", ")}>
-                    {(props: Record<string, unknown>) => (
+                    {(props) => (
                         <span {...props} className="fosscord-pride-more" role="img" aria-label={`${hidden} more: ${names.slice(shown.length).join(", ")}`}>
                             +{hidden}
                         </span>

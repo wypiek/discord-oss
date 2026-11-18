@@ -1,11 +1,12 @@
 import ErrorBoundary from "@components/ErrorBoundary";
-import { ModalCloseButton, ModalContent, ModalHeader, ModalRoot, ModalSize, openModal } from "@utils/modal";
+import { openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
 import { findByPropsLazy, findComponentByCodeLazy } from "@webpack";
 import {
     EmojiStore,
     FluxDispatcher,
     IconUtils,
+    Modal,
     Popout,
     RelationshipStore,
     RestAPI,
@@ -360,17 +361,11 @@ function TypingIndicatorEditor({ onNavigateAway }: { onNavigateAway?: () => void
 
 function openEditor() {
     openModal((props) => (
-        <ModalRoot {...props} size={ModalSize.MEDIUM}>
-            <ModalHeader>
-                <Text variant="heading-lg/semibold" style={{ flexGrow: 1 }}>
-                    Typing indicator
-                </Text>
-                <ModalCloseButton onClick={props.onClose} />
-            </ModalHeader>
-            <ModalContent className="fosscord-typing-modal">
+        <Modal {...props} title="Typing indicator">
+            <div className="fosscord-typing-modal">
                 <TypingIndicatorEditor onNavigateAway={props.onClose} />
-            </ModalContent>
-        </ModalRoot>
+            </div>
+        </Modal>
     ));
 }
 
