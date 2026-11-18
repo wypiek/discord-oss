@@ -16,7 +16,8 @@ export const screenshareFeatureFlags = () => (process.platform === "darwin" ? ["
 let sources: DesktopCapturerSource[] = [];
 let picker: BrowserWindow | null = null;
 let settle: ((choice: PickedSource | null) => void) | null = null;
-let linuxAudioWanted = false;
+let linuxAudioGrants = 0;
+let linkedShares = 0;
 
 const fromPicker = (url: string | undefined) => !!url && url.startsWith("file:") && url.includes("/static/picker.html");
 
@@ -56,12 +57,17 @@ function choose(parent: BrowserWindow, preload: string, appRoot: string, audioRe
 
 export function registerScreenshare(session: Session, options: { allowed: (origin: string) => boolean; parent: () => BrowserWindow | null; preload: string; appRoot: string }) {
     ipcMain.handle("linuxaudio:start", (event) => {
-        if (!options.allowed(event.senderFrame?.url ?? "") || !linuxAudioWanted) return false;
-        linuxAudioWanted = false;
-        return linkDesktopAudio();
+        if (!options.allowed(event.senderFrame?.url ?? "") || linuxAudioGrants === 0) return false;
+        linuxAudioGrants--;
+        if (linkedShares > 0 || linkDesktopAudio()) {
+            linkedShares++;
+            return true;
+        }
+        return false;
     });
     ipcMain.on("linuxaudio:stop", (event) => {
-        if (options.allowed(event.senderFrame?.url ?? "")) unlinkDesktopAudio();
+        if (!options.allowed(event.senderFrame?.url ?? "")) return;
+        if (linkedShares > 0 && --linkedShares === 0) unlinkDesktopAudio();
     });
     ipcMain.handle("picker:sources", async (event) => {
         if (!fromPicker(event.senderFrame?.url)) return [];
@@ -85,7 +91,8 @@ export function registerScreenshare(session: Session, options: { allowed: (origi
             if (!parent || !options.allowed(request.securityOrigin)) return callback({});
             choose(parent, options.preload, options.appRoot, request.audioRequested)
                 .then((choice) => {
-                    linuxAudioWanted = !!choice?.audio && !systemAudioSupported() && linuxAudioSupported();
+                    linuxAudioGrants = 0;
+                    if (!!choice?.audio && !systemAudioSupported() && linuxAudioSupported()) linuxAudioGrants++;
                     const source = choice && sources.find((candidate) => candidate.id === choice.id);
                     if (!choice || !source) return callback({});
                     callback(choice.audio && systemAudioSupported() ? { video: source, audio: "loopback" } : { video: source });

@@ -14,6 +14,7 @@ if (location.protocol === "file:") {
         chooseScreenSource: (id: string | null, audio: boolean) => ipcRenderer.send("picker:choose", id, audio),
     });
 } else {
+    let linuxAudioUses = 0;
     contextBridge.exposeInMainWorld("DiscordOSS", {
         platform: process.platform,
         focusWindow: () => ipcRenderer.send("app:focus"),
@@ -51,9 +52,24 @@ if (location.protocol === "file:") {
             },
         },
         linuxAudio: {
-            start: (): Promise<boolean> => ipcRenderer.invoke("linuxaudio:start"),
-            stop: () => ipcRenderer.send("linuxaudio:stop"),
+            start: async (): Promise<boolean> => {
+                const started = await ipcRenderer.invoke("linuxaudio:start");
+                if (started) linuxAudioUses++;
+                return started;
+            },
+            stop: () => {
+                if (linuxAudioUses > 0) {
+                    linuxAudioUses--;
+                    ipcRenderer.send("linuxaudio:stop");
+                }
+            },
         },
+    });
+    window.addEventListener("beforeunload", () => {
+        while (linuxAudioUses > 0) {
+            linuxAudioUses--;
+            ipcRenderer.send("linuxaudio:stop");
+        }
     });
     webFrame.executeJavaScript(
         `(() => {
