@@ -71,6 +71,7 @@ router.post(
                 },
             });
 
+        if (body.type === ChannelType.GUILD_SPACE) throw DiscordApiErrors.CANNOT_EXECUTE_ON_THIS_CHANNEL_TYPE;
         await enforceNameAutomod({ user_id: req.user_id, name: body.name, field: "name", source: "channel_name", guild_id });
         if (body.type === ChannelType.GUILD_NEWS || body.type === ChannelType.GUILD_STAGE_VOICE) {
             const { features } = await Guild.findOneOrFail({

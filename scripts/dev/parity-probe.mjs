@@ -1285,6 +1285,76 @@ await check("guilds", "bulk ban v2 over the gateway", async () => {
     };
 });
 await check("guilds", "join requests (member applications)", async () => st(await call("GET", `/guilds/${guild.id}/requests/@me`, B), 200, 404));
+await check("server hub", "managers see the default layout and members wait for publishing", async () => {
+    await call("PATCH", `/guilds/${guild.id}/space/settings`, A, { enabled: true, publish_status: 0 });
+    const owner = await call("GET", `/guilds/${guild.id}/space`, A);
+    const member = await call("GET", `/guilds/${guild.id}/space`, B);
+    const types = owner.body?.widgets?.map((widget) => widget.type).join(",");
+    return {
+        ok: owner.status === 200 && types === "leaderboard,whiteboard,popular_games" && !!owner.body.channel_id && member.status === 404,
+        note: `${owner.status} ${types} ${member.status}`,
+    };
+});
+await check("server hub", "catalog lists free widgets for managers only", async () => {
+    const owner = await call("GET", `/guilds/${guild.id}/space/widgets/catalog`, A);
+    const member = await call("GET", `/guilds/${guild.id}/space/widgets/catalog`, B);
+    const widgets = owner.body?.widgets ?? [];
+    return {
+        ok: owner.status === 200 && widgets.length >= 4 && widgets.every((widget) => widget.boost_price === 0 && !widget.locked) && member.status === 403,
+        note: `${owner.status} ${widgets.map((widget) => widget.type).join(",")} ${member.status}`,
+    };
+});
+await check("server hub", "saving widgets, publishing and hydrating", async () => {
+    const space = (await call("GET", `/guilds/${guild.id}/space`, A)).body;
+    const saved = await call("PUT", `/guilds/${guild.id}/space`, A, {
+        header: {},
+        widgets: [
+            ...space.widgets.map(({ id, type, position, config }) => ({ id, type, position, config })),
+            { type: "image_text", position: { column: 1, order: 1 }, config: { type: "image_text", title: "Rules", text: "Be nice" } },
+        ],
+    });
+    const limit = await call("PUT", `/guilds/${guild.id}/space`, A, {
+        widgets: [0, 1].map((column) => ({ type: "whiteboard", position: { column, order: 0 }, config: { type: "whiteboard" } })),
+    });
+    const published = await call("PATCH", `/guilds/${guild.id}/space/settings`, A, { publish_status: 1 });
+    const member = await call("GET", `/guilds/${guild.id}/space`, B);
+    const ids = space.widgets
+        .filter((widget) => widget.requires_hydration)
+        .map((widget) => `widget_ids=${widget.id}`)
+        .join("&");
+    const hydrated = await call("GET", `/guilds/${guild.id}/space/widgets/hydrate?${ids}`, B);
+    const data = Object.fromEntries((hydrated.body?.widgets ?? []).map((widget) => [space.widgets.find((entry) => entry.id === widget.id)?.type, widget.data]));
+    await call("PUT", `/guilds/${guild.id}/space`, A, { header: {}, widgets: space.widgets.map(({ id, type, position, config }) => ({ id, type, position, config })) });
+    await call("PATCH", `/guilds/${guild.id}/space/settings`, A, { publish_status: 0 });
+    return {
+        ok:
+            saved.status === 200 &&
+            saved.body.widgets.some((widget) => widget.type === "image_text" && widget.config.text === "Be nice") &&
+            limit.status === 400 &&
+            !!limit.body?.errors?.["widgets.1"] &&
+            published.body?.publish_status === 1 &&
+            member.status === 200 &&
+            Array.isArray(data.leaderboard?.entries) &&
+            typeof data.leaderboard?.week_start_ts === "number" &&
+            Array.isArray(data.popular_games?.games),
+        note: `${saved.status} ${limit.status} ${published.status} ${member.status} ${hydrated.status} ${Object.keys(data).join(",")}`,
+    };
+});
+await check("server hub", "the whiteboard starts in the hub without joining voice", async () => {
+    const space = (await call("GET", `/guilds/${guild.id}/space`, A)).body;
+    const shelf = (await call("GET", `/activities/shelf?guild_id=${guild.id}`, A)).body;
+    const whiteboard = shelf?.applications?.find((application) => application.name === "Whiteboard");
+    if (!whiteboard) return { ok: false, note: "no whiteboard on the shelf" };
+    const g = gateway(A);
+    const ready = await g.ready;
+    const launched = await call("POST", `/activities/${space.channel_id}/${whiteboard.id}`, A, { session_id: ready.session_id });
+    g.close();
+    return {
+        ok: launched.status === 200 && launched.body?.participants?.some((participant) => participant.user_id === me.id),
+        note: `${launched.status} ${JSON.stringify(launched.body).slice(0, 160)}`,
+    };
+});
+await check("server hub", "hub channels can't be created through the API", async () => st(await call("POST", `/guilds/${guild.id}/channels`, A, { name: "hub", type: 20 }), 400));
 
 await check("voice", "voice regions", async () => st(await call("GET", "/voice/regions", A), 200));
 await check("voice", "voice state update joins and VOICE_SERVER_UPDATE", async () => {

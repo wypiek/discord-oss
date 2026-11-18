@@ -81,3 +81,4 @@ export * from "./utility/friendInvites";
 export * from "./utility/sitePages";
 export * from "./utility/siteAdmin";
 export * from "./utility/newFriends";
+export * from "./handlers/GuildSpace";

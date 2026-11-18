@@ -297,6 +297,7 @@ export class Channel extends BaseClass {
                 }
                 break;
             case ChannelType.GUILD_CATEGORY:
+            case ChannelType.GUILD_SPACE:
             case ChannelType.UNHANDLED:
                 channel.parent_id = null;
                 break;

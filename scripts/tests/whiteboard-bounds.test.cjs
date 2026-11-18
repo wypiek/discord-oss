@@ -31,9 +31,14 @@ function load() {
                         ActivityInstance: { findOne: async () => null },
                         ActivityInstanceParticipant: { exists: async () => true },
                         ActivityInstances: { onChange() {}, participants: async () => [], find: async () => ({ id: "instance" }) },
+                        Channel: { findOne: async () => null },
+                        getDatabase: () => null,
                         Member: {},
                         User: {},
                     },
+                    "@spacebar/database/Sql": { isSqlite: () => false, sqlNow: () => "now()" },
+                    "@spacebar/schemas": { ChannelType: { GUILD_SPACE: 20 } },
+                    "@spacebar/util/util/ProcessLifecycle": { ProcessLifecycle: { eventEmitter: { once() {} } } },
                     "@spacebar/util": { Config: { get: () => ({ cdn: { endpointPublic: "" } }) } },
                     "./common": { ACTIVITY_ASSETS: "/tmp", readProxyTicket: () => ({ uid: "user" }) },
                 })[name],
@@ -44,12 +49,12 @@ function load() {
         return res;
     };
     const stroke = (id, points, userId = "user") => {
-        const res = respond({ instanceId: "instance", userId, client: "c" });
+        const res = respond({ instanceId: "instance", boardKey: "instance", userId, client: "c" });
         routes["post /instances/:instance_id/strokes"].at(-1)({ body: { id, color: "#000000", size: 2, points } }, res);
         return res.status;
     };
     const watch = async (userId) => {
-        const res = respond({ instanceId: "instance", userId, client: "c" });
+        const res = respond({ instanceId: "instance", boardKey: "instance", userId, client: "c" });
         await routes["get /instances/:instance_id/events"].at(-1)({ on() {} }, res);
         return res.status ?? JSON.parse(res.written[0].split("data: ")[1]);
     };

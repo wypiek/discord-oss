@@ -29,6 +29,7 @@
 | [link-embeds.md](features/link-embeds.md) | Link previews and embedded media. |
 | [markdown-attachments.md](features/markdown-attachments.md) | The preview of Markdown file attachments and the LaTeX math it typesets. |
 | [activities.md](features/activities.md) | Embedded activities. |
+| [server-hub.md](features/server-hub.md) | Server Hub, its widgets, the game time behind the leaderboard and the hub's whiteboard. |
 | [music-presence.md](features/music-presence.md) | Spotify and Last.fm Listening activities, the Spotify and Last.fm connections, the desktop app's Spotify reader and external activity images. |
 | [game-activity.md](features/game-activity.md) | Game detection in the desktop app, Playing activities, Registered Games and game profiles. |
 | [profile-widgets.md](features/profile-widgets.md) | Application profile widgets. |

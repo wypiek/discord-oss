@@ -7,3 +7,4 @@ export * from "./GuildSchema";
 export * from "./Role";
 export * from "./Sticker";
 export * from "./VoiceState";
+export * from "./GuildSpace";

@@ -1,6 +1,7 @@
 import { In } from "typeorm";
 import { User, UserActivityStats } from "@spacebar/database";
 import { TIERED_BADGES, TieredBadgeTier } from "./BadgeCatalog";
+import { recordGamePlay } from "./GamePlay";
 
 export const ACCOUNT_AGE_BADGE = 18;
 export const STREAMING_BADGE = 19;
@@ -78,6 +79,7 @@ export async function creditActivity(credits: ActivityCredit[], at = new Date())
         return stats;
     });
     await UserActivityStats.save(rows);
+    await recordGamePlay(eligible, at);
     return rows.length;
 }
 

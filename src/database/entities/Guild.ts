@@ -14,7 +14,10 @@ import {
     GuildNsfwLevel,
     GuildPremiumTier,
     GuildProfileResponse,
+    GuildSpaceSettings,
+    GuildSpaceState,
     GuildTheme,
+    guildSpaceSettingsOf,
     GuildVerificationLevel,
     GuildVisibilityLevel,
     GuildWelcomeScreen,
@@ -402,6 +405,11 @@ export class Guild extends BaseClass {
     @Column({ type: "jsonb", nullable: true })
     theme?: GuildTheme | null;
 
+    @Column({ type: "jsonb", nullable: true })
+    guild_space?: GuildSpaceState | null;
+
+    guild_space_settings?: GuildSpaceSettings;
+
     premium_features?: {
         features: string[];
         additional_emoji_slots: number;
@@ -670,6 +678,8 @@ export class Guild extends BaseClass {
             incidents_data: this.incidents_data ?? null,
             safety_alerts_channel_id: this.safety_alerts_channel_id ?? null,
             theme: this.theme ?? null,
+            guild_space: undefined,
+            guild_space_settings: this.guildSpaceSettings(),
             profile: this.profile?.tag
                 ? ({
                       tag: this.profile.tag,
@@ -686,6 +696,10 @@ export class Guild extends BaseClass {
             template_id: undefined,
             presence_count: undefined,
         };
+    }
+
+    guildSpaceSettings(): GuildSpaceSettings {
+        return guildSpaceSettingsOf(this.guild_space);
     }
 
     toInviteGuild(): InviteGuild {

@@ -1,5 +1,6 @@
 import { Channel, Emoji, Guild, Role, Sticker } from "../../database/entities";
-import { ChannelOverride, ChannelType, GuildTheme, PublicMember, PublicUser, UserGuildSettings } from "@spacebar/schemas";
+import { ChannelOverride, ChannelType, GuildSpaceSettings, guildSpaceSettingsOf, GuildTheme, PublicMember, PublicUser, UserGuildSettings } from "@spacebar/schemas";
+import { getGuildExperiments } from "../util/ApexExperiments";
 
 // TODO: this is not the best place for this type
 export type ReadyUserGuildSettingsEntries = Omit<UserGuildSettings, "channel_overrides"> & {
@@ -71,6 +72,7 @@ export interface IReadyGuildDTO {
         premium_features?: Guild["premium_features"];
         profile?: { tag: string; badge: string | null } | null;
         theme?: GuildTheme | null;
+        guild_space_settings: GuildSpaceSettings;
     };
     roles: Role[];
     stage_instances: unknown[];
@@ -161,6 +163,7 @@ export class ReadyGuildDTO implements IReadyGuildDTO {
         premium_features?: Guild["premium_features"];
         profile?: { tag: string; badge: string | null } | null;
         theme?: GuildTheme | null;
+        guild_space_settings: GuildSpaceSettings;
     };
     roles: Role[];
     stage_instances: unknown[];
@@ -171,6 +174,7 @@ export class ReadyGuildDTO implements IReadyGuildDTO {
     unavailable: boolean;
     joined_at: Date;
     partial_updates?: GuildPartialUpdates;
+    experiments?: ReturnType<typeof getGuildExperiments>;
 
     constructor(guild: GuildOrUnavailable, sync?: { version: number; deletes: GuildEntityDelete[] }) {
         if (!guildIsAvailable(guild)) {
@@ -233,7 +237,9 @@ export class ReadyGuildDTO implements IReadyGuildDTO {
             premium_features: guild.premium_features,
             profile: publicGuildProfile(guild.profile),
             theme: guild.theme ?? null,
+            guild_space_settings: guild.guild_space_settings ?? guildSpaceSettingsOf(guild.guild_space),
         };
+        this.experiments = getGuildExperiments(guild.id);
         this.roles = guild.roles.map((x) => (typeof x.toJSON === "function" ? x.toJSON() : x));
         this.stage_instances = (guild as { stage_instances?: unknown[] }).stage_instances ?? [];
         this.stickers = guild.stickers;

@@ -31,7 +31,16 @@ export const inRollout = (name: string, userId: string, percent: number) => roll
 
 export type ApexAssignment = [number, number, number, number, number, string | undefined];
 
-const assign = (name: string, variant: number, config?: object): ApexAssignment => [murmur(name), variant, 0, 1, variant, config ? JSON.stringify(config) : undefined];
+const USE_AS_ELIGIBILITY = 8;
+
+const assign = (name: string, variant: number, config?: object, flags = 0): ApexAssignment => [
+    murmur(name),
+    variant,
+    flags,
+    1,
+    variant,
+    config ? JSON.stringify(config) : undefined,
+];
 
 export function getApexExperiments(userId?: string) {
     if (!userId) return { assignments: {} };
@@ -44,6 +53,12 @@ export function getApexExperiments(userId?: string) {
         const variant = Number(overrides[name] ?? defaults[name]?.variant);
         if (!Number.isInteger(variant) || variant <= 0) continue;
         assignments.push(assign(name, variant, defaults[name]?.config));
+    }
+    const guildExperimentNames = new Set([...Object.keys(guildDefaults), ...Object.values(client.guildExperiments ?? {}).flatMap((grants) => Object.keys(grants))]);
+    for (const name of guildExperimentNames) {
+        const existing = assignments.find(([hash]) => hash === murmur(name));
+        if (existing) existing[2] |= USE_AS_ELIGIBILITY;
+        else assignments.push(assign(name, 1, undefined, USE_AS_ELIGIBILITY));
     }
     return { assignments: { 1: { [userId]: { evaluation_id: null, assignments } } } };
 }
@@ -61,6 +76,7 @@ export function getUserExperiments(userId?: string): UserExperimentAssignment[] 
 
 const guildDefaults: Record<string, { variant: number; config?: object }> = {
     "2026-04_server_theme": { variant: 1, config: { enabled: true, inExperiment: true, gatesApex: false, rollbackEnabled: false } },
+    "2026-09-guild-spaces": { variant: 1, config: { enabled: true } },
 };
 
 export function getGuildExperiments(guildId: string) {

@@ -18,6 +18,11 @@ const recentAvatar = () =>
         ? `SELECT 1 FROM "users" u, json_each(CASE WHEN json_valid(u."recent_avatars") AND json_type(u."recent_avatars") = 'array' THEN u."recent_avatars" ELSE '[]' END) entry
             WHERE u."id" = $1 AND entry.type = 'object' AND json_extract(entry.value, '$.storage_hash') = $2`
         : `SELECT 1 FROM "users" WHERE "id" = $1 AND jsonb_typeof("recent_avatars") = 'array' AND "recent_avatars" @> jsonb_build_array(jsonb_build_object('storage_hash', CAST($2 AS text)))`;
+const spaceWidgetImage = () =>
+    isSqlite()
+        ? `SELECT 1 FROM "guilds" g, json_each(CASE WHEN json_valid(g."guild_space") AND json_type(g."guild_space", '$.widgets') = 'array' THEN json_extract(g."guild_space", '$.widgets') ELSE '[]' END) widget
+            WHERE g."id" = $1 AND CAST(json_extract(widget.value, '$.id') AS text) = CAST($2 AS text) AND json_extract(widget.value, '$.config.image_hash') = $3`
+        : `SELECT 1 FROM "guilds" WHERE "id" = $1 AND jsonb_typeof("guild_space"->'widgets') = 'array' AND "guild_space"->'widgets' @> jsonb_build_array(jsonb_build_object('id', CAST($2 AS text), 'config', jsonb_build_object('image_hash', CAST($3 AS text))))`;
 const columns = (table: string, ...names: string[]) => `SELECT 1 FROM "${table}" WHERE "id" = $1 AND $2 IN (${names.map((name) => `"${name}"`).join(", ")})`;
 
 const ID = String.raw`(\d{1,19})`;
@@ -38,7 +43,11 @@ const REFERENCES: [RegExp, () => string[]][] = [
     [new RegExp(`^splashes/${ID}/${HASH}$`), () => [columns("guilds", "splash")]],
     [new RegExp(`^discovery-splashes/${ID}/${HASH}$`), () => [columns("guilds", "discovery_splash")]],
     [new RegExp(`^home-headers/${ID}/${HASH}$`), () => [columns("guilds", "home_header")]],
-    [new RegExp(`^guild-space/${ID}/banner/${HASH}$`), () => [`SELECT 1 FROM "guilds" WHERE "id" = $1 AND ${json(`"profile"`, ["custom_banner_hash"])} = $2`]],
+    [
+        new RegExp(`^guild-space/${ID}/banner/${HASH}$`),
+        () => [`SELECT 1 FROM "guilds" WHERE "id" = $1 AND (${json(`"profile"`, ["custom_banner_hash"])} = $2 OR ${json(`"guild_space"`, ["custom_banner_hash"])} = $2)`],
+    ],
+    [new RegExp(`^guild-space/${ID}/image-text-widget/${ID}/${HASH}$`), () => [spaceWidgetImage()]],
     [new RegExp(`^channel-icons/${ID}/${HASH}$`), () => [columns("channels", "icon")]],
     [new RegExp(`^role-icons/${ID}/${HASH}\\.png$`), () => [columns("roles", "icon")]],
     [new RegExp(`^app-icons/${ID}/${HASH}$`), () => [columns("applications", "icon", "cover_image"), columns("custom_games", "icon_hash", "cover_image_hash")]],
@@ -79,6 +88,14 @@ async function sweepBatch(until: number) {
         }
     }
     return queued.length;
+}
+
+export async function queueImageFileDeletes(paths: string[]) {
+    const unique = [...new Set(paths)];
+    if (!unique.length) return;
+    const db = getDatabase()!;
+    for (const path of unique)
+        await db.query(`INSERT INTO "image_file_deletes" ("path", "created_at") VALUES ($1, ${sqlNow()}) ON CONFLICT ("path") DO UPDATE SET "created_at" = ${sqlNow()}`, [path]);
 }
 
 export function sweepImageFiles(until = Infinity) {

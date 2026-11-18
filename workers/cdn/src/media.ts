@@ -109,6 +109,7 @@ const resolve = (segments: string[], url: URL): Lookup | null => {
         return null;
     }
     if (prefix === "guild-space" && count === 4 && second === "banner") return { keys: [`guild-space/${first}/banner/${strip(third)}`] };
+    if (prefix === "guild-space" && count === 5 && second === "image-text-widget") return { keys: [`guild-space/${first}/image-text-widget/${third}/${strip(fourth)}`] };
     if (prefix === "badge-icons" && count === 2) {
         if (!/^[\w-]+\.png$/.test(first)) return null;
         return {

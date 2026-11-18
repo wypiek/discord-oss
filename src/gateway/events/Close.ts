@@ -1,4 +1,4 @@
-import { Member, Session, VoiceChannels, VoiceState } from "@spacebar/database";
+import { ActivityInstances, Member, Session, VoiceChannels, VoiceState } from "@spacebar/database";
 import { isFinalClose, releaseDispatchBuffers, WebSocket } from "@spacebar/gateway/util";
 import { broadcastPresence, emitEvent, emitSessionsReplace, VoiceStateUpdateEvent } from "@spacebar/util";
 import { ProcessLifecycle } from "@spacebar/util/util/ProcessLifecycle";
@@ -40,6 +40,7 @@ export async function Close(this: WebSocket, code: number, reason: Buffer) {
 
     if (this.session) {
         const authSessionId = this.session?.session_id;
+        const gatewaySessionId = this.session_id;
         const closedAt = Date.now();
 
         const markOffline = async () => {
@@ -57,6 +58,7 @@ export async function Close(this: WebSocket, code: number, reason: Buffer) {
                 await Session.update({ user_id: this.user_id, session_id: authSessionId }, { status: "offline", activities: [], client_status: {} });
                 await emitSessionsReplace(this.user_id);
                 await broadcastPresence(this.user_id);
+                if (gatewaySessionId) await ActivityInstances.sessionEnded(this.user_id, gatewaySessionId);
             } catch (e) {
                 console.error("[WebSocket] Close session cleanup failed", code, e);
             }

@@ -25,9 +25,15 @@ export * from "./common";
 export const APPLICATION_EMBEDDED = 1 << 17;
 export const APPLICATION_EMBEDDED_RELEASED = 1 << 1;
 const EMBEDDED_FLAGS = APPLICATION_EMBEDDED_RELEASED | APPLICATION_EMBEDDED | (1 << 20);
-const LAUNCHABLE_CHANNELS = [ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE, ChannelType.DM, ChannelType.GROUP_DM];
+const LAUNCHABLE_CHANNELS = [ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE, ChannelType.DM, ChannelType.GROUP_DM, ChannelType.GUILD_SPACE];
+const VOICELESS_CHANNELS = [ChannelType.GUILD_SPACE];
+const GATEWAY_SESSION_ID = /^[\w-]{8,128}$/;
 
 export const BUILTIN_ACTIVITIES: Record<string, BuiltinActivity> = { [whiteboard.key]: whiteboard };
+
+const builtinApplicationIds = new Map<string, string>();
+
+export const builtinActivityApplicationId = (key: string) => builtinApplicationIds.get(key) ?? null;
 
 export function activityApplication(activity: EmbeddedActivity) {
     return {
@@ -162,18 +168,24 @@ export async function launchActivity(opts: { userId: string; applicationId: stri
     )
         throw DiscordApiErrors.UNKNOWN_APPLICATION;
 
-    const voiceState = await VoiceState.findOne({
-        where: { user_id: opts.userId, channel_id: channel.id },
-    });
-    if (!voiceState) throw DiscordApiErrors.TARGET_USER_IS_NOT_CONNECTED_TO_VOICE;
     const ownSession = opts.sessionId && (await Session.exists({ where: { user_id: opts.userId, session_id: opts.sessionId } }));
+    const voiceless = VOICELESS_CHANNELS.includes(channel.type);
+    let sessionId = ownSession || (voiceless && GATEWAY_SESSION_ID.test(opts.sessionId ?? "")) ? opts.sessionId! : undefined;
+    if (!voiceless) {
+        const voiceState = await VoiceState.findOne({
+            where: { user_id: opts.userId, channel_id: channel.id },
+        });
+        if (!voiceState) throw DiscordApiErrors.TARGET_USER_IS_NOT_CONNECTED_TO_VOICE;
+        sessionId ??= voiceState.session_id;
+    }
+    if (!sessionId) throw DiscordApiErrors.UNKNOWN_SESSION;
 
     return ActivityInstances.join({
         applicationId: opts.applicationId,
         channelId: channel.id,
         guildId: channel.guild_id,
         userId: opts.userId,
-        sessionId: ownSession ? opts.sessionId! : voiceState.session_id,
+        sessionId,
         nonce: opts.nonce,
     });
 }
@@ -231,6 +243,7 @@ async function ensureBuiltin(builtin: BuiltinActivity) {
     } else await Application.update({ id: activity.application_id }, fields);
 
     await ensureEntryPoint(activity.application_id, builtin.name);
+    builtinApplicationIds.set(builtin.key, activity.application_id);
 
     return activity;
 }
