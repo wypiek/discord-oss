@@ -443,11 +443,13 @@ export default definePlugin({
             find: "activityInviteEducationActivity:",
             replacement: [
                 {
-                    match: /(\i)=(\i\.intl\.format\(\i\.t\.lJ9sZX,\{a:(\i)\}\))/,
-                    replace: "$1=$self.typingText(arguments[0],$3,$2)",
+                    // since build 676376 the single-typist text sits inside Discord's own typing-suggestion ternary
+                    match: /(\i\.intl\.format\(\i\.t\.lJ9sZX,\{a:(\i)\}\))/,
+                    replace: "$self.typingText(arguments[0],$2,$1)",
                 },
                 {
-                    match: /(\i\.length>0&&!1!==\i&&)(\(\i\?\(0,\i\.jsx\)\(\i,\{\}\):\(0,\i\.jsx\)\(\i\.\i,\{className:\i\.\i,dotRadius:3\.5,themed:!0\}\)\))/,
+                    // since build 676376 Discord's emoji dots come first in the same parentheses
+                    match: /(\i\.length>0&&!1!==\i&&)(\((?:null!=\i&&\(0,\i\.\i\)\(\i\.emojis\)\?\(0,\i\.jsx\)\(\i,\{config:\i,className:\i\.\i\}\):)?\i\?\(0,\i\.jsx\)\(\i,\{\}\):\(0,\i\.jsx\)\(\i\.\i,\{className:\i\.\i,dotRadius:3\.5,themed:!0\}\)\))/,
                     replace: "$1$self.typingDots(arguments[0],$2)",
                 },
             ],

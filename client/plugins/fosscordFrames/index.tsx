@@ -49,7 +49,7 @@ function SidebarFrame({ Frame, frame }: { Frame: (props: { frame: ProfileFrame }
 
 export default definePlugin({
     name: "FosscordFrames",
-    description: "Draws profile frames around the whole side profile in DMs, with room above and below the card for the art, instead of only their top layers in its footer.",
+    description: "Makes room above and below the side profile in DMs for its profile frame's art, which Discord draws around the card without moving it.",
     authors: [FosscordAuthor],
     required: true,
     managedStyle,
@@ -58,11 +58,12 @@ export default definePlugin({
 
     patches: [
         {
-            // the side profile's footer, which draws the frame's top layers squeezed into it
-            find: /\.xQ,children:\[\(0,\i\.jsx\)\(\i\.\i,\{frame:\i,filterLayer:\i\}\)/,
+            // Since build 676376 Discord's side profile draws the whole frame itself, as its last child, but
+            // keeps no room around the card for the art; wrapping it lets SidebarFrame move the card down.
+            find: '"user-profile-sidebar-redesign"',
             replacement: {
-                match: /\.xQ,children:\[\(0,(\i)\.jsx\)\((\i\.\i),\{frame:(\i),filterLayer:\i\}\)/,
-                replace: ".xQ,children:[(0,$1.jsx)($self.SidebarFrame,{Frame:$2,frame:$3})",
+                match: /null!=(\i)&&\(0,(\i)\.jsx\)\((\i\.\i),\{frame:\1,fadeIn:!1\}\)/,
+                replace: "null!=$1&&(0,$2.jsx)($self.SidebarFrame,{Frame:$3,frame:$1})",
             },
         },
     ],
